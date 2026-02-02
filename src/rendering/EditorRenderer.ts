@@ -264,7 +264,7 @@ export class EditorRenderer {
   // Lights
   // ============================================
 
-  updateLights(lights: LightFixture[], ceilingHeight: number, selectedId: string | null): void {
+  updateLights(lights: LightFixture[], ceilingHeight: number, selectedIds: Set<string>): void {
     const currentIds = new Set(lights.map((l) => l.id));
 
     // Remove lights that no longer exist
@@ -288,7 +288,7 @@ export class EditorRenderer {
         icon.updateProperties(light, ceilingHeight);
       }
 
-      icon.setSelected(light.id === selectedId);
+      icon.setSelected(selectedIds.has(light.id));
     }
   }
 
