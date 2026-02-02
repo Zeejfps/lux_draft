@@ -134,12 +134,16 @@ function validateRafterConfig(data: unknown): RafterConfig {
     throw new ValidationError('Invalid rafter visible: must be a boolean');
   }
 
+  // snapToGrid is optional for backwards compatibility with older exports
+  const snapToGrid = typeof config.snapToGrid === 'boolean' ? config.snapToGrid : false;
+
   return {
     orientation: config.orientation,
     spacing: config.spacing,
     offsetX: config.offsetX,
     offsetY: config.offsetY,
     visible: config.visible,
+    snapToGrid,
   };
 }
 
@@ -162,10 +166,16 @@ function validateDisplayPreferences(data: unknown): DisplayPreferences {
     throw new ValidationError('Invalid unitFormat: must be "feet-inches" or "inches"');
   }
 
+  // gridSnapEnabled and gridSize are optional for backwards compatibility
+  const gridSnapEnabled = typeof prefs.gridSnapEnabled === 'boolean' ? prefs.gridSnapEnabled : false;
+  const gridSize = typeof prefs.gridSize === 'number' && prefs.gridSize > 0 ? prefs.gridSize : 0.5;
+
   return {
     useFractions: prefs.useFractions,
     snapThreshold: prefs.snapThreshold,
     unitFormat: prefs.unitFormat,
+    gridSnapEnabled,
+    gridSize,
   };
 }
 
