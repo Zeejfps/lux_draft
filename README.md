@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="./public/icons/lux_draft_icon.png" alt="LuxDraft Icon" width="128" height="128">
+</p>
+
 # LuxDraft
 
 A professional 2D lighting design and analysis tool for architectural and theatrical applications. LuxDraft enables precise room layout creation, intelligent light fixture placement, and real-time photometric calculations with industry-standard IES data support.
 
-![LuxDraft](./public/icons/lux_draft_icon.png)
+![LuxDraft Screenshot](./readme_assets/screenshot_01.jpg)
 
 ## Features
 
