@@ -1,10 +1,8 @@
-<p align="center">
-  <img src="./public/icons/lux_draft_icon.png" alt="LuxDraft Icon" width="128" height="128">
-</p>
-
 # LuxDraft
 
-A professional 2D lighting design and analysis tool for architectural and theatrical applications. LuxDraft enables precise room layout creation, intelligent light fixture placement, and real-time photometric calculations with industry-standard IES data support.
+A 2D lighting design and analysis tool created as a personal project to help with home renovation planning. LuxDraft enables room layout creation, light fixture placement, and real-time illuminance calculations with IES photometric data support.
+
+While built for personal use, it may be useful for anyone planning lighting layouts for their home or small projects.
 
 ![LuxDraft Screenshot](./readme_assets/screenshot_01.jpg)
 
@@ -44,10 +42,14 @@ A professional 2D lighting design and analysis tool for architectural and theatr
 ### Prerequisites
 - Node.js (v18 or higher recommended)
 - npm or yarn package manager
+- Git LFS (Large File Storage) - required for image assets
 
 ### Installation
 
 ```bash
+# Install Git LFS if you haven't already
+git lfs install
+
 # Clone the repository
 git clone <repository-url>
 cd lux_draft
