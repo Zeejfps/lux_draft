@@ -98,6 +98,7 @@
 <div class="app">
   <header class="header">
     <div class="header-left">
+      <img src="/icons/lux_draft_icon.png" alt="LuxDraft" class="app-icon" />
       <h1>LuxDraft</h1>
     </div>
     <Toolbar on:toggleMeasurement={handleToggleMeasurement} />
@@ -179,8 +180,13 @@
 
   .header-left {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
+  }
+
+  .app-icon {
+    width: 36px;
+    height: 36px;
   }
 
   h1 {
