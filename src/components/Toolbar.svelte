@@ -145,7 +145,12 @@
         on:click={handleNew}
         title="New Project"
       >
-        <span class="icon">📄</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
         <span class="label">New</span>
       </button>
       <button
@@ -153,7 +158,11 @@
         on:click={handleSave}
         title="Save to Browser"
       >
-        <span class="icon">💾</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/>
+          <polyline points="7 3 7 8 15 8"/>
+        </svg>
         <span class="label">Save</span>
       </button>
       <button
@@ -161,7 +170,9 @@
         on:click={handleImportClick}
         title="Import JSON"
       >
-        <span class="icon">📂</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
         <span class="label">Open</span>
       </button>
       <button
@@ -169,7 +180,11 @@
         on:click={handleExport}
         title="Export as JSON"
       >
-        <span class="icon">📥</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
         <span class="label">Export</span>
       </button>
       <button
@@ -178,7 +193,10 @@
         on:click={() => historyStore.undo()}
         title="Undo (Ctrl+Z)"
       >
-        <span class="icon">↶</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+        </svg>
         <span class="label">Undo</span>
       </button>
       <button
@@ -187,7 +205,10 @@
         on:click={() => historyStore.redo()}
         title="Redo (Ctrl+Y)"
       >
-        <span class="icon">↷</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"/>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
         <span class="label">Redo</span>
       </button>
     </div>
@@ -202,7 +223,10 @@
         on:click={() => handleToolChange('select')}
         title="Select (V)"
       >
-        <span class="icon">↖</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+          <path d="M13 13l6 6"/>
+        </svg>
         <span class="label">Select</span>
       </button>
       <button
@@ -211,7 +235,12 @@
         on:click={() => handleToolChange('draw')}
         title="Draw Walls (D)"
       >
-        <span class="icon">✏</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+          <path d="M2 2l7.586 7.586"/>
+          <circle cx="11" cy="11" r="2"/>
+        </svg>
         <span class="label">Draw</span>
       </button>
       <button
@@ -221,7 +250,17 @@
         disabled={!lightsEnabled}
         title={lightsEnabled ? 'Place Lights (L)' : 'Close room first'}
       >
-        <span class="icon">💡</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          <circle cx="12" cy="12" r="5"/>
+        </svg>
         <span class="label">Light</span>
       </button>
     </div>
@@ -236,7 +275,13 @@
         on:click={toggleGridSnap}
         title="Snap to Grid (S)"
       >
-        <span class="icon">#</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <line x1="3" y1="9" x2="21" y2="9"/>
+          <line x1="3" y1="15" x2="21" y2="15"/>
+          <line x1="9" y1="3" x2="9" y2="21"/>
+          <line x1="15" y1="3" x2="15" y2="21"/>
+        </svg>
         <span class="label">Snap</span>
       </button>
       <button
@@ -246,7 +291,13 @@
         on:click={toggleMeasurement}
         title={measuringActive ? "Measuring Active (Press M or ESC to exit)" : canMeasure ? "Start Measuring (M)" : "Select a vertex or light first"}
       >
-        <span class="icon">📏</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/>
+          <path d="m14.5 12.5 2-2"/>
+          <path d="m11.5 9.5 2-2"/>
+          <path d="m8.5 6.5 2-2"/>
+          <path d="m17.5 15.5 2-2"/>
+        </svg>
         <span class="label">Measure</span>
       </button>
     </div>
@@ -261,7 +312,10 @@
         on:click={() => handleViewModeChange('editor')}
         title="Editor View (1)"
       >
-        <span class="icon">✎</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
         <span class="label">Editor</span>
       </button>
       <button
@@ -270,7 +324,10 @@
         on:click={() => handleViewModeChange('shadow')}
         title="Shadow View (2)"
       >
-        <span class="icon">◐</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 2a10 10 0 0 1 0 20" fill="currentColor" opacity="0.3"/>
+        </svg>
         <span class="label">Shadow</span>
       </button>
       <button
@@ -279,7 +336,13 @@
         on:click={() => handleViewModeChange('heatmap')}
         title="Heatmap View (3)"
       >
-        <span class="icon">▦</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <rect x="7" y="7" width="3" height="3"/>
+          <rect x="14" y="7" width="3" height="3"/>
+          <rect x="7" y="14" width="3" height="3"/>
+          <rect x="14" y="14" width="3" height="3"/>
+        </svg>
         <span class="label">Heatmap</span>
       </button>
     </div>
@@ -294,7 +357,11 @@
         on:click={toggleRafters}
         title="Toggle Rafters (R)"
       >
-        <span class="icon">⊞</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
         <span class="label">Rafters</span>
       </button>
       <button
@@ -303,7 +370,11 @@
         on:click={toggleDeadZones}
         title="Toggle Dead Zones"
       >
-        <span class="icon">⚠</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
         <span class="label">Dead Zones</span>
       </button>
       <button
@@ -312,7 +383,14 @@
         on:click={toggleSpacingWarnings}
         title="Toggle Spacing Warnings"
       >
-        <span class="icon">↔</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10H3"/>
+          <path d="M21 6H3"/>
+          <path d="M21 14H3"/>
+          <path d="M21 18H3"/>
+          <path d="M6 6v12"/>
+          <path d="M18 6v12"/>
+        </svg>
         <span class="label">Spacing</span>
       </button>
       <button
@@ -321,7 +399,11 @@
         on:click={cycleLightRadiusVisibility}
         title="Cycle Light Radius Visibility"
       >
-        <span class="icon">◎</span>
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="6"/>
+          <circle cx="12" cy="12" r="2"/>
+        </svg>
         <span class="label">Radius</span>
       </button>
     </div>
@@ -335,7 +417,11 @@
       on:click={toggleLightingStats}
       title="Toggle Lighting Stats (Q)"
     >
-      <span class="icon">📊</span>
+      <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="20" x2="18" y2="10"/>
+        <line x1="12" y1="20" x2="12" y2="4"/>
+        <line x1="6" y1="20" x2="6" y2="14"/>
+      </svg>
       <span class="label">Stats</span>
     </button>
   </div>
@@ -347,7 +433,13 @@
       on:click={toggleUnitFormat}
       title="Toggle Units (U)"
     >
-      <span class="icon">📐</span>
+      <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 3H3v18h18V3z"/>
+        <path d="M21 9H3"/>
+        <path d="M21 15H3"/>
+        <path d="M9 3v18"/>
+        <path d="M15 3v18"/>
+      </svg>
       <span class="label">{unitFormat === 'feet-inches' ? "ft' in\"" : 'in"'}</span>
     </button>
   </div>
@@ -432,9 +524,11 @@
     cursor: not-allowed;
   }
 
-  .icon {
-    font-size: 20px;
-    line-height: 1;
+  .icon-svg {
+    width: 20px;
+    height: 20px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .label {
