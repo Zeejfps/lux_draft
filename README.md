@@ -46,7 +46,7 @@ A professional 2D lighting design and analysis tool for architectural and theatr
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd lumen_2d
+cd lux_draft
 
 # Install dependencies
 npm install
@@ -136,7 +136,7 @@ LuxDraft supports industry-standard IES photometric data files:
 ## Project Structure
 
 ```
-lumen_2d/
+lux_draft/
 ├── src/
 │   ├── components/        # Svelte UI components
 │   │   ├── Canvas.svelte
