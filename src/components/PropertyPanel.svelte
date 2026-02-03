@@ -1,6 +1,6 @@
 <script lang="ts">
   import { roomStore, canPlaceLights, updateWallLength, getVertices, updateVertexPosition, deleteVertex } from '../stores/roomStore';
-  import { selectedLightId, selectedLightIds, selectedWallId, selectedVertexIndex, clearLightSelection, clearVertexSelection } from '../stores/appStore';
+  import { selectedLightId, selectedLightIds, selectedWallId, selectedVertexIndex, clearLightSelection, clearVertexSelection, activeTool } from '../stores/appStore';
   import { lightDefinitions, selectedDefinitionId, setSelectedDefinition, getDefinitionById, addLightDefinitionFromIES } from '../stores/lightDefinitionsStore';
   import { formatImperial, parseImperial } from '../utils/format';
   import { readIESFile } from '../lighting/IESParser';
@@ -33,6 +33,7 @@
   $: canPlace = $canPlaceLights;
   $: definitions = $lightDefinitions;
   $: currentDefinitionId = $selectedDefinitionId;
+  $: currentTool = $activeTool;
 
   $: selectedLights = currentRoom.lights.filter(l => currentSelectedLightIds.has(l.id));
 
@@ -380,7 +381,7 @@
         Delete Light
       </button>
     </div>
-  {:else if canPlace}
+  {:else if canPlace && currentTool === 'light'}
     <div class="property-section">
       <h4>New Light</h4>
       <label class="property-row definition-select">
