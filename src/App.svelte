@@ -15,6 +15,8 @@
   import './stores/themeStore'; // Initialize theme CSS variables
   import type { Vector2 } from './types';
 
+  const iconPath = `${import.meta.env.BASE_URL}icons/lux_draft_icon.png`;
+
   let canvasComponent: Canvas;
   let mousePos: Vector2 = { x: 0, y: 0 };
   let snapType: string = '';
@@ -107,7 +109,7 @@
 <div class="app">
   <header class="header">
     <div class="header-left">
-      <img src="/icons/lux_draft_icon.png" alt="LuxDraft" class="app-icon" />
+      <img src={iconPath} alt="LuxDraft" class="app-icon" />
       <h1>LuxDraft</h1>
     </div>
     <Toolbar on:toggleMeasurement={handleToggleMeasurement} />
