@@ -7,6 +7,7 @@
   import LengthInput from './components/LengthInput.svelte';
   import RafterControls from './components/RafterControls.svelte';
   import LightingStatsPanel from './components/LightingStatsPanel.svelte';
+  import LightDefinitionManager from './components/LightDefinitionManager.svelte';
   import { roomStore } from './stores/roomStore';
   import { activeTool, setActiveTool, setViewMode } from './stores/appStore';
   import { loadFromLocalStorage, setupAutoSave } from './persistence/localStorage';
@@ -18,6 +19,7 @@
   let mousePos: Vector2 = { x: 0, y: 0 };
   let snapType: string = '';
   let showLengthInput: boolean = false;
+  let showLightManager: boolean = false;
   let cleanupAutoSave: (() => void) | null = null;
   let measurement: { deltaX: number; deltaY: number; distance: number } | null = null;
 
@@ -46,6 +48,14 @@
 
   function handleLengthCancel(): void {
     showLengthInput = false;
+  }
+
+  function handleOpenLightManager(): void {
+    showLightManager = true;
+  }
+
+  function handleCloseLightManager(): void {
+    showLightManager = false;
   }
 
   function handleGlobalKeydown(e: KeyboardEvent): void {
@@ -132,7 +142,7 @@
       <RafterControls />
       <LightingStatsPanel />
     </div>
-    <PropertyPanel />
+    <PropertyPanel on:openLightManager={handleOpenLightManager} />
   </main>
 
   <StatusBar {mousePos} {snapType} />
@@ -141,6 +151,11 @@
     visible={showLengthInput}
     on:submit={handleLengthSubmit}
     on:cancel={handleLengthCancel}
+  />
+
+  <LightDefinitionManager
+    visible={showLightManager}
+    on:close={handleCloseLightManager}
   />
 </div>
 
