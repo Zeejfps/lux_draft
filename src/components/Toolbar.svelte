@@ -166,7 +166,10 @@
   <div class="toolbar-section branding-section">
     <div class="branding">
       <img src={iconPath} alt="LuxDraft" class="app-icon" />
-      <h1>LuxDraft</h1>
+      <div class="branding-text">
+        <h1>LuxDraft</h1>
+        <span class="version-badge">{__APP_VERSION__}</span>
+      </div>
     </div>
   </div>
 
@@ -534,8 +537,15 @@
   }
 
   .app-icon {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
+  }
+
+  .branding-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
   }
 
   h1 {
@@ -543,6 +553,13 @@
     font-size: 16px;
     font-weight: 700;
     color: var(--text-primary);
+    white-space: nowrap;
+    line-height: 1;
+  }
+
+  .version-badge {
+    font-size: 9px;
+    color: var(--text-muted);
     white-space: nowrap;
   }
 
