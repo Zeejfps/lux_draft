@@ -1,14 +1,21 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { activeTool, viewMode, setActiveTool, setViewMode, selectedVertexIndex, selectedLightId } from '../stores/appStore';
-  import { canPlaceLights } from '../stores/roomStore';
+  import { activeTool, viewMode, setActiveTool, setViewMode, selectedVertexIndex, selectedLightId, clearSelection } from '../stores/appStore';
+  import { canPlaceLights, roomStore, resetRoom } from '../stores/roomStore';
   import { toggleRafters, rafterConfig, displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
   import { toggleLightingStats, lightingStatsConfig } from '../stores/lightingStatsStore';
   import { toggleDeadZones, deadZoneConfig } from '../stores/deadZoneStore';
   import { toggleSpacingWarnings, spacingConfig } from '../stores/spacingStore';
   import { historyStore, canUndo, canRedo } from '../stores/historyStore';
   import { isMeasuring } from '../stores/measurementStore';
-  import type { Tool, ViewMode, LightRadiusVisibility } from '../types';
+  import { exportToJSON } from '../persistence/jsonExport';
+  import { importFromJSON } from '../persistence/jsonImport';
+  import { saveNow, clearLocalStorage } from '../persistence/localStorage';
+  import type { Tool, ViewMode, LightRadiusVisibility, RoomState } from '../types';
+
+  let fileInput: HTMLInputElement;
+  let currentRoom: RoomState;
+  $: currentRoom = $roomStore;
 
   const dispatch = createEventDispatcher<{ toggleMeasurement: void }>();
 
@@ -80,26 +87,108 @@
       default: return 'Radius';
     }
   }
+
+  function handleNew(): void {
+    if (currentRoom.walls.length > 0 || currentRoom.lights.length > 0) {
+      if (!confirm('Start a new project? Unsaved changes will be lost.')) {
+        return;
+      }
+    }
+    clearLocalStorage();
+    resetRoom();
+    clearSelection();
+  }
+
+  function handleSave(): void {
+    saveNow(currentRoom);
+  }
+
+  function handleExport(): void {
+    exportToJSON(currentRoom);
+  }
+
+  function handleImportClick(): void {
+    fileInput.click();
+  }
+
+  async function handleFileSelect(e: Event): Promise<void> {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      const imported = await importFromJSON(file);
+      roomStore.set(imported);
+      clearSelection();
+    } catch (err) {
+      alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+
+    input.value = '';
+  }
 </script>
+
+<input
+  type="file"
+  accept=".json"
+  bind:this={fileInput}
+  on:change={handleFileSelect}
+  style="display: none"
+/>
 
 <div class="toolbar">
   <div class="toolbar-section">
+    <span class="section-label">File</span>
     <div class="button-group">
       <button
-        class="icon-button"
+        class="tool-button"
+        on:click={handleNew}
+        title="New Project"
+      >
+        <span class="icon">📄</span>
+        <span class="label">New</span>
+      </button>
+      <button
+        class="tool-button"
+        on:click={handleSave}
+        title="Save to Browser"
+      >
+        <span class="icon">💾</span>
+        <span class="label">Save</span>
+      </button>
+      <button
+        class="tool-button"
+        on:click={handleImportClick}
+        title="Import JSON"
+      >
+        <span class="icon">📂</span>
+        <span class="label">Open</span>
+      </button>
+      <button
+        class="tool-button"
+        on:click={handleExport}
+        title="Export as JSON"
+      >
+        <span class="icon">📥</span>
+        <span class="label">Export</span>
+      </button>
+      <button
+        class="tool-button"
         disabled={!undoEnabled}
         on:click={() => historyStore.undo()}
         title="Undo (Ctrl+Z)"
       >
-        ↶
+        <span class="icon">↶</span>
+        <span class="label">Undo</span>
       </button>
       <button
-        class="icon-button"
+        class="tool-button"
         disabled={!redoEnabled}
         on:click={() => historyStore.redo()}
         title="Redo (Ctrl+Y)"
       >
-        ↷
+        <span class="icon">↷</span>
+        <span class="label">Redo</span>
       </button>
     </div>
   </div>
@@ -135,6 +224,12 @@
         <span class="icon">💡</span>
         <span class="label">Light</span>
       </button>
+    </div>
+  </div>
+
+  <div class="toolbar-section">
+    <span class="section-label">Modes</span>
+    <div class="button-group">
       <button
         class="toggle-button"
         class:active={gridSnapEnabled}

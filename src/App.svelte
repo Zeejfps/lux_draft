@@ -6,7 +6,6 @@
   import StatusBar from './components/StatusBar.svelte';
   import LengthInput from './components/LengthInput.svelte';
   import RafterControls from './components/RafterControls.svelte';
-  import FileMenu from './components/FileMenu.svelte';
   import LightingStatsPanel from './components/LightingStatsPanel.svelte';
   import { roomStore } from './stores/roomStore';
   import { activeTool, setActiveTool, setViewMode } from './stores/appStore';
@@ -102,7 +101,6 @@
       <h1>LuxDraft</h1>
     </div>
     <Toolbar on:toggleMeasurement={handleToggleMeasurement} />
-    <FileMenu />
   </header>
 
   <main class="main">
