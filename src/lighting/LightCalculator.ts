@@ -1,6 +1,6 @@
 import type { Vector2, LightFixture } from '../types';
 import { smoothstep, degToRad } from '../utils/math';
-import { MIN_DISTANCE_FT, BEAM_FALLOFF, MIN_SOLID_ANGLE, MAX_LUX_FOR_COLOR } from './constants';
+import { MIN_DISTANCE_FT, BEAM_FALLOFF, MIN_SOLID_ANGLE, MAX_LUX_FOR_COLOR, FEET_TO_METERS } from './constants';
 
 export class LightCalculator {
   calculateLux(point: Vector2, lights: LightFixture[], ceilingHeight: number): number {
@@ -43,8 +43,12 @@ export class LightCalculator {
     const solidAngle = 2 * Math.PI * (1 - Math.cos(halfBeam));
     const candelas = light.properties.lumen / Math.max(solidAngle, MIN_SOLID_ANGLE);
 
+    // Convert distance from feet to meters for lux calculation
+    // Illuminance formula requires distance in meters: E = I / d²
+    const dist3DMeters = dist3D * FEET_TO_METERS;
+
     // Illuminance = candelas * cos(angle) / distance^2
-    const lux = (candelas * cosAngle) / (dist3D * dist3D);
+    const lux = (candelas * cosAngle) / (dist3DMeters * dist3DMeters);
 
     return lux * beamAtten;
   }

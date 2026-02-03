@@ -1,5 +1,6 @@
 #define MAX_LIGHTS 32
 #define MAX_POLYGON_VERTICES 64
+#define FEET_TO_METERS 0.3048
 
 uniform int uLightCount;
 uniform vec2 uLightPositions[MAX_LIGHTS];
@@ -46,8 +47,9 @@ float customSmoothstep(float edge0, float edge1, float x) {
 }
 
 vec3 luxToColor(float lux) {
-  // Scale: 0-50 lux = blue to green, 50-150 lux = green to red
-  float t = clamp(lux / 150.0, 0.0, 1.0);
+  // Scale: 0-200 lux = blue to green, 200-400 = green to yellow, 400-600+ = yellow to red
+  // This range covers most residential/commercial lighting needs
+  float t = clamp(lux / 600.0, 0.0, 1.0);
   vec3 blue = vec3(0.0, 0.0, 1.0);
   vec3 green = vec3(0.0, 1.0, 0.0);
   vec3 yellow = vec3(1.0, 1.0, 0.0);
@@ -94,8 +96,12 @@ void main() {
     float solidAngle = 2.0 * 3.14159 * (1.0 - cos(halfBeam));
     float candelas = uLightLumens[i] / max(solidAngle, 0.1);
 
+    // Convert distance from feet to meters for lux calculation
+    // Illuminance formula requires distance in meters: E = I / d²
+    float dist3DMeters = dist3D * FEET_TO_METERS;
+
     // Illuminance = candelas * cos(angle) / distance^2
-    float lux = (candelas * cosAngle) / (dist3D * dist3D);
+    float lux = (candelas * cosAngle) / (dist3DMeters * dist3DMeters);
 
     totalLux += lux * beamAtten;
   }

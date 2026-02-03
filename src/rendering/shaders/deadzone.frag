@@ -1,4 +1,5 @@
 #define MAX_LIGHTS 32
+#define FEET_TO_METERS 0.3048
 
 uniform int uLightCount;
 uniform vec2 uLightPositions[MAX_LIGHTS];
@@ -42,8 +43,11 @@ void main() {
     float solidAngle = 2.0 * 3.14159 * (1.0 - cos(halfBeam));
     float candelas = uLightLumens[i] / max(solidAngle, 0.1);
 
+    // Convert distance from feet to meters for lux calculation
+    float dist3DMeters = dist3D * FEET_TO_METERS;
+
     // Illuminance = candelas * cos(angle) / distance^2
-    float lux = (candelas * cosAngle) / (dist3D * dist3D);
+    float lux = (candelas * cosAngle) / (dist3DMeters * dist3DMeters);
 
     totalLux += lux * beamAtten;
   }
