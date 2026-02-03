@@ -174,7 +174,7 @@
     padding: 0 16px;
     background: var(--panel-bg);
     border-bottom: 1px solid var(--border-color);
-    height: 52px;
+    min-height: 80px;
     flex-shrink: 0;
   }
 

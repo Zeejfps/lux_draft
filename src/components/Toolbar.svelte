@@ -114,7 +114,7 @@
         title="Select (V)"
       >
         <span class="icon">↖</span>
-        Select
+        <span class="label">Select</span>
       </button>
       <button
         class="tool-button"
@@ -123,7 +123,7 @@
         title="Draw Walls (D)"
       >
         <span class="icon">✏</span>
-        Draw
+        <span class="label">Draw</span>
       </button>
       <button
         class="tool-button"
@@ -133,7 +133,7 @@
         title={lightsEnabled ? 'Place Lights (L)' : 'Close room first'}
       >
         <span class="icon">💡</span>
-        Light
+        <span class="label">Light</span>
       </button>
       <button
         class="toggle-button"
@@ -142,7 +142,7 @@
         title="Snap to Grid (S)"
       >
         <span class="icon">#</span>
-        Snap
+        <span class="label">Snap</span>
       </button>
       <button
         class="toggle-button measuring"
@@ -152,7 +152,7 @@
         title={measuringActive ? "Measuring Active (Press M or ESC to exit)" : canMeasure ? "Start Measuring (M)" : "Select a vertex or light first"}
       >
         <span class="icon">📏</span>
-        Measure
+        <span class="label">Measure</span>
       </button>
     </div>
   </div>
@@ -166,7 +166,8 @@
         on:click={() => handleViewModeChange('editor')}
         title="Editor View (1)"
       >
-        Editor
+        <span class="icon">✎</span>
+        <span class="label">Editor</span>
       </button>
       <button
         class="view-button"
@@ -174,7 +175,8 @@
         on:click={() => handleViewModeChange('shadow')}
         title="Shadow View (2)"
       >
-        Shadow
+        <span class="icon">◐</span>
+        <span class="label">Shadow</span>
       </button>
       <button
         class="view-button"
@@ -182,7 +184,8 @@
         on:click={() => handleViewModeChange('heatmap')}
         title="Heatmap View (3)"
       >
-        Heatmap
+        <span class="icon">▦</span>
+        <span class="label">Heatmap</span>
       </button>
     </div>
   </div>
@@ -197,7 +200,7 @@
         title="Toggle Rafters (R)"
       >
         <span class="icon">⊞</span>
-        Rafters
+        <span class="label">Rafters</span>
       </button>
       <button
         class="toggle-button"
@@ -206,7 +209,7 @@
         title="Toggle Dead Zones"
       >
         <span class="icon">⚠</span>
-        Dead Zones
+        <span class="label">Dead Zones</span>
       </button>
       <button
         class="toggle-button"
@@ -215,7 +218,7 @@
         title="Toggle Spacing Warnings"
       >
         <span class="icon">↔</span>
-        Spacing
+        <span class="label">Spacing</span>
       </button>
       <button
         class="toggle-button"
@@ -224,7 +227,7 @@
         title="Cycle Light Radius Visibility"
       >
         <span class="icon">◎</span>
-        {getRadiusVisibilityLabel(lightRadiusVisibility)}
+        <span class="label">Radius</span>
       </button>
     </div>
   </div>
@@ -238,7 +241,7 @@
       title="Toggle Lighting Stats (Q)"
     >
       <span class="icon">📊</span>
-      Stats
+      <span class="label">Stats</span>
     </button>
   </div>
 
@@ -249,7 +252,8 @@
       on:click={toggleUnitFormat}
       title="Toggle Units (U)"
     >
-      {unitFormat === 'feet-inches' ? "ft' in\"" : 'in"'}
+      <span class="icon">📐</span>
+      <span class="label">{unitFormat === 'feet-inches' ? "ft' in\"" : 'in"'}</span>
     </button>
   </div>
 </div>
@@ -257,9 +261,9 @@
 <style>
   .toolbar {
     display: flex;
-    align-items: center;
-    gap: 24px;
-    padding: 8px 16px;
+    align-items: stretch;
+    gap: 16px;
+    padding: 6px 16px;
     background: var(--panel-bg);
     border-bottom: 1px solid var(--border-color);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -267,34 +271,47 @@
 
   .toolbar-section {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 4px;
+    padding-right: 16px;
+    border-right: 1px solid var(--border-color);
+  }
+
+  .toolbar-section:last-child {
+    border-right: none;
+    padding-right: 0;
   }
 
   .section-label {
-    font-size: 12px;
+    font-size: 10px;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    text-align: center;
   }
 
   .button-group {
     display: flex;
-    gap: 4px;
+    gap: 2px;
+    flex: 1;
   }
 
   .tool-button,
   .view-button,
   .toggle-button {
     display: flex;
+    flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 6px 12px;
-    border: 1px solid var(--border-color);
+    padding: 8px 12px;
+    min-width: 56px;
+    min-height: 54px;
+    border: 1px solid transparent;
     border-radius: 4px;
-    background: var(--button-bg);
+    background: transparent;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 11px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
@@ -303,7 +320,7 @@
   .view-button:hover,
   .toggle-button:hover {
     background: var(--button-bg-hover);
-    border-color: var(--button-bg-hover);
+    border-color: var(--border-color);
   }
 
   .tool-button.active,
@@ -314,34 +331,41 @@
     color: var(--text-primary);
   }
 
-  .tool-button:disabled {
+  .tool-button:disabled,
+  .toggle-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
   .icon {
-    font-size: 14px;
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .label {
+    white-space: nowrap;
   }
 
   .icon-button {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: 1px solid var(--border-color);
+    width: 44px;
+    min-height: 54px;
+    padding: 8px 4px;
+    border: 1px solid transparent;
     border-radius: 4px;
-    background: var(--button-bg);
+    background: transparent;
     color: var(--text-secondary);
-    font-size: 18px;
+    font-size: 20px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
   .icon-button:hover:not(:disabled) {
     background: var(--button-bg-hover);
-    border-color: var(--button-bg-hover);
+    border-color: var(--border-color);
   }
 
   .icon-button:disabled {
@@ -371,13 +395,13 @@
   }
 
   .toggle-button.measuring:not(.active):not(:disabled) {
-    background: var(--button-bg);
-    border-color: var(--border-color);
+    background: transparent;
+    border-color: transparent;
     color: var(--text-secondary);
   }
 
   .toggle-button.measuring:not(.active):not(:disabled):hover {
     background: var(--button-bg-hover);
-    border-color: var(--button-bg-hover);
+    border-color: var(--border-color);
   }
 </style>
