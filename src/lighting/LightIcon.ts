@@ -166,9 +166,6 @@ export class LightIcon {
       case 'always':
         this.beamPreview.visible = true;
         break;
-      case 'never':
-        this.beamPreview.visible = false;
-        break;
       case 'selected':
       default:
         this.beamPreview.visible = this.selected;

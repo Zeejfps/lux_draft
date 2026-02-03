@@ -167,10 +167,10 @@ function validateDisplayPreferences(data: unknown): DisplayPreferences {
   const gridSize = typeof prefs.gridSize === 'number' && prefs.gridSize > 0 ? prefs.gridSize : 0.5;
 
   // lightRadiusVisibility is optional for backwards compatibility
-  const validVisibilityValues = ['selected', 'always', 'never'];
+  const validVisibilityValues = ['selected', 'always'];
   const rawVisibility = prefs.lightRadiusVisibility as string | undefined;
   const lightRadiusVisibility = rawVisibility && validVisibilityValues.includes(rawVisibility)
-    ? (rawVisibility as 'selected' | 'always' | 'never')
+    ? (rawVisibility as 'selected' | 'always')
     : 'selected';
 
   return {

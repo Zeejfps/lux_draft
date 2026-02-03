@@ -35,7 +35,12 @@ export function initSettingsFromRoom(): void {
   }
   if (state.displayPreferences) {
     // Merge with defaults to handle missing fields from old data
-    displayPreferences.set({ ...DEFAULT_DISPLAY_PREFERENCES, ...state.displayPreferences });
+    const mergedPrefs = { ...DEFAULT_DISPLAY_PREFERENCES, ...state.displayPreferences };
+    // Migrate legacy 'never' value to 'selected'
+    if ((mergedPrefs.lightRadiusVisibility as any) === 'never') {
+      mergedPrefs.lightRadiusVisibility = 'selected';
+    }
+    displayPreferences.set(mergedPrefs);
   }
   isLoadingFromSavedState = false;
 }

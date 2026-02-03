@@ -30,7 +30,7 @@ export interface RafterConfig {
 }
 
 export type UnitFormat = 'feet-inches' | 'inches';
-export type LightRadiusVisibility = 'selected' | 'always' | 'never';
+export type LightRadiusVisibility = 'selected' | 'always';
 
 export interface DisplayPreferences {
   useFractions: boolean;
