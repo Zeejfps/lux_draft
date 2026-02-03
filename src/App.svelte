@@ -198,8 +198,8 @@
   }
 
   .app-icon {
-    width: 36px;
-    height: 36px;
+    width: 48px;
+    height: 48px;
   }
 
   h1 {
