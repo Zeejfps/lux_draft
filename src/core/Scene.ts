@@ -49,6 +49,12 @@ export class Scene {
   private handleResize(): void {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
+
+    // Skip resize if dimensions are invalid (can happen during resize transitions)
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+
     const aspect = width / height;
     const frustumSize = DEFAULT_FRUSTUM_SIZE / this.zoom;
 
@@ -59,6 +65,9 @@ export class Scene {
     this.camera.updateProjectionMatrix();
 
     this.renderer.setSize(width, height);
+
+    // Render immediately to prevent flash during resize
+    this.render();
   }
 
   private addGrid(): void {
