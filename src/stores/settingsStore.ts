@@ -9,25 +9,25 @@ export const displayPreferences = writable<DisplayPreferences>({
   ...DEFAULT_DISPLAY_PREFERENCES,
 });
 
-// Flag to prevent circular updates during initialization
-let isInitializing = false;
+// Flag to prevent circular updates during initialization from saved state
+let isLoadingFromSavedState = false;
 
-// Sync settings to roomStore when they change
+// Sync settings to roomStore when they change (but not during initial load)
 rafterConfig.subscribe((config) => {
-  if (!isInitializing) {
+  if (!isLoadingFromSavedState) {
     roomStore.update(state => ({ ...state, rafterConfig: config }));
   }
 });
 
 displayPreferences.subscribe((prefs) => {
-  if (!isInitializing) {
+  if (!isLoadingFromSavedState) {
     roomStore.update(state => ({ ...state, displayPreferences: prefs }));
   }
 });
 
-// Initialize settings from roomStore
+// Initialize settings from roomStore (called when loading saved projects)
 export function initSettingsFromRoom(): void {
-  isInitializing = true;
+  isLoadingFromSavedState = true;
   const state = get(roomStore);
   if (state.rafterConfig) {
     // Merge with defaults to handle missing fields from old data
@@ -37,7 +37,7 @@ export function initSettingsFromRoom(): void {
     // Merge with defaults to handle missing fields from old data
     displayPreferences.set({ ...DEFAULT_DISPLAY_PREFERENCES, ...state.displayPreferences });
   }
-  isInitializing = false;
+  isLoadingFromSavedState = false;
 }
 
 export function toggleRafters(): void {

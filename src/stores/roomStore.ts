@@ -1,7 +1,8 @@
 import { writable, derived } from 'svelte/store';
-import type { RoomState, WallSegment } from '../types';
+import type { RoomState, WallSegment, Vector2 } from '../types';
 import { DEFAULT_ROOM_STATE } from '../types';
-import { vectorSubtract, vectorNormalize, vectorAdd, vectorScale } from '../utils/math';
+import { vectorSubtract, vectorNormalize, vectorAdd, vectorScale, distancePointToPoint } from '../utils/math';
+import { generateId } from '../utils/id';
 
 export const roomStore = writable<RoomState>({ ...DEFAULT_ROOM_STATE });
 
@@ -64,10 +65,7 @@ export function updateWallLength(wallId: string, newLength: number): void {
       const nextWall = newWalls[nextWallIndex];
 
       // Update the next wall's start to match this wall's new end
-      const nextWallLength = Math.sqrt(
-        Math.pow(nextWall.end.x - newEnd.x, 2) +
-        Math.pow(nextWall.end.y - newEnd.y, 2)
-      );
+      const nextWallLength = distancePointToPoint(newEnd, nextWall.end);
 
       newWalls[nextWallIndex] = {
         ...nextWall,
@@ -84,12 +82,12 @@ export function getWallById(state: RoomState, wallId: string): WallSegment | nul
   return state.walls.find(w => w.id === wallId) ?? null;
 }
 
-export function getVertices(state: RoomState): import('../types').Vector2[] {
+export function getVertices(state: RoomState): Vector2[] {
   if (state.walls.length === 0) return [];
   return state.walls.map(w => w.start);
 }
 
-export function updateVertexPosition(vertexIndex: number, newPosition: import('../types').Vector2): void {
+export function updateVertexPosition(vertexIndex: number, newPosition: Vector2): void {
   roomStore.update(state => {
     if (!state.isClosed || state.walls.length === 0) return state;
 
@@ -101,10 +99,7 @@ export function updateVertexPosition(vertexIndex: number, newPosition: import('.
     // The vertex at index i is the start of wall[i] and end of wall[i-1]
     // Update wall[vertexIndex].start
     const currentWall = newWalls[vertexIndex];
-    const newLength = Math.sqrt(
-      Math.pow(currentWall.end.x - newPosition.x, 2) +
-      Math.pow(currentWall.end.y - newPosition.y, 2)
-    );
+    const newLength = distancePointToPoint(newPosition, currentWall.end);
     newWalls[vertexIndex] = {
       ...currentWall,
       start: { ...newPosition },
@@ -114,10 +109,7 @@ export function updateVertexPosition(vertexIndex: number, newPosition: import('.
     // Update wall[(vertexIndex - 1 + numWalls) % numWalls].end
     const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
     const prevWall = newWalls[prevWallIndex];
-    const prevLength = Math.sqrt(
-      Math.pow(newPosition.x - prevWall.start.x, 2) +
-      Math.pow(newPosition.y - prevWall.start.y, 2)
-    );
+    const prevLength = distancePointToPoint(prevWall.start, newPosition);
     newWalls[prevWallIndex] = {
       ...prevWall,
       end: { ...newPosition },
@@ -128,7 +120,7 @@ export function updateVertexPosition(vertexIndex: number, newPosition: import('.
   });
 }
 
-export function insertVertexOnWall(wallId: string, position: import('../types').Vector2): number | null {
+export function insertVertexOnWall(wallId: string, position: Vector2): number | null {
   let insertedIndex: number | null = null;
 
   roomStore.update(state => {
@@ -141,23 +133,17 @@ export function insertVertexOnWall(wallId: string, position: import('../types').
 
     // Create two new walls from the split
     const newWall1: WallSegment = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       start: { ...wall.start },
       end: { ...position },
-      length: Math.sqrt(
-        Math.pow(position.x - wall.start.x, 2) +
-        Math.pow(position.y - wall.start.y, 2)
-      ),
+      length: distancePointToPoint(wall.start, position),
     };
 
     const newWall2: WallSegment = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       start: { ...position },
       end: { ...wall.end },
-      length: Math.sqrt(
-        Math.pow(wall.end.x - position.x, 2) +
-        Math.pow(wall.end.y - position.y, 2)
-      ),
+      length: distancePointToPoint(position, wall.end),
     };
 
     // Replace the old wall with two new walls
@@ -177,7 +163,7 @@ export function insertVertexOnWall(wallId: string, position: import('../types').
   return insertedIndex;
 }
 
-export function moveWall(wallId: string, newStart: import('../types').Vector2, newEnd: import('../types').Vector2): void {
+export function moveWall(wallId: string, newStart: Vector2, newEnd: Vector2): void {
   roomStore.update(state => {
     if (!state.isClosed || state.walls.length === 0) return state;
 
@@ -199,10 +185,7 @@ export function moveWall(wallId: string, newStart: import('../types').Vector2, n
     // Update the previous wall's end point (it shares start vertex with this wall)
     const prevWallIndex = (wallIndex - 1 + numWalls) % numWalls;
     const prevWall = newWalls[prevWallIndex];
-    const prevLength = Math.sqrt(
-      Math.pow(newStart.x - prevWall.start.x, 2) +
-      Math.pow(newStart.y - prevWall.start.y, 2)
-    );
+    const prevLength = distancePointToPoint(prevWall.start, newStart);
     newWalls[prevWallIndex] = {
       ...prevWall,
       end: { ...newStart },
@@ -212,10 +195,7 @@ export function moveWall(wallId: string, newStart: import('../types').Vector2, n
     // Update the next wall's start point (it shares end vertex with this wall)
     const nextWallIndex = (wallIndex + 1) % numWalls;
     const nextWall = newWalls[nextWallIndex];
-    const nextLength = Math.sqrt(
-      Math.pow(nextWall.end.x - newEnd.x, 2) +
-      Math.pow(nextWall.end.y - newEnd.y, 2)
-    );
+    const nextLength = distancePointToPoint(newEnd, nextWall.end);
     newWalls[nextWallIndex] = {
       ...nextWall,
       start: { ...newEnd },
@@ -248,10 +228,7 @@ export function deleteVertex(vertexIndex: number): boolean {
       id: prevWall.id, // Keep the previous wall's id
       start: { ...prevWall.start },
       end: { ...currentWall.end },
-      length: Math.sqrt(
-        Math.pow(currentWall.end.x - prevWall.start.x, 2) +
-        Math.pow(currentWall.end.y - prevWall.start.y, 2)
-      ),
+      length: distancePointToPoint(prevWall.start, currentWall.end),
     };
 
     // Build new walls array

@@ -1,4 +1,4 @@
-import type { Vector2, LightFixture, LightProperties } from '../types';
+import type { Vector2, LightFixture, LightProperties, LightDefinition } from '../types';
 import { DEFAULT_LIGHT_PROPERTIES, DEFAULT_LIGHT_DEFINITIONS } from '../types';
 import { generateId } from '../utils/id';
 import { distancePointToPoint } from '../utils/math';
@@ -6,6 +6,11 @@ import { getDefinitionById } from '../stores/lightDefinitionsStore';
 
 export class LightManager {
   private lights: Map<string, LightFixture> = new Map();
+  private getDefinition: (id: string) => LightDefinition | null;
+
+  constructor(getDefinition: (id: string) => LightDefinition | null = getDefinitionById) {
+    this.getDefinition = getDefinition;
+  }
 
   /**
    * Add a light at the given position
@@ -19,7 +24,7 @@ export class LightManager {
     if (typeof definitionIdOrProperties === 'string') {
       // New style: definition ID
       definitionId = definitionIdOrProperties;
-      const definition = getDefinitionById(definitionId);
+      const definition = this.getDefinition(definitionId);
       properties = definition
         ? { lumen: definition.lumen, beamAngle: definition.beamAngle, warmth: definition.warmth }
         : { ...DEFAULT_LIGHT_PROPERTIES };
@@ -29,7 +34,7 @@ export class LightManager {
     } else {
       // No argument: use default definition
       definitionId = DEFAULT_LIGHT_DEFINITIONS[0].id;
-      const definition = getDefinitionById(definitionId);
+      const definition = this.getDefinition(definitionId);
       properties = definition
         ? { lumen: definition.lumen, beamAngle: definition.beamAngle, warmth: definition.warmth }
         : { ...DEFAULT_LIGHT_PROPERTIES };
@@ -62,7 +67,7 @@ export class LightManager {
     const light = this.lights.get(id);
     if (!light) return null;
 
-    const definition = getDefinitionById(definitionId);
+    const definition = this.getDefinition(definitionId);
     if (!definition) return null;
 
     light.definitionId = definitionId;
