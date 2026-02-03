@@ -335,34 +335,36 @@
 
   function updateMeasurementPositions(): void {
     const vertices = getVertices(currentRoomState);
+    const source = measurementController.source;
+    const target = measurementController.target;
 
     // Update source position if it's a vertex
-    if (measurementController.source?.type === 'vertex') {
-      const idx = measurementController.source.index;
+    if (source?.type === 'vertex') {
+      const idx = source.index;
       if (vertices[idx]) {
         measurementController.updateSourcePosition(vertices[idx]);
       }
     }
 
     // Update source position if it's a light
-    if (measurementController.source?.type === 'light') {
-      const light = currentRoomState.lights.find(l => l.id === measurementController.source?.id);
+    if (source?.type === 'light') {
+      const light = currentRoomState.lights.find(l => l.id === source.id);
       if (light) {
         measurementController.updateSourcePosition(light.position, currentRoomState.walls);
       }
     }
 
     // Update target position if it's a vertex
-    if (measurementController.target?.type === 'vertex') {
-      const idx = measurementController.target.index;
+    if (target?.type === 'vertex') {
+      const idx = target.index;
       if (vertices[idx]) {
         measurementController.updateTargetPosition(vertices[idx]);
       }
     }
 
     // Update target position if it's a light
-    if (measurementController.target?.type === 'light') {
-      const light = currentRoomState.lights.find(l => l.id === measurementController.target.id);
+    if (target?.type === 'light') {
+      const light = currentRoomState.lights.find(l => l.id === target.id);
       if (light) {
         measurementController.updateTargetPosition(light.position);
       }
