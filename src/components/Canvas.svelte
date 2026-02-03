@@ -1,49 +1,81 @@
 <script lang="ts">
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { get } from 'svelte/store';
-  import { Scene } from '../core/Scene';
-  import { InputManager, type InputEvent } from '../core/InputManager';
-  import { EditorRenderer } from '../rendering/EditorRenderer';
-  import { HeatmapRenderer } from '../rendering/HeatmapRenderer';
-  import { ShadowRenderer } from '../rendering/ShadowRenderer';
-  import { RafterOverlay } from '../rendering/RafterOverlay';
-  import { DeadZoneRenderer } from '../rendering/DeadZoneRenderer';
-  import { SpacingWarningRenderer } from '../rendering/SpacingWarningRenderer';
-  import { WallBuilder } from '../geometry/WallBuilder';
-  import { PolygonValidator } from '../geometry/PolygonValidator';
-  import { LightManager } from '../lighting/LightManager';
-  import { SnapController, type SnapGuide } from '../controllers/SnapController';
-  import { MeasurementController } from '../controllers/MeasurementController';
-  import { roomStore, roomBounds, canPlaceLights, getVertices, updateVertexPosition, insertVertexOnWall, deleteVertex, moveWall } from '../stores/roomStore';
-  import { viewMode, activeTool, selectedLightId, selectedLightIds, selectedWallId, selectedVertexIndex, selectedVertexIndices, isDrawingEnabled, isLightPlacementEnabled, selectLight, clearLightSelection, selectVertex, clearVertexSelection } from '../stores/appStore';
-  import { historyStore } from '../stores/historyStore';
-  import { rafterConfig, displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
-  import { deadZoneConfig } from '../stores/deadZoneStore';
-  import { spacingConfig, spacingWarnings } from '../stores/spacingStore';
-  import { toggleLightingStats } from '../stores/lightingStatsStore';
-  import { selectedDefinitionId } from '../stores/lightDefinitionsStore';
-  import { isMeasuring } from '../stores/measurementStore';
-  import { findVertexAtPosition, findVerticesInBox, findLightsInBox } from '../utils/math';
-  import type { Vector2, ViewMode, RoomState, BoundingBox, RafterConfig, DisplayPreferences, DeadZoneConfig, SpacingConfig, SpacingWarning, BoxSelectionState, GrabModeState, SelectionState, InteractionContext } from '../types';
+    import {createEventDispatcher, onDestroy, onMount} from 'svelte';
+    import {get} from 'svelte/store';
+    import {Scene} from '../core/Scene';
+    import {type InputEvent, InputManager} from '../core/InputManager';
+    import {EditorRenderer} from '../rendering/EditorRenderer';
+    import {HeatmapRenderer} from '../rendering/HeatmapRenderer';
+    import {ShadowRenderer} from '../rendering/ShadowRenderer';
+    import {RafterOverlay} from '../rendering/RafterOverlay';
+    import {DeadZoneRenderer} from '../rendering/DeadZoneRenderer';
+    import {SpacingWarningRenderer} from '../rendering/SpacingWarningRenderer';
+    import {WallBuilder} from '../geometry/WallBuilder';
+    import {PolygonValidator} from '../geometry/PolygonValidator';
+    import {LightManager} from '../lighting/LightManager';
+    import {MeasurementController, SnapController} from '../controllers';
+    import {
+        canPlaceLights,
+        deleteVertex,
+        getVertices,
+        insertVertexOnWall,
+        moveWall,
+        roomBounds,
+        roomStore,
+        updateVertexPosition
+    } from '../stores/roomStore';
+    import {
+        clearLightSelection,
+        clearVertexSelection,
+        isDrawingEnabled,
+        isLightPlacementEnabled,
+        selectedLightId,
+        selectedLightIds,
+        selectedVertexIndex,
+        selectedVertexIndices,
+        selectedWallId,
+        selectLight,
+        selectVertex,
+        viewMode
+    } from '../stores/appStore';
+    import {historyStore} from '../stores/historyStore';
+    import {displayPreferences, rafterConfig, toggleUnitFormat} from '../stores/settingsStore';
+    import {deadZoneConfig} from '../stores/deadZoneStore';
+    import {spacingConfig, spacingWarnings} from '../stores/spacingStore';
+    import {toggleLightingStats} from '../stores/lightingStatsStore';
+    import {selectedDefinitionId} from '../stores/lightDefinitionsStore';
+    import {isMeasuring} from '../stores/measurementStore';
+    import type {
+        BoundingBox,
+        BoxSelectionState,
+        DeadZoneConfig,
+        DisplayPreferences,
+        InteractionContext,
+        RafterConfig,
+        RoomState,
+        SpacingConfig,
+        SpacingWarning,
+        Vector2,
+        ViewMode
+    } from '../types';
 
-  // Interaction system imports
-  import {
-    DragManager,
-    InteractionManager,
-    KeyboardShortcutManager,
-    createDefaultKeyboardShortcuts,
-    UnifiedDragOperation,
-    WallDragOperation,
-    GrabModeDragOperation,
-    DrawingHandler,
-    LightPlacementHandler,
-    BoxSelectionHandler,
-    MeasurementHandler,
-    GrabModeHandler,
-    SelectionHandler,
-  } from '../interactions';
+    // Interaction system imports
+    import {
+        BoxSelectionHandler,
+        createDefaultKeyboardShortcuts,
+        DragManager,
+        DrawingHandler,
+        GrabModeDragOperation,
+        GrabModeHandler,
+        InteractionManager,
+        KeyboardShortcutManager,
+        LightPlacementHandler,
+        MeasurementHandler,
+        SelectionHandler,
+        UnifiedDragOperation,
+        WallDragOperation,
+    } from '../interactions';
 
-  // ============================================
+    // ============================================
   // Component State
   // ============================================
 
@@ -518,7 +550,7 @@
         setBoxSelectionState: (state) => { boxSelectionState = state; },
       },
       {
-        onBoxSelectionStart: (start) => {},
+        onBoxSelectionStart: (_start) => {},
         onBoxSelectionUpdate: (start, current) => editorRenderer.setSelectionBox(start, current),
         onBoxSelectionComplete: (vertexIndices, lightIds, addToSelection) => {
           if (vertexIndices.length > 0) {
@@ -688,7 +720,7 @@
       },
       {
         ...dragManager.getCallbacks(),
-        onMeasurementUpdate: (delta) => {
+        onMeasurementUpdate: (_delta) => {
           // Handle measurement updates during drag if needed
         },
       }
