@@ -98,8 +98,7 @@
 <div class="app">
   <header class="header">
     <div class="header-left">
-      <h1>Lumen2D</h1>
-      <span class="tagline">Recessed Lighting Planner</span>
+      <h1>LuxDraft</h1>
     </div>
     <Toolbar on:toggleMeasurement={handleToggleMeasurement} />
     <FileMenu />
