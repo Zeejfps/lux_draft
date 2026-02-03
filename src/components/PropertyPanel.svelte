@@ -37,6 +37,14 @@
 
   $: selectedLights = currentRoom.lights.filter(l => currentSelectedLightIds.has(l.id));
 
+  // Check if all selected lights share the same definition
+  $: commonDefinitionId = (() => {
+    if (selectedLights.length === 0) return null;
+    const firstDefId = selectedLights[0].definitionId;
+    const allSame = selectedLights.every(l => l.definitionId === firstDefId);
+    return allSame ? firstDefId : null;
+  })();
+
   $: selectedLight = currentSelectedLightId
     ? currentRoom.lights.find(l => l.id === currentSelectedLightId) ?? null
     : null;
@@ -323,14 +331,35 @@
       <h4>{selectedLights.length} Lights Selected</h4>
       <p class="multi-select-hint">Shift+click to add/remove lights from selection</p>
       <label class="property-row definition-select">
-        <span>Change All To</span>
-        <select on:change={updateLightDefinition}>
-          <option value="" disabled selected>Select type...</option>
+        <span>{commonDefinitionId ? 'Type' : 'Change All To'}</span>
+        <select value={commonDefinitionId || ''} on:change={updateLightDefinition}>
+          {#if !commonDefinitionId}
+            <option value="" disabled>Mixed types...</option>
+          {/if}
           {#each definitions as def}
             <option value={def.id}>{def.name}</option>
           {/each}
         </select>
       </label>
+      {#if commonDefinitionId}
+        {@const def = getDefinitionById(commonDefinitionId)}
+        {#if def}
+          <div class="light-specs">
+            <div class="spec-row">
+              <span>Lumens (each)</span>
+              <span>{def.lumen} lm</span>
+            </div>
+            <div class="spec-row">
+              <span>Beam Angle</span>
+              <span>{def.beamAngle}°</span>
+            </div>
+            <div class="spec-row">
+              <span>Color Temp</span>
+              <span>{def.warmth}K</span>
+            </div>
+          </div>
+        {/if}
+      {/if}
       <div class="light-summary">
         <div class="summary-row">
           <span>Total Lumens</span>
