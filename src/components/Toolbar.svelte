@@ -33,6 +33,7 @@
   let measuringActive: boolean;
   let canMeasure: boolean;
   let lightRadiusVisibility: LightRadiusVisibility;
+  let saveSuccess: boolean = false;
 
   $: currentTool = $activeTool;
   $: currentViewMode = $viewMode;
@@ -101,6 +102,10 @@
 
   function handleSave(): void {
     saveNow(currentRoom);
+    saveSuccess = true;
+    setTimeout(() => {
+      saveSuccess = false;
+    }, 2000);
   }
 
   function handleExport(): void {
@@ -155,15 +160,23 @@
       </button>
       <button
         class="tool-button"
+        class:save-success={saveSuccess}
         on:click={handleSave}
         title="Save to Browser"
       >
-        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-          <polyline points="17 21 17 13 7 13 7 21"/>
-          <polyline points="7 3 7 8 15 8"/>
-        </svg>
-        <span class="label">Save</span>
+        {#if saveSuccess}
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span class="label">Saved!</span>
+        {:else}
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+          <span class="label">Save</span>
+        {/if}
       </button>
       <button
         class="tool-button"
@@ -516,6 +529,12 @@
     background: var(--button-active);
     border-color: var(--button-active);
     color: var(--text-primary);
+  }
+
+  .tool-button.save-success {
+    background: #22c55e;
+    border-color: #22c55e;
+    color: white;
   }
 
   .tool-button:disabled,
