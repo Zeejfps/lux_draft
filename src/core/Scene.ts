@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { BoundingBox } from '../types';
 import { DEFAULT_FRUSTUM_SIZE, GRID_SIZE, MIN_ZOOM, MAX_ZOOM, FIT_BOUNDS_PADDING, PAN_SCALE_FACTOR } from '../constants/editor';
+import { getTheme } from '../constants/themes';
 
 export class Scene {
   readonly scene: THREE.Scene;
@@ -15,7 +16,7 @@ export class Scene {
     this.container = container;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0a3d62);
+    this.scene.background = new THREE.Color(getTheme().canvas.background);
 
     const aspect = container.clientWidth / container.clientHeight;
     const frustumSize = DEFAULT_FRUSTUM_SIZE;
@@ -61,7 +62,8 @@ export class Scene {
   }
 
   private addGrid(): void {
-    const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, 0x2a5d82, 0x1a4d72);
+    const theme = getTheme();
+    const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, theme.canvas.gridMajor, theme.canvas.gridMinor);
     gridHelper.rotation.x = Math.PI / 2;
     gridHelper.position.z = -0.1;
     this.scene.add(gridHelper);
@@ -125,5 +127,19 @@ export class Scene {
 
   get domElement(): HTMLCanvasElement {
     return this.renderer.domElement;
+  }
+
+  updateTheme(): void {
+    const theme = getTheme();
+    this.scene.background = new THREE.Color(theme.canvas.background);
+
+    // Remove old grid
+    const oldGrid = this.scene.children.find(child => child instanceof THREE.GridHelper);
+    if (oldGrid) {
+      this.scene.remove(oldGrid);
+    }
+
+    // Add new grid with updated colors
+    this.addGrid();
   }
 }

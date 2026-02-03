@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Vector2, WallSegment } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { VERTEX_RADIUS_SELECTED, VERTEX_RADIUS_DEFAULT, DRAWING_VERTEX_START_RADIUS, DRAWING_VERTEX_RADIUS } from '../constants/editor';
+import { getTheme } from '../constants/themes';
 
 /**
  * Pure rendering functions for editor geometry.
@@ -9,6 +10,7 @@ import { VERTEX_RADIUS_SELECTED, VERTEX_RADIUS_DEFAULT, DRAWING_VERTEX_START_RAD
  */
 
 export function createWallLine(wall: WallSegment, isSelected: boolean): THREE.Line {
+  const theme = getTheme();
   const points = [
     new THREE.Vector3(wall.start.x, wall.start.y, 0),
     new THREE.Vector3(wall.end.x, wall.end.y, 0),
@@ -16,8 +18,8 @@ export function createWallLine(wall: WallSegment, isSelected: boolean): THREE.Li
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({
-    color: isSelected ? 0xffff00 : 0xffffff,
-    linewidth: isSelected ? 5 : 4,
+    color: isSelected ? theme.editor.wallSelected : theme.editor.wall,
+    linewidth: isSelected ? theme.editor.wallLineWidthSelected : theme.editor.wallLineWidth,
   });
   const line = new THREE.Line(geometry, material);
   line.userData.wallId = wall.id;
@@ -29,12 +31,13 @@ export function createVertexCircle(
   index: number,
   isSelected: boolean
 ): THREE.Mesh {
+  const theme = getTheme();
   const geometry = new THREE.CircleGeometry(
     isSelected ? VERTEX_RADIUS_SELECTED : VERTEX_RADIUS_DEFAULT,
     16
   );
   const material = new THREE.MeshBasicMaterial({
-    color: isSelected ? 0xffff00 : 0xffffff,
+    color: isSelected ? theme.editor.vertexSelected : theme.editor.vertex,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(pos.x, pos.y, 0.05);
@@ -43,6 +46,7 @@ export function createVertexCircle(
 }
 
 export function createPhantomLine(start: Vector2, end: Vector2): THREE.Line {
+  const theme = getTheme();
   const points = [
     new THREE.Vector3(start.x, start.y, 0),
     new THREE.Vector3(end.x, end.y, 0),
@@ -50,7 +54,7 @@ export function createPhantomLine(start: Vector2, end: Vector2): THREE.Line {
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineDashedMaterial({
-    color: 0x0066cc,
+    color: theme.editor.phantomLine,
     dashSize: 0.3,
     gapSize: 0.15,
   });
@@ -61,12 +65,13 @@ export function createPhantomLine(start: Vector2, end: Vector2): THREE.Line {
 }
 
 export function createDrawingVertex(pos: Vector2, isStart: boolean): THREE.Mesh {
+  const theme = getTheme();
   const geometry = new THREE.CircleGeometry(
     isStart ? DRAWING_VERTEX_START_RADIUS : DRAWING_VERTEX_RADIUS,
     16
   );
   const material = new THREE.MeshBasicMaterial({
-    color: isStart ? 0x00aa00 : 0x0066cc,
+    color: isStart ? theme.editor.drawingVertexStart : theme.editor.drawingVertex,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(pos.x, pos.y, 0.1);
@@ -74,12 +79,13 @@ export function createDrawingVertex(pos: Vector2, isStart: boolean): THREE.Mesh 
 }
 
 export function createDrawingLine(start: Vector2, end: Vector2): THREE.Line {
+  const theme = getTheme();
   const points = [
     new THREE.Vector3(start.x, start.y, 0.05),
     new THREE.Vector3(end.x, end.y, 0.05),
   ];
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({ color: 0x0066cc });
+  const material = new THREE.LineBasicMaterial({ color: theme.editor.drawingLine });
   return new THREE.Line(geometry, material);
 }
 
