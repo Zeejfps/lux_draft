@@ -1,12 +1,44 @@
 #define MAX_LIGHTS 32
+#define MAX_POLYGON_VERTICES 64
 
 uniform int uLightCount;
 uniform vec2 uLightPositions[MAX_LIGHTS];
 uniform float uLightLumens[MAX_LIGHTS];
 uniform float uLightBeamAngles[MAX_LIGHTS];
 uniform float uCeilingHeight;
+uniform int uVertexCount;
+uniform vec2 uPolygonVertices[MAX_POLYGON_VERTICES];
 
 varying vec2 vWorldPos;
+
+bool isPointInPolygon(vec2 point) {
+  if (uVertexCount < 3) return true; // No polygon defined, show everything
+
+  bool inside = false;
+
+  for (int i = 0; i < MAX_POLYGON_VERTICES; i++) {
+    if (i >= uVertexCount) break;
+
+    int prevIndex = i == 0 ? uVertexCount - 1 : i - 1;
+
+    vec2 vi = uPolygonVertices[i];
+    vec2 vj;
+
+    for (int k = 0; k < MAX_POLYGON_VERTICES; k++) {
+      if (k == prevIndex) {
+        vj = uPolygonVertices[k];
+        break;
+      }
+    }
+
+    if (((vi.y > point.y) != (vj.y > point.y)) &&
+        (point.x < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y) + vi.x)) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
 
 float customSmoothstep(float edge0, float edge1, float x) {
   float t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
@@ -31,6 +63,11 @@ vec3 luxToColor(float lux) {
 }
 
 void main() {
+  // Discard pixels outside the wall polygon
+  if (!isPointInPolygon(vWorldPos)) {
+    discard;
+  }
+
   float totalLux = 0.0;
 
   for (int i = 0; i < MAX_LIGHTS; i++) {

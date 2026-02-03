@@ -132,6 +132,7 @@
 
   $: if (heatmapRenderer && currentRoomState && currentBounds) {
     heatmapRenderer.updateBounds(currentBounds);
+    heatmapRenderer.updateWalls(currentRoomState.walls);
     heatmapRenderer.updateLights(currentRoomState.lights, currentRoomState.ceilingHeight);
   }
 
