@@ -85,17 +85,23 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
     let targetPos = context.position;
 
-    // Apply axis lock first
-    if (context.axisLock !== 'none' && this.startPosition) {
-      targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-    }
-
-    // Grid snap has priority when enabled
+    // Grid snap - apply before axis lock, but only to the free axis when locked
     const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
     if (this.config.getGridSnapEnabled() && gridSize > 0) {
-      targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
       if (context.axisLock === 'none') {
+        // No axis lock - snap both axes
+        targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
         this.callbacks.onSetSnapGuides([]);
+      } else {
+        // Axis lock active - only snap the free axis
+        const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
+        if (context.axisLock === 'x') {
+          // X-axis movement (horizontal) - only snap X, keep Y at original
+          targetPos = { x: snapped.x, y: this.startPosition.y };
+        } else {
+          // Y-axis movement (vertical) - only snap Y, keep X at original
+          targetPos = { x: this.startPosition.x, y: snapped.y };
+        }
       }
     }
     // Snap to other vertices/lights when holding Shift (only for single item)
@@ -108,8 +114,14 @@ export class UnifiedDragOperation extends BaseDragOperation {
       if (context.axisLock === 'none') {
         this.callbacks.onSetSnapGuides(guides.guides);
       }
-    } else if (context.axisLock === 'none') {
-      this.callbacks.onSetSnapGuides([]);
+    } else {
+      // No grid snap, no shift snap - just apply axis lock if active
+      if (context.axisLock !== 'none') {
+        targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
+      }
+      if (context.axisLock === 'none') {
+        this.callbacks.onSetSnapGuides([]);
+      }
     }
 
     // Calculate delta from anchor point
