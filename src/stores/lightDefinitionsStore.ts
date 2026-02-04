@@ -114,3 +114,11 @@ export function deleteLightDefinition(id: string): void {
 export function setSelectedDefinition(id: string): void {
   selectedDefinitionId.set(id);
 }
+
+export function mergeLightDefinitions(definitions: LightDefinition[]): void {
+  lightDefinitions.update(existingDefs => {
+    const existingIds = new Set(existingDefs.map(d => d.id));
+    const newDefs = definitions.filter(d => !existingIds.has(d.id));
+    return [...existingDefs, ...newDefs];
+  });
+}

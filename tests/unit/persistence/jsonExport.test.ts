@@ -5,7 +5,7 @@ import type { RoomState } from '../../../src/types';
 
 describe('JSON Export/Import', () => {
   describe('getJSONString', () => {
-    it('exports valid JSON structure', () => {
+    it('exports valid JSON structure with version and roomState', () => {
       const state: RoomState = {
         ceilingHeight: 8,
         walls: [],
@@ -22,8 +22,10 @@ describe('JSON Export/Import', () => {
       const json = getJSONString(state);
       const parsed = JSON.parse(json);
 
-      expect(parsed.lights[0].properties.lumen).toBe(800);
-      expect(parsed.ceilingHeight).toBe(8);
+      expect(parsed.version).toBe(1);
+      expect(parsed.roomState.lights[0].properties.lumen).toBe(800);
+      expect(parsed.roomState.ceilingHeight).toBe(8);
+      expect(parsed.lightDefinitions).toEqual([]);
     });
 
     it('produces formatted output', () => {
@@ -150,7 +152,7 @@ describe('JSON Export/Import', () => {
   });
 
   describe('importFromString', () => {
-    it('imports valid JSON string', () => {
+    it('imports legacy format (direct RoomState)', () => {
       const json = JSON.stringify({
         ceilingHeight: 10,
         walls: [],
@@ -161,6 +163,24 @@ describe('JSON Export/Import', () => {
       const result = importFromString(json);
 
       expect(result.ceilingHeight).toBe(10);
+    });
+
+    it('imports new format with version and roomState', () => {
+      const json = JSON.stringify({
+        version: 1,
+        roomState: {
+          ceilingHeight: 12,
+          walls: [],
+          lights: [],
+          isClosed: true,
+        },
+        lightDefinitions: [],
+      });
+
+      const result = importFromString(json);
+
+      expect(result.ceilingHeight).toBe(12);
+      expect(result.isClosed).toBe(true);
     });
 
     it('throws on invalid JSON', () => {
