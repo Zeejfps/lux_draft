@@ -31,6 +31,7 @@ export class EditorRenderer {
   private doorsGroup: THREE.Group;
   private doorPreviewGroup: THREE.Group;
   private phantomLine: THREE.Line | null = null;
+  private previewVertexMesh: THREE.Mesh | null = null;
   private drawingVerticesGroup: THREE.Group;
   private snapGuidesGroup: THREE.Group;
   private selectionBoxGroup: THREE.Group;
@@ -196,6 +197,26 @@ export class EditorRenderer {
     if (start && end) {
       this.phantomLine = createPhantomLine(start, end);
       this.scene.add(this.phantomLine);
+    }
+  }
+
+  setPreviewVertex(pos: Vector2 | null): void {
+    if (this.previewVertexMesh) {
+      this.drawingVerticesGroup.remove(this.previewVertexMesh);
+      disposeObject3D(this.previewVertexMesh);
+      this.previewVertexMesh = null;
+    }
+
+    if (pos) {
+      const geometry = new THREE.CircleGeometry(0.12, 16);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x888888,
+        opacity: 0.5,
+        transparent: true,
+      });
+      this.previewVertexMesh = new THREE.Mesh(geometry, material);
+      this.previewVertexMesh.position.set(pos.x, pos.y, 0.08);
+      this.drawingVerticesGroup.add(this.previewVertexMesh);
     }
   }
 

@@ -10,6 +10,7 @@ import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
 export interface DrawingHandlerCallbacks {
   onUpdateDrawingVertices: (vertices: Vector2[]) => void;
   onSetPhantomLine: (from: Vector2 | null, to: Vector2 | null) => void;
+  onSetPreviewVertex: (pos: Vector2 | null) => void;
   onCloseRoom: (walls: WallSegment[]) => void;
   onSnapChange: (snapType: string) => void;
 }
@@ -98,13 +99,29 @@ export class DrawingHandler extends BaseInteractionHandler {
   }
 
   handleMouseMove(event: InputEvent, context: InteractionContext): boolean {
-    if (!context.isDrawingEnabled) return false;
+    if (!context.isDrawingEnabled) {
+      this.callbacks.onSetPreviewVertex(null);
+      return false;
+    }
 
     const { wallBuilder, snapController } = this.config;
-    if (!wallBuilder.drawing) return false;
+    if (!wallBuilder.drawing) {
+      // Show preview vertex at cursor when not actively drawing
+      const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
+      if (this.config.getGridSnapEnabled() && gridSize > 0) {
+        const gridPos = snapController.snapToGrid(event.worldPos, gridSize);
+        this.callbacks.onSetPreviewVertex(gridPos);
+      } else {
+        this.callbacks.onSetPreviewVertex(event.worldPos);
+      }
+      return false;
+    }
 
     const lastVertex = wallBuilder.lastVertex;
-    if (!lastVertex) return false;
+    if (!lastVertex) {
+      this.callbacks.onSetPreviewVertex(null);
+      return false;
+    }
 
     const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
 
@@ -112,12 +129,14 @@ export class DrawingHandler extends BaseInteractionHandler {
     if (this.config.getGridSnapEnabled() && gridSize > 0) {
       const gridPos = snapController.snapToGrid(event.worldPos, gridSize);
       this.callbacks.onSetPhantomLine(lastVertex, gridPos);
+      this.callbacks.onSetPreviewVertex(gridPos);
       return true;
     }
 
     // Normal mode with angle snapping
     const snappedPos = wallBuilder.continueDrawing(event.worldPos);
     this.callbacks.onSetPhantomLine(lastVertex, snappedPos);
+    this.callbacks.onSetPreviewVertex(snappedPos);
 
     const snap = wallBuilder.currentSnap;
     if (snap) {
@@ -135,6 +154,7 @@ export class DrawingHandler extends BaseInteractionHandler {
     if (event.key === 'Escape' && wallBuilder.drawing) {
       wallBuilder.cancel();
       this.callbacks.onSetPhantomLine(null, null);
+      this.callbacks.onSetPreviewVertex(null);
       this.callbacks.onUpdateDrawingVertices([]);
       return true;
     }
