@@ -48,25 +48,41 @@ function projectPointOntoWall(point: Vector2, wall: WallSegment): number {
 }
 
 /**
- * Checks if a door can be placed at the given position on a wall.
- * Returns false if the door would extend past the wall ends or overlap existing doors.
+ * Clamps a door position to valid wall bounds.
+ * Returns the clamped position that keeps the door within the wall.
  */
-function canPlaceDoorAtPosition(
+function clampDoorPositionToWall(
   wall: WallSegment,
+  position: number,
+  width: number
+): number {
+  const halfWidth = width / 2;
+  const margin = 0.25; // 3 inches from corners
+
+  const minPosition = halfWidth + margin;
+  const maxPosition = wall.length - halfWidth - margin;
+
+  // If the wall is too short for the door, center it
+  if (minPosition > maxPosition) {
+    return wall.length / 2;
+  }
+
+  return Math.max(minPosition, Math.min(maxPosition, position));
+}
+
+/**
+ * Checks if a door overlaps with existing doors on the same wall.
+ * Returns false if there's an overlap.
+ */
+function checkDoorOverlap(
+  wallId: string,
   position: number,
   width: number,
   existingDoors: Door[]
 ): boolean {
   const halfWidth = width / 2;
+  const doorsOnWall = existingDoors.filter(d => d.wallId === wallId);
 
-  // Check wall bounds (leave some margin from wall ends)
-  const margin = 0.25; // 3 inches from corners
-  if (position - halfWidth < margin || position + halfWidth > wall.length - margin) {
-    return false;
-  }
-
-  // Check for overlap with existing doors on same wall
-  const doorsOnWall = existingDoors.filter(d => d.wallId === wall.id);
   for (const door of doorsOnWall) {
     const doorHalfWidth = door.width / 2;
     const doorStart = door.position - doorHalfWidth;
@@ -77,11 +93,31 @@ function canPlaceDoorAtPosition(
     // Check for overlap (with small gap requirement)
     const gap = 0.1; // Small gap between doors
     if (!(newDoorEnd + gap < doorStart || newDoorStart - gap > doorEnd)) {
-      return false;
+      return false; // Overlap detected
     }
   }
 
-  return true;
+  return true; // No overlap
+}
+
+/**
+ * Checks if a door can be placed at the given position on a wall.
+ * Returns false if the wall is too short or there's overlap with existing doors.
+ */
+function canPlaceDoorAtPosition(
+  wall: WallSegment,
+  position: number,
+  width: number,
+  existingDoors: Door[]
+): boolean {
+  const margin = 0.25;
+
+  // Check if wall is long enough for the door
+  if (wall.length < width + margin * 2) {
+    return false;
+  }
+
+  return checkDoorOverlap(wall.id, position, width, existingDoors);
 }
 
 /**
@@ -119,15 +155,16 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
       return true; // Consumed the event but didn't place
     }
 
-    // Project click point onto wall to get position along wall
-    const positionOnWall = projectPointOntoWall(pos, wall);
-
     // Get selected door settings
     const doorWidth = this.config.getSelectedDoorWidth();
     const swingDirection = this.config.getSelectedDoorSwingDirection();
     const swingSide = this.config.getSelectedDoorSwingSide();
 
-    // Validate door fits
+    // Project click point onto wall and clamp to valid bounds
+    const rawPosition = projectPointOntoWall(pos, wall);
+    const positionOnWall = clampDoorPositionToWall(wall, rawPosition, doorWidth);
+
+    // Validate door fits (check overlap with existing doors)
     const existingDoors = this.config.getDoors();
     if (!canPlaceDoorAtPosition(wall, positionOnWall, doorWidth, existingDoors)) {
       return true; // Consumed the event but couldn't place
@@ -165,22 +202,30 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
       return false;
     }
 
-    // Project mouse point onto wall to get position along wall
-    const positionOnWall = projectPointOntoWall(pos, wall);
-
     // Get selected door settings
     const doorWidth = this.config.getSelectedDoorWidth();
     const swingDirection = this.config.getSelectedDoorSwingDirection();
     const swingSide = this.config.getSelectedDoorSwingSide();
 
-    // Check if door can be placed here
-    const existingDoors = this.config.getDoors();
-    if (!canPlaceDoorAtPosition(wall, positionOnWall, doorWidth, existingDoors)) {
+    // Check if wall is long enough for the door
+    const margin = 0.25;
+    if (wall.length < doorWidth + margin * 2) {
       this.callbacks.onDoorPreview(null, null);
       return false;
     }
 
-    // Create preview door (without id since it's not placed yet)
+    // Project mouse point onto wall and clamp to valid bounds
+    const rawPosition = projectPointOntoWall(pos, wall);
+    const positionOnWall = clampDoorPositionToWall(wall, rawPosition, doorWidth);
+
+    // Check for overlap with existing doors
+    const existingDoors = this.config.getDoors();
+    if (!checkDoorOverlap(wall.id, positionOnWall, doorWidth, existingDoors)) {
+      this.callbacks.onDoorPreview(null, null);
+      return false;
+    }
+
+    // Create preview door
     const previewDoor: Door = {
       id: 'preview',
       wallId: wall.id,
