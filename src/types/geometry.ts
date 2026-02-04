@@ -29,3 +29,13 @@ export interface SnapResult {
   snappedPos: Vector2;
   snapType: SnapType;
 }
+
+export type DoorSwingDirection = 'left' | 'right';
+
+export interface Door {
+  id: string;
+  wallId: string;              // Reference to parent wall
+  position: number;            // Distance from wall start (in feet)
+  width: number;               // Door width in feet (2.5, 2.67, 3.0, 3.5)
+  swingDirection: DoorSwingDirection;
+}

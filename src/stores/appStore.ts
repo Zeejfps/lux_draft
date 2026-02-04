@@ -38,6 +38,13 @@ export const isLightPlacementEnabled = derived(
   ([$mode, $tool]) => $mode === 'drafting' && $tool === 'light'
 );
 
+export const selectedDoorId = writable<string | null>(null);
+
+export const isDoorPlacementEnabled = derived(
+  [appMode, activeTool],
+  ([$mode, $tool]) => $mode === 'drafting' && $tool === 'door'
+);
+
 export function setViewMode(mode: ViewMode): void {
   viewMode.set(mode);
   if (mode !== 'editor') {
@@ -51,12 +58,14 @@ export function setActiveTool(tool: Tool): void {
   activeTool.set(tool);
   selectedLightIds.set(new Set());
   selectedWallId.set(null);
+  selectedDoorId.set(null);
 }
 
 export function clearSelection(): void {
   selectedLightIds.set(new Set());
   selectedWallId.set(null);
   selectedVertexIndices.set(new Set());
+  selectedDoorId.set(null);
 }
 
 // Light selection helpers
@@ -95,4 +104,16 @@ export function clearVertexSelection(): void {
 
 export function isVertexSelected(index: number): boolean {
   return get(selectedVertexIndices).has(index);
+}
+
+// Door selection helpers
+export function selectDoor(id: string): void {
+  selectedDoorId.set(id);
+  selectedWallId.set(null);
+  selectedLightIds.set(new Set());
+  selectedVertexIndices.set(new Set());
+}
+
+export function clearDoorSelection(): void {
+  selectedDoorId.set(null);
 }

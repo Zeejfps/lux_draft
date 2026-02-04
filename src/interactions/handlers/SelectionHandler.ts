@@ -1,5 +1,5 @@
 import type { InputEvent } from '../../core/InputManager';
-import type { Vector2, WallSegment } from '../../types';
+import type { Vector2, WallSegment, Door } from '../../types';
 import type { InteractionContext, SelectionState } from '../../types/interaction';
 import type { LightManager } from '../../lighting/LightManager';
 import type { DragManager } from '../DragManager';
@@ -7,24 +7,29 @@ import type { UnifiedDragOperation } from '../operations/UnifiedDragOperation';
 import type { WallDragOperation } from '../operations/WallDragOperation';
 import type { BoxSelectionHandler } from './BoxSelectionHandler';
 import { BaseInteractionHandler } from '../InteractionHandler';
-import { findVertexAtPosition, projectPointOntoSegmentForInsertion } from '../../utils/math';
+import { findVertexAtPosition, projectPointOntoSegmentForInsertion, distancePointToSegment } from '../../utils/math';
 import {
   LIGHT_HIT_TOLERANCE_FT,
   VERTEX_HIT_TOLERANCE_FT,
 } from '../../constants/editor';
 
+const DOOR_HIT_TOLERANCE_FT = 0.3;
+
 export interface SelectionHandlerCallbacks {
   onSelectVertex: (index: number, addToSelection: boolean) => void;
   onSelectLight: (id: string, addToSelection: boolean) => void;
   onSelectWall: (id: string) => void;
+  onSelectDoor: (id: string) => void;
   onClearSelection: () => void;
   onClearLightSelection: () => void;
   onClearVertexSelection: () => void;
   onClearWallSelection: () => void;
+  onClearDoorSelection: () => void;
   onInsertVertex: (wallId: string, position: Vector2) => number | null;
   getSelectedVertexIndices: () => Set<number>;
   getSelectedLightIds: () => Set<string>;
   getWallAtPosition: (pos: Vector2, walls: WallSegment[], tolerance: number) => WallSegment | null;
+  getDoors: () => Door[];
 }
 
 export interface SelectionHandlerConfig {
@@ -56,7 +61,7 @@ export class SelectionHandler extends BaseInteractionHandler {
 
   canHandle(_event: InputEvent, context: InteractionContext): boolean {
     // Selection handler is the fallback for click events in select mode
-    return !context.isDrawingEnabled && !context.isPlacingLights && !context.isMeasuring;
+    return !context.isDrawingEnabled && !context.isPlacingLights && !context.isPlacingDoors && !context.isMeasuring;
   }
 
   handleClick(event: InputEvent, context: InteractionContext): boolean {
@@ -73,6 +78,12 @@ export class SelectionHandler extends BaseInteractionHandler {
     // Check lights
     const lightResult = this.trySelectLight(pos, vertices, addToSelection, context);
     if (lightResult.handled) return true;
+
+    // Check doors (if room is closed)
+    if (roomState.isClosed) {
+      const doorResult = this.trySelectDoor(pos, roomState.walls);
+      if (doorResult.handled) return true;
+    }
 
     // Check walls (if room is closed)
     if (roomState.isClosed) {
@@ -207,6 +218,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     }
 
     this.callbacks.onClearWallSelection();
+    this.callbacks.onClearDoorSelection();
     return { handled: true };
   }
 
@@ -249,7 +261,55 @@ export class SelectionHandler extends BaseInteractionHandler {
     }
 
     this.callbacks.onClearWallSelection();
+    this.callbacks.onClearDoorSelection();
     return { handled: true };
+  }
+
+  private trySelectDoor(pos: Vector2, walls: WallSegment[]): { handled: boolean } {
+    const doors = this.callbacks.getDoors();
+    const door = this.getDoorAtPosition(pos, doors, walls, DOOR_HIT_TOLERANCE_FT);
+    if (!door) return { handled: false };
+
+    this.callbacks.onSelectDoor(door.id);
+    this.callbacks.onClearLightSelection();
+    this.callbacks.onClearVertexSelection();
+    this.callbacks.onClearWallSelection();
+
+    return { handled: true };
+  }
+
+  private getDoorAtPosition(pos: Vector2, doors: Door[], walls: WallSegment[], tolerance: number): Door | null {
+    for (const door of doors) {
+      const wall = walls.find(w => w.id === door.wallId);
+      if (!wall) continue;
+
+      // Calculate door segment on wall
+      const wallDir = {
+        x: wall.end.x - wall.start.x,
+        y: wall.end.y - wall.start.y,
+      };
+      const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+      if (wallLength === 0) continue;
+
+      const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+      const halfWidth = door.width / 2;
+
+      const doorStart = {
+        x: wall.start.x + normalizedDir.x * (door.position - halfWidth),
+        y: wall.start.y + normalizedDir.y * (door.position - halfWidth),
+      };
+      const doorEnd = {
+        x: wall.start.x + normalizedDir.x * (door.position + halfWidth),
+        y: wall.start.y + normalizedDir.y * (door.position + halfWidth),
+      };
+
+      // Check if click is near door segment
+      const dist = distancePointToSegment(pos, doorStart, doorEnd);
+      if (dist <= tolerance) {
+        return door;
+      }
+    }
+    return null;
   }
 
   private trySelectWall(pos: Vector2, walls: WallSegment[]): { handled: boolean } {
@@ -259,6 +319,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.callbacks.onSelectWall(wall.id);
     this.callbacks.onClearLightSelection();
     this.callbacks.onClearVertexSelection();
+    this.callbacks.onClearDoorSelection();
 
     // Start wall drag
     const operation = this.config.createWallDragOperation();

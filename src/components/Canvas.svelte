@@ -15,27 +15,34 @@
     import {MeasurementController, SnapController} from '../controllers';
     import {
         canPlaceLights,
+        canPlaceDoors,
         deleteVertex,
         getVertices,
         insertVertexOnWall,
         moveWall,
         roomBounds,
         roomStore,
-        updateVertexPosition
+        updateVertexPosition,
+        addDoor,
+        removeDoor
     } from '../stores/roomStore';
     import {
         clearLightSelection,
         clearVertexSelection,
+        clearDoorSelection,
         isDrawingEnabled,
         isLightPlacementEnabled,
+        isDoorPlacementEnabled,
         selectedLightId,
         selectedLightIds,
         selectedVertexIndex,
         selectedVertexIndices,
         selectedWallId,
+        selectedDoorId,
         selectLight,
         selectVertex,
         shouldFitCamera,
+        selectDoor,
         viewMode
     } from '../stores/appStore';
     import {historyStore} from '../stores/historyStore';
@@ -65,6 +72,8 @@
         createDefaultKeyboardShortcuts,
         DragManager,
         DrawingHandler,
+        DoorPlacementHandler,
+        DEFAULT_DOOR_WIDTH,
         GrabModeDragOperation,
         GrabModeHandler,
         InteractionManager,
@@ -104,6 +113,7 @@
   // Handlers
   let drawingHandler: DrawingHandler;
   let lightPlacementHandler: LightPlacementHandler;
+  let doorPlacementHandler: DoorPlacementHandler;
   let boxSelectionHandler: BoxSelectionHandler;
   let measurementHandler: MeasurementHandler;
   let grabModeHandler: GrabModeHandler;
@@ -130,9 +140,11 @@
   let currentSpacingWarnings: SpacingWarning[];
   let isDrawing = false;
   let isPlacingLights = false;
+  let isPlacingDoors = false;
   let currentSelectedLightId: string | null = null;
   let currentSelectedLightIds: Set<string> = new Set();
   let currentSelectedWallId: string | null = null;
+  let currentSelectedDoorId: string | null = null;
   let currentSelectedVertexIndex: number | null = null;
   let currentSelectedVertexIndices: Set<number> = new Set();
 
@@ -153,9 +165,11 @@
   $: currentBounds = $roomBounds;
   $: isDrawing = $isDrawingEnabled;
   $: isPlacingLights = $isLightPlacementEnabled;
+  $: isPlacingDoors = $isDoorPlacementEnabled;
   $: currentSelectedLightId = $selectedLightId;
   $: currentSelectedLightIds = $selectedLightIds;
   $: currentSelectedWallId = $selectedWallId;
+  $: currentSelectedDoorId = $selectedDoorId;
   $: currentSelectedVertexIndex = $selectedVertexIndex;
   $: currentSelectedVertexIndices = $selectedVertexIndices;
   $: currentRafterConfig = $rafterConfig;
@@ -175,6 +189,7 @@
   $: if (editorRenderer && currentRoomState) {
     editorRenderer.updateWalls(currentRoomState.walls, currentSelectedWallId, currentSelectedVertexIndices);
     editorRenderer.updateLights(currentRoomState.lights, currentRoomState.ceilingHeight, currentSelectedLightIds);
+    editorRenderer.updateDoors(currentRoomState.doors ?? [], currentRoomState.walls, currentSelectedDoorId);
     lightManager?.setLights(currentRoomState.lights);
   }
 
@@ -185,7 +200,7 @@
   }
 
   $: if (shadowRenderer && currentRoomState && currentBounds) {
-    shadowRenderer.updateShadows(currentRoomState.lights, currentRoomState.walls, currentBounds);
+    shadowRenderer.updateShadows(currentRoomState.lights, currentRoomState.walls, currentBounds, currentRoomState.doors ?? []);
   }
 
   $: if (rafterOverlay && currentRafterConfig && currentBounds) {
@@ -251,9 +266,11 @@
         selectedVertexIndices: currentSelectedVertexIndices,
         selectedLightIds: currentSelectedLightIds,
         selectedWallId: currentSelectedWallId,
+        selectedDoorId: currentSelectedDoorId,
       },
       isDrawingEnabled: isDrawing,
       isPlacingLights: isPlacingLights,
+      isPlacingDoors: isPlacingDoors,
       isMeasuring: measurementController?.isActive ?? false,
       isGrabMode: isGrabMode,
       isBoxSelecting: boxSelectionState.isSelecting,
@@ -422,10 +439,14 @@
     clearLightSelection();
     selectedWallId.set(null);
     clearVertexSelection();
+    clearDoorSelection();
   }
 
   function handleDelete(): void {
-    if (currentSelectedLightIds.size > 0) {
+    if (currentSelectedDoorId) {
+      removeDoor(currentSelectedDoorId);
+      clearDoorSelection();
+    } else if (currentSelectedLightIds.size > 0) {
       for (const id of currentSelectedLightIds) {
         lightManager.removeLight(id);
       }
@@ -536,6 +557,19 @@
       },
       {
         onLightPlaced: (light) => roomStore.update(state => ({ ...state, lights: [...state.lights, light] })),
+      }
+    );
+
+    doorPlacementHandler = new DoorPlacementHandler(
+      {
+        getWalls: () => currentRoomState.walls,
+        getDoors: () => currentRoomState.doors ?? [],
+        getWallAtPosition: (pos, walls, tolerance) => editorRenderer.getWallAtPosition(pos, walls, tolerance),
+        getSelectedDoorWidth: () => DEFAULT_DOOR_WIDTH,
+        canPlaceDoors: () => get(canPlaceDoors),
+      },
+      {
+        onDoorPlaced: (door) => addDoor(door),
       }
     );
 
@@ -659,19 +693,23 @@
         onSelectVertex: (index, addToSelection) => selectVertex(index, addToSelection),
         onSelectLight: (id, addToSelection) => selectLight(id, addToSelection),
         onSelectWall: (id) => selectedWallId.set(id),
+        onSelectDoor: (id) => selectDoor(id),
         onClearSelection: () => {
           clearLightSelection();
           selectedWallId.set(null);
           clearVertexSelection();
+          clearDoorSelection();
           dragManager.clearAxisLock();
         },
         onClearLightSelection: () => clearLightSelection(),
         onClearVertexSelection: () => clearVertexSelection(),
         onClearWallSelection: () => selectedWallId.set(null),
+        onClearDoorSelection: () => clearDoorSelection(),
         onInsertVertex: (wallId, position) => insertVertexOnWall(wallId, position),
         getSelectedVertexIndices: () => get(selectedVertexIndices),
         getSelectedLightIds: () => get(selectedLightIds),
         getWallAtPosition: (pos, walls, tolerance) => editorRenderer.getWallAtPosition(pos, walls, tolerance),
+        getDoors: () => currentRoomState.doors ?? [],
       }
     );
 
@@ -680,6 +718,7 @@
     interactionManager.registerHandler(measurementHandler);
     interactionManager.registerHandler(drawingHandler);
     interactionManager.registerHandler(lightPlacementHandler);
+    interactionManager.registerHandler(doorPlacementHandler);
     interactionManager.registerHandler(selectionHandler);
     interactionManager.registerHandler(boxSelectionHandler);
 

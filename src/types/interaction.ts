@@ -9,6 +9,7 @@ export interface SelectionState {
   selectedVertexIndices: Set<number>;
   selectedLightIds: Set<string>;
   selectedWallId: string | null;
+  selectedDoorId: string | null;
 }
 
 // ============================================
@@ -23,7 +24,8 @@ export type InteractionMode =
   | 'grabMode'
   | 'drawing'
   | 'measuring'
-  | 'placingLight';
+  | 'placingLight'
+  | 'placingDoor';
 
 // ============================================
 // Drag State
@@ -95,6 +97,7 @@ export interface InteractionContext {
   selection: SelectionState;
   isDrawingEnabled: boolean;
   isPlacingLights: boolean;
+  isPlacingDoors: boolean;
   isMeasuring: boolean;
   isGrabMode: boolean;
   isBoxSelecting: boolean;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Vector2, WallSegment, LightFixture, UnitFormat, LightRadiusVisibility } from '../types';
+import type { Vector2, WallSegment, LightFixture, UnitFormat, LightRadiusVisibility, Door } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { LightIcon } from '../lighting/LightIcon';
 import { getAllDimensionLabels } from '../geometry/DimensionLabel';
@@ -16,6 +16,7 @@ import {
   createSnapGuideLine,
   createSelectionBox,
   createDimensionLabel,
+  createDoorGraphics,
 } from './editorRendering';
 
 /**
@@ -27,6 +28,7 @@ export class EditorRenderer {
   private wallsGroup: THREE.Group;
   private labelsGroup: THREE.Group;
   private lightsGroup: THREE.Group;
+  private doorsGroup: THREE.Group;
   private phantomLine: THREE.Line | null = null;
   private drawingVerticesGroup: THREE.Group;
   private snapGuidesGroup: THREE.Group;
@@ -45,6 +47,7 @@ export class EditorRenderer {
     this.wallsGroup = new THREE.Group();
     this.labelsGroup = new THREE.Group();
     this.lightsGroup = new THREE.Group();
+    this.doorsGroup = new THREE.Group();
     this.drawingVerticesGroup = new THREE.Group();
     this.snapGuidesGroup = new THREE.Group();
     this.selectionBoxGroup = new THREE.Group();
@@ -53,6 +56,7 @@ export class EditorRenderer {
     this.scene.add(this.wallsGroup);
     this.scene.add(this.labelsGroup);
     this.scene.add(this.lightsGroup);
+    this.scene.add(this.doorsGroup);
     this.scene.add(this.drawingVerticesGroup);
     this.scene.add(this.snapGuidesGroup);
     this.scene.add(this.selectionBoxGroup);
@@ -262,6 +266,25 @@ export class EditorRenderer {
   }
 
   // ============================================
+  // Doors
+  // ============================================
+
+  updateDoors(doors: Door[], walls: WallSegment[], selectedDoorId: string | null): void {
+    clearGroup(this.doorsGroup);
+
+    for (const door of doors) {
+      const wall = walls.find(w => w.id === door.wallId);
+      if (!wall) continue;
+
+      const isSelected = door.id === selectedDoorId;
+      const graphics = createDoorGraphics(door, wall, isSelected);
+      for (const obj of graphics) {
+        this.doorsGroup.add(obj);
+      }
+    }
+  }
+
+  // ============================================
   // Snap Guides
   // ============================================
 
@@ -307,6 +330,7 @@ export class EditorRenderer {
     this.wallsGroup.visible = visible;
     this.labelsGroup.visible = visible;
     this.lightsGroup.visible = visible;
+    this.doorsGroup.visible = visible;
     this.drawingVerticesGroup.visible = visible;
     this.snapGuidesGroup.visible = visible;
     this.selectionBoxGroup.visible = visible;

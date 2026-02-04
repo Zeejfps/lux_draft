@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Vector2, WallSegment } from '../types';
+import type { Vector2, WallSegment, Door } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { VERTEX_RADIUS_SELECTED, VERTEX_RADIUS_DEFAULT, DRAWING_VERTEX_START_RADIUS, DRAWING_VERTEX_RADIUS } from '../constants/editor';
 import { getTheme } from '../constants/themes';
@@ -158,4 +158,151 @@ export function createDimensionLabel(text: string): THREE.Sprite {
   sprite.scale.set(aspectRatio * 0.5, 0.5, 1);
 
   return sprite;
+}
+
+/**
+ * Helper function to get door endpoints on a wall.
+ */
+function getDoorEndpoints(door: Door, wall: WallSegment): { start: Vector2; end: Vector2; hingePos: Vector2 } {
+  const wallDir = {
+    x: wall.end.x - wall.start.x,
+    y: wall.end.y - wall.start.y,
+  };
+  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+  if (wallLength === 0) {
+    return { start: wall.start, end: wall.start, hingePos: wall.start };
+  }
+
+  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+  const halfWidth = door.width / 2;
+
+  // Door start and end positions on the wall
+  const doorStart = {
+    x: wall.start.x + normalizedDir.x * (door.position - halfWidth),
+    y: wall.start.y + normalizedDir.y * (door.position - halfWidth),
+  };
+  const doorEnd = {
+    x: wall.start.x + normalizedDir.x * (door.position + halfWidth),
+    y: wall.start.y + normalizedDir.y * (door.position + halfWidth),
+  };
+
+  // Hinge position (left side of door opening for 'right' swing, right side for 'left' swing)
+  const hingePos = door.swingDirection === 'right' ? doorStart : doorEnd;
+
+  return { start: doorStart, end: doorEnd, hingePos };
+}
+
+/**
+ * Creates the visual representation of a door including:
+ * - Door panel line (at 90° open position)
+ * - Swing arc (quarter circle)
+ * - Hinge indicator (small circle)
+ */
+export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: boolean): THREE.Object3D[] {
+  const theme = getTheme();
+  const objects: THREE.Object3D[] = [];
+
+  const { start: doorStart, end: doorEnd, hingePos } = getDoorEndpoints(door, wall);
+
+  // Calculate wall direction and perpendicular (for swing direction)
+  const wallDir = {
+    x: wall.end.x - wall.start.x,
+    y: wall.end.y - wall.start.y,
+  };
+  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+  if (wallLength === 0) return objects;
+
+  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+
+  // Perpendicular direction (for door swing) - always the same side of the wall
+  // Using left-hand perpendicular: rotate 90° counterclockwise
+  const perpDir = { x: -normalizedDir.y, y: normalizedDir.x };
+
+  const doorColor = isSelected ? theme.editor.doorSelected : theme.editor.door;
+  const arcColor = isSelected ? theme.editor.doorSelected : theme.editor.doorArc;
+
+  // 1. Door panel line (from hinge, perpendicular to wall, length = door width)
+  const panelEnd = {
+    x: hingePos.x + perpDir.x * door.width,
+    y: hingePos.y + perpDir.y * door.width,
+  };
+
+  const panelPoints = [
+    new THREE.Vector3(hingePos.x, hingePos.y, 0.06),
+    new THREE.Vector3(panelEnd.x, panelEnd.y, 0.06),
+  ];
+  const panelGeometry = new THREE.BufferGeometry().setFromPoints(panelPoints);
+  const panelMaterial = new THREE.LineBasicMaterial({
+    color: doorColor,
+    linewidth: theme.editor.doorLineWidth,
+  });
+  const panelLine = new THREE.Line(panelGeometry, panelMaterial);
+  panelLine.userData.doorId = door.id;
+  objects.push(panelLine);
+
+  // 2. Swing arc (quarter circle from closed to open position)
+  const arcSegments = 16;
+  const arcPoints: THREE.Vector3[] = [];
+
+  // For 'right' swing: hinge at doorStart, arc goes from wall direction (+normalizedDir) to perpendicular
+  // For 'left' swing: hinge at doorEnd, arc goes from opposite wall direction (-normalizedDir) to perpendicular
+  // Both swing to the same perpendicular direction (into the room)
+
+  if (door.swingDirection === 'right') {
+    // Arc from closed (along wall toward doorEnd) to open (perpendicular)
+    const startAngle = Math.atan2(normalizedDir.y, normalizedDir.x);
+    for (let i = 0; i <= arcSegments; i++) {
+      const t = i / arcSegments;
+      // Sweep counterclockwise (positive angle) from wall direction to perpendicular
+      const angle = startAngle + (Math.PI / 2) * t;
+      const x = hingePos.x + Math.cos(angle) * door.width;
+      const y = hingePos.y + Math.sin(angle) * door.width;
+      arcPoints.push(new THREE.Vector3(x, y, 0.05));
+    }
+  } else {
+    // Arc from closed (along wall toward doorStart, i.e., -normalizedDir) to open (perpendicular)
+    const startAngle = Math.atan2(-normalizedDir.y, -normalizedDir.x);
+    for (let i = 0; i <= arcSegments; i++) {
+      const t = i / arcSegments;
+      // Sweep clockwise (negative angle) from opposite wall direction to perpendicular
+      const angle = startAngle - (Math.PI / 2) * t;
+      const x = hingePos.x + Math.cos(angle) * door.width;
+      const y = hingePos.y + Math.sin(angle) * door.width;
+      arcPoints.push(new THREE.Vector3(x, y, 0.05));
+    }
+  }
+
+  const arcGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
+  const arcMaterial = new THREE.LineDashedMaterial({
+    color: arcColor,
+    dashSize: 0.15,
+    gapSize: 0.1,
+  });
+  const arcLine = new THREE.Line(arcGeometry, arcMaterial);
+  arcLine.computeLineDistances();
+  objects.push(arcLine);
+
+  // 3. Hinge indicator (small circle)
+  const hingeGeometry = new THREE.CircleGeometry(0.08, 12);
+  const hingeMaterial = new THREE.MeshBasicMaterial({ color: doorColor });
+  const hingeMesh = new THREE.Mesh(hingeGeometry, hingeMaterial);
+  hingeMesh.position.set(hingePos.x, hingePos.y, 0.07);
+  objects.push(hingeMesh);
+
+  // 4. Door opening indicator (line across the door opening on the wall)
+  const openingPoints = [
+    new THREE.Vector3(doorStart.x, doorStart.y, 0.06),
+    new THREE.Vector3(doorEnd.x, doorEnd.y, 0.06),
+  ];
+  const openingGeometry = new THREE.BufferGeometry().setFromPoints(openingPoints);
+  const openingMaterial = new THREE.LineDashedMaterial({
+    color: doorColor,
+    dashSize: 0.1,
+    gapSize: 0.1,
+  });
+  const openingLine = new THREE.Line(openingGeometry, openingMaterial);
+  openingLine.computeLineDistances();
+  objects.push(openingLine);
+
+  return objects;
 }
