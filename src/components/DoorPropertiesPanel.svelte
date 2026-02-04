@@ -58,6 +58,7 @@
   defaultX={window.innerWidth - 530}
   defaultY={16}
   minWidth="220px"
+  maxWidth="320px"
   maxHeight="calc(100vh - 200px)"
   persistenceKey="door-properties-panel"
   showCloseButton={true}
