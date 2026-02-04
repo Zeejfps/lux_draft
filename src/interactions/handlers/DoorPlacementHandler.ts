@@ -7,7 +7,7 @@ import { vectorSubtract, vectorDot, vectorLength } from '../../utils/math';
 
 export interface DoorPlacementHandlerCallbacks {
   onDoorPlaced: (door: Door) => void;
-  onDoorPreview: (door: Door | null, wall: WallSegment | null) => void;
+  onDoorPreview: (door: Door | null, wall: WallSegment | null, canPlace: boolean) => void;
 }
 
 export interface DoorPlacementHandlerConfig {
@@ -181,14 +181,14 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
     };
 
     // Clear preview before placing
-    this.callbacks.onDoorPreview(null, null);
+    this.callbacks.onDoorPreview(null, null, false);
     this.callbacks.onDoorPlaced(newDoor);
     return true;
   }
 
   handleMouseMove(event: InputEvent, context: InteractionContext): boolean {
     if (!context.isPlacingDoors || !this.config.canPlaceDoors()) {
-      this.callbacks.onDoorPreview(null, null);
+      this.callbacks.onDoorPreview(null, null, false);
       return false;
     }
 
@@ -198,7 +198,7 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
     // Find wall at mouse position
     const wall = this.config.getWallAtPosition(pos, walls, DOOR_PLACEMENT_TOLERANCE);
     if (!wall) {
-      this.callbacks.onDoorPreview(null, null);
+      this.callbacks.onDoorPreview(null, null, false);
       return false;
     }
 
@@ -207,25 +207,18 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
     const swingDirection = this.config.getSelectedDoorSwingDirection();
     const swingSide = this.config.getSelectedDoorSwingSide();
 
-    // Check if wall is long enough for the door
-    const margin = 0.25;
-    if (wall.length < doorWidth + margin * 2) {
-      this.callbacks.onDoorPreview(null, null);
-      return false;
-    }
-
     // Project mouse point onto wall and clamp to valid bounds
     const rawPosition = projectPointOntoWall(pos, wall);
     const positionOnWall = clampDoorPositionToWall(wall, rawPosition, doorWidth);
 
-    // Check for overlap with existing doors
+    // Check if door can be placed (wall long enough and no overlap)
+    const margin = 0.25;
+    const wallLongEnough = wall.length >= doorWidth + margin * 2;
     const existingDoors = this.config.getDoors();
-    if (!checkDoorOverlap(wall.id, positionOnWall, doorWidth, existingDoors)) {
-      this.callbacks.onDoorPreview(null, null);
-      return false;
-    }
+    const noOverlap = checkDoorOverlap(wall.id, positionOnWall, doorWidth, existingDoors);
+    const canPlace = wallLongEnough && noOverlap;
 
-    // Create preview door
+    // Create preview door (always show, but indicate if it can be placed)
     const previewDoor: Door = {
       id: 'preview',
       wallId: wall.id,
@@ -235,7 +228,7 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
       swingSide,
     };
 
-    this.callbacks.onDoorPreview(previewDoor, wall);
+    this.callbacks.onDoorPreview(previewDoor, wall, canPlace);
     return false; // Don't consume the event, let other handlers process if needed
   }
 }

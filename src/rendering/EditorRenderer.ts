@@ -296,24 +296,35 @@ export class EditorRenderer {
 
   /**
    * Show a preview of a door being placed.
+   * @param door The door to preview
+   * @param wall The wall the door is on
+   * @param canPlace Whether the door can be placed at this position (false = show in red)
    */
-  setDoorPreview(door: Door | null, wall: WallSegment | null): void {
+  setDoorPreview(door: Door | null, wall: WallSegment | null, canPlace: boolean = true): void {
     clearGroup(this.doorPreviewGroup);
 
     if (!door || !wall) return;
 
     // Create semi-transparent preview graphics
     const graphics = createDoorGraphics(door, wall, false);
+    const invalidColor = 0xff4444; // Red color for invalid placement
+
     for (const obj of graphics) {
-      // Make preview semi-transparent
+      // Make preview semi-transparent and red if can't place
       if (obj instanceof THREE.Line) {
         const material = obj.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
-        material.opacity = 0.5;
+        material.opacity = 0.6;
         material.transparent = true;
+        if (!canPlace) {
+          material.color.setHex(invalidColor);
+        }
       } else if (obj instanceof THREE.Mesh) {
         const material = obj.material as THREE.MeshBasicMaterial;
-        material.opacity = 0.5;
+        material.opacity = 0.6;
         material.transparent = true;
+        if (!canPlace) {
+          material.color.setHex(invalidColor);
+        }
       }
       this.doorPreviewGroup.add(obj);
     }

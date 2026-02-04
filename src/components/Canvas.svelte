@@ -583,9 +583,9 @@
       },
       {
         onDoorPlaced: (door) => addDoor(door),
-        onDoorPreview: (door, wall) => {
+        onDoorPreview: (door, wall, canPlace) => {
           if (door && wall) {
-            editorRenderer.setDoorPreview(door, wall);
+            editorRenderer.setDoorPreview(door, wall, canPlace);
           } else {
             editorRenderer.clearDoorPreview();
           }
