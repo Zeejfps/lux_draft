@@ -32,6 +32,7 @@ export class EditorRenderer {
   private doorPreviewGroup: THREE.Group;
   private phantomLine: THREE.Line | null = null;
   private previewVertexMesh: THREE.Mesh | null = null;
+  private previewLightGroup: THREE.Group | null = null;
   private drawingVerticesGroup: THREE.Group;
   private snapGuidesGroup: THREE.Group;
   private selectionBoxGroup: THREE.Group;
@@ -217,6 +218,43 @@ export class EditorRenderer {
       this.previewVertexMesh = new THREE.Mesh(geometry, material);
       this.previewVertexMesh.position.set(pos.x, pos.y, 0.08);
       this.drawingVerticesGroup.add(this.previewVertexMesh);
+    }
+  }
+
+  setPreviewLight(pos: Vector2 | null): void {
+    if (this.previewLightGroup) {
+      this.scene.remove(this.previewLightGroup);
+      disposeObject3D(this.previewLightGroup);
+      this.previewLightGroup = null;
+    }
+
+    if (pos) {
+      this.previewLightGroup = new THREE.Group();
+
+      // Outer circle (6 inches = 0.5 feet radius)
+      const outerGeometry = new THREE.RingGeometry(0.48, 0.5, 32);
+      const outerMaterial = new THREE.MeshBasicMaterial({
+        color: 0xfbbf24,
+        opacity: 0.4,
+        transparent: true,
+        side: THREE.DoubleSide,
+      });
+      const outerRing = new THREE.Mesh(outerGeometry, outerMaterial);
+      outerRing.position.set(pos.x, pos.y, 0.09);
+      this.previewLightGroup.add(outerRing);
+
+      // Center dot
+      const dotGeometry = new THREE.CircleGeometry(0.08, 16);
+      const dotMaterial = new THREE.MeshBasicMaterial({
+        color: 0xfbbf24,
+        opacity: 0.6,
+        transparent: true,
+      });
+      const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+      dot.position.set(pos.x, pos.y, 0.1);
+      this.previewLightGroup.add(dot);
+
+      this.scene.add(this.previewLightGroup);
     }
   }
 

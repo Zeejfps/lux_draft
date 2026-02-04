@@ -7,6 +7,7 @@ import { BaseInteractionHandler } from '../InteractionHandler';
 
 export interface LightPlacementHandlerCallbacks {
   onLightPlaced: (light: LightFixture) => void;
+  onSetPreviewLight: (pos: Vector2 | null) => void;
 }
 
 export interface LightPlacementHandlerConfig {
@@ -55,6 +56,26 @@ export class LightPlacementHandler extends BaseInteractionHandler {
     const definitionId = this.config.getSelectedDefinitionId();
     const newLight = lightManager.addLight(pos, definitionId ?? undefined);
     this.callbacks.onLightPlaced(newLight);
+
+    return true;
+  }
+
+  handleMouseMove(event: InputEvent, context: InteractionContext): boolean {
+    if (!context.isPlacingLights || !this.config.canPlaceLights()) {
+      this.callbacks.onSetPreviewLight(null);
+      return false;
+    }
+
+    const { polygonValidator } = this.config;
+    const walls = this.config.getWalls();
+    const pos = event.worldPos;
+
+    // Only show preview if cursor is inside the room
+    if (polygonValidator.isPointInside(pos, walls)) {
+      this.callbacks.onSetPreviewLight(pos);
+    } else {
+      this.callbacks.onSetPreviewLight(null);
+    }
 
     return true;
   }
