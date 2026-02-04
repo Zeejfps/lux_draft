@@ -13,6 +13,7 @@ export interface DragManagerCallbacks {
   onUpdateVertexPosition: (index: number, position: Vector2) => void;
   onUpdateLightPositions: (updates: Map<string, Vector2>) => void;
   onMoveWall: (wallId: string, newStart: Vector2, newEnd: Vector2) => void;
+  onUpdateDoorPosition: (doorId: string, position: number) => void;
   onSetSnapGuides: (guides: SnapGuide[]) => void;
   onPauseHistory: () => void;
   onResumeHistory: () => void;

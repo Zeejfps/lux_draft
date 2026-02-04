@@ -10,6 +10,7 @@ describe('historyStore', () => {
       ceilingHeight: 8,
       walls: [],
       lights: [],
+      doors: [],
       isClosed: false,
     });
     historyStore.clear();

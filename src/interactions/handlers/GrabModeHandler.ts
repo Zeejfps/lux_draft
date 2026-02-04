@@ -1,5 +1,5 @@
 import type { InputEvent } from '../../core/InputManager';
-import type { Vector2, LightFixture, WallSegment } from '../../types';
+import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
 import type { InteractionContext, GrabModeState, SelectionState } from '../../types/interaction';
 import type { DragManager } from '../DragManager';
 import type { GrabModeDragOperation } from '../operations/GrabModeDragOperation';
@@ -21,6 +21,9 @@ export interface GrabModeHandlerConfig {
   getVertices: () => Vector2[];
   getLights: () => LightFixture[];
   getWalls: () => WallSegment[];
+  getDoors: () => Door[];
+  getDoorById: (id: string) => Door | undefined;
+  getWallById: (id: string) => WallSegment | undefined;
 }
 
 /**
@@ -113,7 +116,8 @@ export class GrabModeHandler extends BaseInteractionHandler {
     return (
       selection.selectedVertexIndices.size > 0 ||
       selection.selectedLightIds.size > 0 ||
-      selection.selectedWallId !== null
+      selection.selectedWallId !== null ||
+      selection.selectedDoorId !== null
     );
   }
 
@@ -178,7 +182,7 @@ export class GrabModeHandler extends BaseInteractionHandler {
   }
 
   /**
-   * Get the current position of the first selected object (vertex, light, or wall).
+   * Get the current position of the first selected object (vertex, light, wall, or door).
    * Used to capture the original position when grab mode starts.
    */
   private getSelectionOrigin(): Vector2 | null {
@@ -209,6 +213,29 @@ export class GrabModeHandler extends BaseInteractionHandler {
       const wall = walls.find(w => w.id === selection.selectedWallId);
       if (wall) {
         return { ...wall.start };
+      }
+    }
+
+    // Check for selected door
+    if (selection.selectedDoorId) {
+      const door = this.config.getDoorById(selection.selectedDoorId);
+      if (door) {
+        const wall = this.config.getWallById(door.wallId);
+        if (wall) {
+          // Calculate door's world position on the wall
+          const wallDir = {
+            x: wall.end.x - wall.start.x,
+            y: wall.end.y - wall.start.y,
+          };
+          const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+          if (wallLength > 0) {
+            const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+            return {
+              x: wall.start.x + normalizedDir.x * door.position,
+              y: wall.start.y + normalizedDir.y * door.position,
+            };
+          }
+        }
       }
     }
 

@@ -1,4 +1,4 @@
-import type { RoomState, WallSegment, LightFixture, RafterConfig, DisplayPreferences, LightDefinition } from '../types';
+import type { RoomState, WallSegment, LightFixture, RafterConfig, DisplayPreferences, LightDefinition, Door, DoorSwingDirection, DoorSwingSide } from '../types';
 import { mergeLightDefinitions } from '../stores/lightDefinitionsStore';
 import type { ExportData } from './jsonExport';
 
@@ -40,10 +40,27 @@ export function validateRoomState(data: unknown): RoomState {
     throw new ValidationError('Invalid isClosed: must be a boolean');
   }
 
+  // Validate doors (optional for backwards compatibility)
+  let doors: Door[] = [];
+  if (obj.doors !== undefined) {
+    if (!Array.isArray(obj.doors)) {
+      throw new ValidationError('Invalid doors: must be an array');
+    }
+    for (const door of obj.doors) {
+      validateDoor(door);
+    }
+    // Apply migration: add swingSide if missing
+    doors = (obj.doors as Door[]).map(door => ({
+      ...door,
+      swingSide: door.swingSide ?? 'inside',
+    }));
+  }
+
   const result: RoomState = {
     ceilingHeight: obj.ceilingHeight,
     walls: obj.walls as WallSegment[],
     lights: obj.lights as LightFixture[],
+    doors,
     isClosed: obj.isClosed,
   };
 
@@ -106,6 +123,43 @@ function validateLightFixture(data: unknown): void {
 
   if (typeof props.warmth !== 'number' || props.warmth < 1000 || props.warmth > 10000) {
     throw new ValidationError('Invalid warmth: must be between 1000K and 10000K');
+  }
+}
+
+function validateDoor(data: unknown): void {
+  if (!data || typeof data !== 'object') {
+    throw new ValidationError('Invalid door: expected an object');
+  }
+
+  const door = data as Record<string, unknown>;
+
+  if (typeof door.id !== 'string') {
+    throw new ValidationError('Invalid door id: must be a string');
+  }
+
+  if (typeof door.wallId !== 'string') {
+    throw new ValidationError('Invalid door wallId: must be a string');
+  }
+
+  if (typeof door.position !== 'number' || door.position < 0) {
+    throw new ValidationError('Invalid door position: must be a non-negative number');
+  }
+
+  if (typeof door.width !== 'number' || door.width <= 0) {
+    throw new ValidationError('Invalid door width: must be a positive number');
+  }
+
+  const validSwingDirections: DoorSwingDirection[] = ['left', 'right'];
+  if (!validSwingDirections.includes(door.swingDirection as DoorSwingDirection)) {
+    throw new ValidationError('Invalid door swingDirection: must be "left" or "right"');
+  }
+
+  // swingSide is optional for backwards compatibility (defaults to 'inside')
+  if (door.swingSide !== undefined) {
+    const validSwingSides: DoorSwingSide[] = ['inside', 'outside'];
+    if (!validSwingSides.includes(door.swingSide as DoorSwingSide)) {
+      throw new ValidationError('Invalid door swingSide: must be "inside" or "outside"');
+    }
   }
 }
 

@@ -1,14 +1,14 @@
 import * as THREE from 'three';
-import type { Vector2, WallSegment, LightFixture, UnitFormat, LightRadiusVisibility } from '../types';
+import type { Vector2, WallSegment, LightFixture, UnitFormat, LightRadiusVisibility, Door } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { LightIcon } from '../lighting/LightIcon';
-import { getAllDimensionLabels } from '../geometry/DimensionLabel';
+import { getAllDimensionLabelsWithDoors } from '../geometry/DimensionLabel';
 import { MeasurementRenderer } from './MeasurementRenderer';
 import { distancePointToSegment } from '../utils/math';
 import { clearGroup, disposeObject3D } from '../utils/three';
 import { WALL_HIT_TOLERANCE_FT } from '../constants/editor';
 import {
-  createWallLine,
+  createWallLinesWithDoors,
   createVertexCircle,
   createPhantomLine,
   createDrawingVertex,
@@ -16,6 +16,7 @@ import {
   createSnapGuideLine,
   createSelectionBox,
   createDimensionLabel,
+  createDoorGraphics,
 } from './editorRendering';
 
 /**
@@ -27,6 +28,8 @@ export class EditorRenderer {
   private wallsGroup: THREE.Group;
   private labelsGroup: THREE.Group;
   private lightsGroup: THREE.Group;
+  private doorsGroup: THREE.Group;
+  private doorPreviewGroup: THREE.Group;
   private phantomLine: THREE.Line | null = null;
   private drawingVerticesGroup: THREE.Group;
   private snapGuidesGroup: THREE.Group;
@@ -36,6 +39,7 @@ export class EditorRenderer {
   private vertexMeshes: THREE.Mesh[] = [];
   private currentUnitFormat: UnitFormat = 'feet-inches';
   private currentWalls: WallSegment[] = [];
+  private currentDoors: Door[] = [];
   private selectionBoxLine: THREE.Line | null = null;
   private lightRadiusVisibility: LightRadiusVisibility = 'selected';
 
@@ -45,6 +49,8 @@ export class EditorRenderer {
     this.wallsGroup = new THREE.Group();
     this.labelsGroup = new THREE.Group();
     this.lightsGroup = new THREE.Group();
+    this.doorsGroup = new THREE.Group();
+    this.doorPreviewGroup = new THREE.Group();
     this.drawingVerticesGroup = new THREE.Group();
     this.snapGuidesGroup = new THREE.Group();
     this.selectionBoxGroup = new THREE.Group();
@@ -53,6 +59,8 @@ export class EditorRenderer {
     this.scene.add(this.wallsGroup);
     this.scene.add(this.labelsGroup);
     this.scene.add(this.lightsGroup);
+    this.scene.add(this.doorsGroup);
+    this.scene.add(this.doorPreviewGroup);
     this.scene.add(this.drawingVerticesGroup);
     this.scene.add(this.snapGuidesGroup);
     this.scene.add(this.selectionBoxGroup);
@@ -65,7 +73,8 @@ export class EditorRenderer {
   updateWalls(
     walls: WallSegment[],
     selectedWallId: string | null = null,
-    selectedVertexIndices: Set<number> | number | null = null
+    selectedVertexIndices: Set<number> | number | null = null,
+    doors: Door[] = []
   ): void {
     clearGroup(this.wallsGroup);
     this.disposeVertexMeshes();
@@ -82,9 +91,10 @@ export class EditorRenderer {
       selectedSet = selectedVertexIndices;
     }
 
-    this.renderWallLines(walls, selectedWallId);
+    this.currentDoors = doors;
+    this.renderWallLines(walls, selectedWallId, doors);
     this.renderVertices(vertexList, selectedSet);
-    this.updateLabels(walls);
+    this.updateLabels(walls, doors);
   }
 
   private buildVertexList(walls: WallSegment[]): Array<{ x: number; y: number; index: number }> {
@@ -95,11 +105,14 @@ export class EditorRenderer {
     }));
   }
 
-  private renderWallLines(walls: WallSegment[], selectedWallId: string | null): void {
+  private renderWallLines(walls: WallSegment[], selectedWallId: string | null, doors: Door[]): void {
     for (const wall of walls) {
       const isSelected = wall.id === selectedWallId;
-      const line = createWallLine(wall, isSelected);
-      this.wallsGroup.add(line);
+      // Create wall lines with gaps for doors
+      const lines = createWallLinesWithDoors(wall, doors, isSelected);
+      for (const line of lines) {
+        this.wallsGroup.add(line);
+      }
     }
   }
 
@@ -144,11 +157,12 @@ export class EditorRenderer {
   // Labels
   // ============================================
 
-  private updateLabels(walls: WallSegment[]): void {
+  private updateLabels(walls: WallSegment[], doors: Door[] = []): void {
     this.currentWalls = walls;
+    this.currentDoors = doors;
     clearGroup(this.labelsGroup);
 
-    const labels = getAllDimensionLabels(walls, {
+    const labels = getAllDimensionLabelsWithDoors(walls, doors, {
       offset: 0.5,
       unitFormat: this.currentUnitFormat,
     });
@@ -163,7 +177,7 @@ export class EditorRenderer {
   setUnitFormat(format: UnitFormat): void {
     if (this.currentUnitFormat !== format) {
       this.currentUnitFormat = format;
-      this.updateLabels(this.currentWalls);
+      this.updateLabels(this.currentWalls, this.currentDoors);
       this.measurementRenderer.setUnitFormat(format);
     }
   }
@@ -262,6 +276,68 @@ export class EditorRenderer {
   }
 
   // ============================================
+  // Doors
+  // ============================================
+
+  updateDoors(doors: Door[], walls: WallSegment[], selectedDoorId: string | null): void {
+    clearGroup(this.doorsGroup);
+
+    for (const door of doors) {
+      const wall = walls.find(w => w.id === door.wallId);
+      if (!wall) continue;
+
+      const isSelected = door.id === selectedDoorId;
+      const graphics = createDoorGraphics(door, wall, isSelected);
+      for (const obj of graphics) {
+        this.doorsGroup.add(obj);
+      }
+    }
+  }
+
+  /**
+   * Show a preview of a door being placed.
+   * @param door The door to preview
+   * @param wall The wall the door is on
+   * @param canPlace Whether the door can be placed at this position (false = show in red)
+   */
+  setDoorPreview(door: Door | null, wall: WallSegment | null, canPlace: boolean = true): void {
+    clearGroup(this.doorPreviewGroup);
+
+    if (!door || !wall) return;
+
+    // Create semi-transparent preview graphics
+    const graphics = createDoorGraphics(door, wall, false);
+    const invalidColor = 0xff4444; // Red color for invalid placement
+
+    for (const obj of graphics) {
+      // Make preview semi-transparent and red if can't place
+      if (obj instanceof THREE.Line) {
+        const material = obj.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
+        material.opacity = 0.6;
+        material.transparent = true;
+        if (!canPlace) {
+          material.color.setHex(invalidColor);
+        }
+      } else if (obj instanceof THREE.Mesh) {
+        const material = obj.material as THREE.MeshBasicMaterial;
+        material.opacity = 0.6;
+        material.transparent = true;
+        if (!canPlace) {
+          material.color.setHex(invalidColor);
+        }
+      }
+      this.doorPreviewGroup.add(obj);
+    }
+  }
+
+  /**
+   * Clear the door preview.
+   */
+  clearDoorPreview(): void {
+    clearGroup(this.doorPreviewGroup);
+  }
+
+  // ============================================
   // Snap Guides
   // ============================================
 
@@ -307,6 +383,7 @@ export class EditorRenderer {
     this.wallsGroup.visible = visible;
     this.labelsGroup.visible = visible;
     this.lightsGroup.visible = visible;
+    this.doorsGroup.visible = visible;
     this.drawingVerticesGroup.visible = visible;
     this.snapGuidesGroup.visible = visible;
     this.selectionBoxGroup.visible = visible;

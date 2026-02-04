@@ -16,7 +16,18 @@ export function loadFromLocalStorage(): RoomState | null {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) return null;
-    return JSON.parse(data) as RoomState;
+    const state = JSON.parse(data) as RoomState;
+    // Migration: add doors array if missing (for backwards compatibility)
+    if (!state.doors) {
+      state.doors = [];
+    }
+    // Migration: add swingSide to doors if missing
+    for (const door of state.doors) {
+      if (!door.swingSide) {
+        door.swingSide = 'inside';
+      }
+    }
+    return state;
   } catch (e) {
     console.error('Failed to load from localStorage:', e);
     return null;

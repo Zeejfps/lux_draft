@@ -1,4 +1,4 @@
-import type { Vector2, LightFixture, WallSegment } from '../../types';
+import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
 import type {
   DragStartContext,
   DragUpdateContext,
@@ -18,6 +18,9 @@ export interface GrabModeConfig {
   getLights: () => LightFixture[];
   getWalls: () => WallSegment[];
   getWallById: (id: string) => WallSegment | undefined;
+  getDoors: () => Door[];
+  getDoorById: (id: string) => Door | undefined;
+  getDoorsByWallId: (wallId: string) => Door[];
   isRoomClosed: () => boolean;
   getCurrentMousePos: () => Vector2;
 }
@@ -35,9 +38,11 @@ export class GrabModeDragOperation extends BaseDragOperation {
   private originalVertexPositions: Map<number, Vector2> = new Map();
   private originalLightPositions: Map<string, Vector2> = new Map();
   private originalWallVertices: { start: Vector2; end: Vector2 } | null = null;
+  private originalDoorPosition: number | null = null;
   private anchorVertexIndex: number | null = null;
   private anchorLightId: string | null = null;
   private wallId: string | null = null;
+  private doorId: string | null = null;
   private selection: SelectionState | null = null;
   private config: GrabModeConfig;
   private callbacks: DragManagerCallbacks;
@@ -92,6 +97,28 @@ export class GrabModeDragOperation extends BaseDragOperation {
         this.originalWallVertices = { start: { ...wall.start }, end: { ...wall.end } };
         anchorPos = wall.start;
       }
+    } else if (context.selection.selectedDoorId) {
+      this.doorId = context.selection.selectedDoorId;
+      const door = this.config.getDoorById(this.doorId);
+      if (door) {
+        this.originalDoorPosition = door.position;
+        // Calculate door's world position for offset calculation
+        const wall = this.config.getWallById(door.wallId);
+        if (wall) {
+          const wallDir = {
+            x: wall.end.x - wall.start.x,
+            y: wall.end.y - wall.start.y,
+          };
+          const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+          if (wallLength > 0) {
+            const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+            anchorPos = {
+              x: wall.start.x + normalizedDir.x * door.position,
+              y: wall.start.y + normalizedDir.y * door.position,
+            };
+          }
+        }
+      }
     }
 
     if (anchorPos) {
@@ -113,8 +140,14 @@ export class GrabModeDragOperation extends BaseDragOperation {
       y: context.position.y + this.grabOffset.y,
     };
 
+    // Handle door separately if only door is selected
+    if (this.doorId && this.originalDoorPosition !== null &&
+        this.originalVertexPositions.size === 0 && this.originalLightPositions.size === 0 &&
+        !this.wallId) {
+      this.updateDoor(context.position);
+    }
     // Handle wall separately if only wall is selected
-    if (this.wallId && this.originalWallVertices &&
+    else if (this.wallId && this.originalWallVertices &&
         this.originalVertexPositions.size === 0 && this.originalLightPositions.size === 0) {
       this.updateWall(adjustedPos, context);
     } else {
@@ -149,6 +182,11 @@ export class GrabModeDragOperation extends BaseDragOperation {
         this.originalWallVertices.start,
         this.originalWallVertices.end
       );
+    }
+
+    // Restore original door position
+    if (this.doorId && this.originalDoorPosition !== null) {
+      this.callbacks.onUpdateDoorPosition(this.doorId, this.originalDoorPosition);
     }
 
     this._isActive = false;
@@ -264,6 +302,90 @@ export class GrabModeDragOperation extends BaseDragOperation {
     this.callbacks.onMoveWall(this.wallId, newStart, newEnd);
   }
 
+  private updateDoor(mousePos: Vector2): void {
+    if (!this.doorId || this.originalDoorPosition === null) return;
+
+    const door = this.config.getDoorById(this.doorId);
+    if (!door) return;
+
+    const wall = this.config.getWallById(door.wallId);
+    if (!wall) return;
+
+    // Calculate wall properties
+    const wallDir = {
+      x: wall.end.x - wall.start.x,
+      y: wall.end.y - wall.start.y,
+    };
+    const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+    if (wallLength === 0) return;
+
+    const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+
+    // Project mouse position onto the wall to get new door position
+    const mouseToWallStart = {
+      x: mousePos.x - wall.start.x,
+      y: mousePos.y - wall.start.y,
+    };
+
+    // Dot product gives position along wall
+    let newPosition = mouseToWallStart.x * normalizedDir.x + mouseToWallStart.y * normalizedDir.y;
+
+    // Constrain position to wall bounds (accounting for door width)
+    const halfWidth = door.width / 2;
+    const minPosition = halfWidth;
+    const maxPosition = wallLength - halfWidth;
+
+    newPosition = Math.max(minPosition, Math.min(maxPosition, newPosition));
+
+    // Check for overlap with other doors on the same wall
+    const otherDoors = this.config.getDoorsByWallId(door.wallId).filter(d => d.id !== this.doorId);
+    newPosition = this.avoidDoorOverlap(newPosition, door.width, otherDoors, minPosition, maxPosition);
+
+    this.callbacks.onUpdateDoorPosition(this.doorId, newPosition);
+  }
+
+  /**
+   * Adjust position to avoid overlapping with other doors.
+   */
+  private avoidDoorOverlap(
+    targetPosition: number,
+    doorWidth: number,
+    otherDoors: Door[],
+    minPos: number,
+    maxPos: number
+  ): number {
+    const halfWidth = doorWidth / 2;
+    const minGap = 0.1; // Minimum gap between doors in feet
+
+    for (const other of otherDoors) {
+      const otherHalfWidth = other.width / 2;
+      const minDistance = halfWidth + otherHalfWidth + minGap;
+
+      const distance = Math.abs(targetPosition - other.position);
+
+      if (distance < minDistance) {
+        // Overlap detected - push to the nearest valid side
+        if (targetPosition < other.position) {
+          const newPos = other.position - minDistance;
+          if (newPos >= minPos) {
+            targetPosition = newPos;
+          } else {
+            targetPosition = Math.min(maxPos, other.position + minDistance);
+          }
+        } else {
+          const newPos = other.position + minDistance;
+          if (newPos <= maxPos) {
+            targetPosition = newPos;
+          } else {
+            targetPosition = Math.max(minPos, other.position - minDistance);
+          }
+        }
+      }
+    }
+
+    return targetPosition;
+  }
+
   private handleShiftSnapping(
     targetPos: Vector2
   ): { snappedPos: Vector2; guides: SnapGuide[] } {
@@ -342,9 +464,11 @@ export class GrabModeDragOperation extends BaseDragOperation {
     this.originalVertexPositions.clear();
     this.originalLightPositions.clear();
     this.originalWallVertices = null;
+    this.originalDoorPosition = null;
     this.anchorVertexIndex = null;
     this.anchorLightId = null;
     this.wallId = null;
+    this.doorId = null;
     this.selection = null;
     this.startPosition = null;
     this.grabOffset = null;

@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import type { RoomState, WallSegment, Vector2 } from '../types';
+import type { RoomState, WallSegment, Vector2, Door } from '../types';
 import { DEFAULT_ROOM_STATE } from '../types';
 import { vectorSubtract, vectorNormalize, vectorAdd, vectorScale, distancePointToPoint } from '../utils/math';
 import { generateId } from '../utils/id';
@@ -7,6 +7,7 @@ import { generateId } from '../utils/id';
 export const roomStore = writable<RoomState>({ ...DEFAULT_ROOM_STATE });
 
 export const canPlaceLights = derived(roomStore, ($room) => $room.isClosed);
+export const canPlaceDoors = derived(roomStore, ($room) => $room.isClosed);
 
 export const roomBounds = derived(roomStore, ($room) => {
   if ($room.walls.length === 0) {
@@ -244,8 +245,48 @@ export function deleteVertex(vertexIndex: number): boolean {
     }
 
     success = true;
-    return { ...state, walls: newWalls };
+    // Remove doors on the deleted wall
+    const newDoors = state.doors.filter(d => d.wallId !== currentWall.id);
+    return { ...state, walls: newWalls, doors: newDoors };
   });
 
   return success;
+}
+
+// ============================================
+// Door Operations
+// ============================================
+
+export function addDoor(door: Door): void {
+  roomStore.update(state => ({
+    ...state,
+    doors: [...state.doors, door],
+  }));
+}
+
+export function updateDoor(doorId: string, updates: Partial<Omit<Door, 'id'>>): void {
+  roomStore.update(state => ({
+    ...state,
+    doors: state.doors.map(door =>
+      door.id === doorId ? { ...door, ...updates } : door
+    ),
+  }));
+}
+
+export function removeDoor(doorId: string): void {
+  roomStore.update(state => ({
+    ...state,
+    doors: state.doors.filter(d => d.id !== doorId),
+  }));
+}
+
+export function getDoorsByWallId(state: RoomState, wallId: string): Door[] {
+  return state.doors.filter(d => d.wallId === wallId);
+}
+
+export function removeDoorsOnWall(wallId: string): void {
+  roomStore.update(state => ({
+    ...state,
+    doors: state.doors.filter(d => d.wallId !== wallId),
+  }));
 }

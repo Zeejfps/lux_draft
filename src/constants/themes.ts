@@ -20,6 +20,10 @@ export interface Theme {
     drawingLine: number;
     drawingVertexStart: number;
     drawingVertex: number;
+    door: number;
+    doorSelected: number;
+    doorArc: number;
+    doorLineWidth: number;
   };
 
   // UI colors
@@ -88,6 +92,10 @@ export const BLUEPRINT_THEME: Theme = {
     drawingLine: 0x6ba3d6,
     drawingVertexStart: 0xffff00,
     drawingVertex: 0x6ba3d6,
+    door: 0x4a90d9,
+    doorSelected: 0xff9500,
+    doorArc: 0x4a90d9,
+    doorLineWidth: 2,
   },
 
   ui: {
@@ -155,6 +163,10 @@ export const DARK_THEME: Theme = {
     drawingLine: 0x0066cc,
     drawingVertexStart: 0x00aa00,
     drawingVertex: 0x0066cc,
+    door: 0x66aaff,
+    doorSelected: 0xff9500,
+    doorArc: 0x66aaff,
+    doorLineWidth: 2,
   },
 
   ui: {
@@ -222,6 +234,10 @@ export const LIGHT_THEME: Theme = {
     drawingLine: 0x0066cc,
     drawingVertexStart: 0x00aa00,
     drawingVertex: 0x0066cc,
+    door: 0x0066cc,
+    doorSelected: 0xff6600,
+    doorArc: 0x0066cc,
+    doorLineWidth: 2,
   },
 
   ui: {
