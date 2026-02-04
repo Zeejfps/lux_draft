@@ -1,20 +1,30 @@
 <script lang="ts">
   import { roomStore, updateDoor, removeDoor } from '../stores/roomStore';
   import { selectedDoorId, clearDoorSelection } from '../stores/appStore';
+  import { displayPreferences } from '../stores/settingsStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { Door, RoomState, DoorSwingDirection, DoorSwingSide } from '../types';
+  import type { Door, RoomState, DoorSwingDirection, DoorSwingSide, UnitFormat } from '../types';
   import { DOOR_WIDTHS } from '../interactions/handlers/DoorPlacementHandler';
+  import { formatImperial } from '../utils/format';
 
   let currentRoom: RoomState;
   let currentSelectedDoorId: string | null = null;
   let selectedDoor: Door | null = null;
+  let unitFormat: UnitFormat;
 
   $: currentRoom = $roomStore;
   $: currentSelectedDoorId = $selectedDoorId;
+  $: unitFormat = $displayPreferences.unitFormat;
   $: selectedDoor = currentSelectedDoorId
     ? currentRoom.doors.find(d => d.id === currentSelectedDoorId) ?? null
     : null;
   $: visible = selectedDoor !== null;
+
+  // Generate door width options based on unit format
+  $: doorWidthOptions = Object.entries(DOOR_WIDTHS).map(([label, value]) => ({
+    label: unitFormat === 'inches' ? `${Math.round(value * 12)}"` : label,
+    value
+  }));
 
   function updateDoorWidth(e: Event): void {
     if (!currentSelectedDoorId) return;
@@ -45,16 +55,11 @@
   }
 
   function formatWidth(width: number): string {
-    // Find matching standard width label
-    for (const [label, value] of Object.entries(DOOR_WIDTHS)) {
-      if (Math.abs(value - width) < 0.01) {
-        return label;
-      }
-    }
-    // Fallback for non-standard widths
-    const feet = Math.floor(width);
-    const inches = Math.round((width - feet) * 12);
-    return `${feet}'${inches}"`;
+    return formatImperial(width, { format: unitFormat });
+  }
+
+  function formatPosition(position: number): string {
+    return formatImperial(position, { format: unitFormat });
   }
 </script>
 
@@ -75,7 +80,7 @@
       <label class="property-row width-select">
         <span>Width</span>
         <select value={selectedDoor.width} on:change={updateDoorWidth}>
-          {#each Object.entries(DOOR_WIDTHS) as [label, value]}
+          {#each doorWidthOptions as { label, value }}
             <option value={value}>{label}</option>
           {/each}
         </select>
@@ -100,7 +105,7 @@
       <div class="door-info">
         <div class="info-row">
           <span>Position on Wall</span>
-          <span>{selectedDoor.position.toFixed(2)} ft</span>
+          <span>{formatPosition(selectedDoor.position)}</span>
         </div>
         <div class="info-row">
           <span>Current Width</span>
