@@ -126,15 +126,15 @@
         <div class="measurement-panel">
           <div class="measurement-title">Measurement</div>
           <div class="measurement-row">
-            <span class="measurement-label" style="color: #ff6600;">ΔX:</span>
+            <span class="measurement-label" style="color: var(--measurement-x);">ΔX:</span>
             <span class="measurement-value">{Math.abs(measurement.deltaX).toFixed(2)} ft</span>
           </div>
           <div class="measurement-row">
-            <span class="measurement-label" style="color: #0066ff;">ΔY:</span>
+            <span class="measurement-label" style="color: var(--measurement-y);">ΔY:</span>
             <span class="measurement-value">{Math.abs(measurement.deltaY).toFixed(2)} ft</span>
           </div>
           <div class="measurement-row">
-            <span class="measurement-label" style="color: #ff00ff;">Distance:</span>
+            <span class="measurement-label" style="color: var(--measurement-distance);">Distance:</span>
             <span class="measurement-value">{measurement.distance.toFixed(2)} ft</span>
           </div>
           <div class="measurement-hint">Press M or Esc to clear</div>
@@ -197,13 +197,13 @@
 
   .measurement-panel {
     position: absolute;
-    top: 16px;
-    left: 16px;
-    background: rgba(45, 45, 48, 0.95);
+    top: var(--spacing-16);
+    left: var(--spacing-16);
+    background: var(--panel-bg);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-12) var(--spacing-16);
+    box-shadow: var(--shadow-md);
     font-size: 13px;
     min-width: 160px;
   }
@@ -211,7 +211,7 @@
   .measurement-title {
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 8px;
+    margin-bottom: var(--spacing-8);
     padding-bottom: 6px;
     border-bottom: 1px solid var(--border-color);
   }
@@ -219,7 +219,7 @@
   .measurement-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 4px;
+    margin-bottom: var(--spacing-4);
   }
 
   .measurement-label {

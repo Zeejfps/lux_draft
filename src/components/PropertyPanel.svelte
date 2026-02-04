@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { roomStore, canPlaceLights, updateWallLength, getVertices, updateVertexPosition, deleteVertex } from '../stores/roomStore';
-  import { selectedLightId, selectedLightIds, selectedWallId, selectedVertexIndex, clearLightSelection, clearVertexSelection, activeTool } from '../stores/appStore';
-  import { lightDefinitions, selectedDefinitionId, setSelectedDefinition, getDefinitionById } from '../stores/lightDefinitionsStore';
+  import { roomStore, updateWallLength, getVertices, updateVertexPosition, deleteVertex } from '../stores/roomStore';
+  import { selectedLightId, selectedLightIds, selectedWallId, selectedVertexIndex, clearLightSelection, clearVertexSelection } from '../stores/appStore';
+  import { lightDefinitions, setSelectedDefinition } from '../stores/lightDefinitionsStore';
   import { formatImperial, parseImperial } from '../utils/format';
   import { displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
-  import { propertiesPanelConfig, togglePropertiesPanel, setPropertiesPanelPosition } from '../stores/propertiesPanelStore';
+  import { propertiesPanelConfig, togglePropertiesPanel } from '../stores/propertiesPanelStore';
+  import FloatingPanel from './FloatingPanel.svelte';
   import type { LightFixture, WallSegment, RoomState, LightDefinition, PropertiesPanelConfig } from '../types';
 
   const dispatch = createEventDispatcher<{ openLightManager: void }>();
@@ -17,39 +18,24 @@
   let currentSelectedLightIds: Set<string> = new Set();
   let currentSelectedWallId: string | null;
   let currentSelectedVertexIndex: number | null;
-  let selectedLight: LightFixture | null = null;
   let selectedLights: LightFixture[] = [];
   let selectedWall: WallSegment | null = null;
   let selectedVertex: import('../types').Vector2 | null = null;
-  let canPlace: boolean;
   let ceilingHeightInput: string = '';
   let wallLengthInput: string = '';
   let vertexXInput: string = '';
   let vertexYInput: string = '';
   let definitions: LightDefinition[] = [];
-  let currentDefinitionId: string;
   let unitFormat: 'feet-inches' | 'inches';
 
-  // Dragging state
-  let panelElement: HTMLDivElement;
-  let isDragging = false;
-  let dragOffset = { x: 0, y: 0 };
-  let position = { x: -1, y: -1 }; // -1 means use default CSS position
-
   $: config = $propertiesPanelConfig;
-  $: if (config.position) {
-    position = config.position;
-  }
   $: currentRoom = $roomStore;
   $: unitFormat = $displayPreferences.unitFormat;
   $: currentSelectedLightId = $selectedLightId;
   $: currentSelectedLightIds = $selectedLightIds;
   $: currentSelectedWallId = $selectedWallId;
   $: currentSelectedVertexIndex = $selectedVertexIndex;
-  $: canPlace = $canPlaceLights;
   $: definitions = $lightDefinitions;
-  $: currentDefinitionId = $selectedDefinitionId;
-  $: currentTool = $activeTool;
 
   $: selectedLights = currentRoom.lights.filter(l => currentSelectedLightIds.has(l.id));
 
@@ -216,72 +202,20 @@
     deleteVertex(currentSelectedVertexIndex);
     clearVertexSelection();
   }
-
-  // Dragging functions
-  function handleMouseDown(e: MouseEvent): void {
-    // Only drag from the header area
-    const target = e.target as HTMLElement;
-    if (target.closest('select') || target.closest('button') || target.closest('input')) return;
-
-    isDragging = true;
-    const rect = panelElement.getBoundingClientRect();
-    const parentRect = panelElement.parentElement?.getBoundingClientRect() || { left: 0, top: 0 };
-
-    // Initialize position if first drag
-    if (position.x === -1) {
-      position.x = rect.left - parentRect.left;
-      position.y = rect.top - parentRect.top;
-    }
-
-    dragOffset.x = e.clientX - rect.left;
-    dragOffset.y = e.clientY - rect.top;
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  }
-
-  function handleMouseMove(e: MouseEvent): void {
-    if (!isDragging || !panelElement.parentElement) return;
-
-    const parentRect = panelElement.parentElement.getBoundingClientRect();
-    const panelRect = panelElement.getBoundingClientRect();
-
-    let newX = e.clientX - parentRect.left - dragOffset.x;
-    let newY = e.clientY - parentRect.top - dragOffset.y;
-
-    // Constrain to parent bounds
-    newX = Math.max(0, Math.min(newX, parentRect.width - panelRect.width));
-    newY = Math.max(0, Math.min(newY, parentRect.height - panelRect.height));
-
-    position = { x: newX, y: newY };
-    setPropertiesPanelPosition(newX, newY);
-  }
-
-  function handleMouseUp(): void {
-    isDragging = false;
-    window.removeEventListener('mousemove', handleMouseMove);
-    window.removeEventListener('mouseup', handleMouseUp);
-  }
 </script>
 
-{#if config.visible}
-  <div
-    class="property-panel"
-    class:dragging={isDragging}
-    bind:this={panelElement}
-    style={position.x >= 0 ? `left: ${position.x}px; top: ${position.y}px;` : ''}
-  >
-    <div class="panel-header" on:mousedown={handleMouseDown}>
-      <h3>Properties</h3>
-      <button class="close-button" on:click={togglePropertiesPanel} title="Close (P)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"/>
-          <line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-    </div>
-
-    <div class="property-section">
+<FloatingPanel
+  visible={config.visible}
+  title="Properties"
+  defaultX={window.innerWidth - 266}
+  defaultY={16}
+  minWidth="250px"
+  maxHeight="calc(100vh - 200px)"
+  persistenceKey="properties-panel"
+  showCloseButton={true}
+  onClose={togglePropertiesPanel}
+>
+  <div class="property-section">
       <h4>Room</h4>
       <label class="property-row">
         <span>Ceiling Height</span>
@@ -485,80 +419,9 @@
       <p>Close the room polygon to edit walls and place lights.</p>
     </div>
   {/if}
-  </div>
-{/if}
+</FloatingPanel>
 
 <style>
-  .property-panel {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    width: 250px;
-    max-height: calc(100vh - 200px);
-    background: rgba(45, 45, 48, 0.95);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-    overflow-y: auto;
-    z-index: 100;
-    user-select: none;
-  }
-
-  .property-panel.dragging {
-    opacity: 0.9;
-    cursor: grabbing;
-  }
-
-  .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px 8px 0 0;
-    cursor: grab;
-    margin: 0;
-  }
-
-  .panel-header:active {
-    cursor: grabbing;
-  }
-
-  .close-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-  }
-
-  .close-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
-  }
-
-  .close-button svg {
-    width: 14px;
-    height: 14px;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  h3 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
   h4 {
     margin: 0 0 12px 0;
     font-size: 12px;
@@ -570,13 +433,8 @@
 
   .property-section {
     margin-bottom: 24px;
-    padding: 16px;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--border-color);
-  }
-
-  .property-section:first-of-type {
-    padding-top: 12px;
   }
 
   .property-section:last-child {
@@ -664,11 +522,11 @@
   }
 
   .closed {
-    color: #22c55e !important;
+    color: var(--status-success) !important;
   }
 
   .light-count {
-    color: #0066cc !important;
+    color: var(--status-info) !important;
   }
 
   .coords {
@@ -767,7 +625,7 @@
     width: 100%;
     padding: 8px;
     margin-top: 12px;
-    background: #ef4444;
+    background: var(--status-error);
     color: white;
     border: none;
     border-radius: 4px;
@@ -777,7 +635,7 @@
   }
 
   .delete-button:hover {
-    background: #dc2626;
+    background: #dc2626; /* Darker red for hover */
   }
 
   .hint {
