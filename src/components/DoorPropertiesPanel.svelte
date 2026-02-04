@@ -152,6 +152,9 @@
     border-radius: 4px;
     font-size: 13px;
     cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .property-row select:focus {
