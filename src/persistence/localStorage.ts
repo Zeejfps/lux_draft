@@ -21,6 +21,12 @@ export function loadFromLocalStorage(): RoomState | null {
     if (!state.doors) {
       state.doors = [];
     }
+    // Migration: add swingSide to doors if missing
+    for (const door of state.doors) {
+      if (!door.swingSide) {
+        door.swingSide = 'inside';
+      }
+    }
     return state;
   } catch (e) {
     console.error('Failed to load from localStorage:', e);

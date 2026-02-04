@@ -2,7 +2,7 @@
   import { roomStore, updateDoor, removeDoor } from '../stores/roomStore';
   import { selectedDoorId, clearDoorSelection } from '../stores/appStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { Door, RoomState, DoorSwingDirection } from '../types';
+  import type { Door, RoomState, DoorSwingDirection, DoorSwingSide } from '../types';
   import { DOOR_WIDTHS } from '../interactions/handlers/DoorPlacementHandler';
 
   let currentRoom: RoomState;
@@ -26,6 +26,12 @@
     if (!currentSelectedDoorId) return;
     const newDirection = (e.target as HTMLSelectElement).value as DoorSwingDirection;
     updateDoor(currentSelectedDoorId, { swingDirection: newDirection });
+  }
+
+  function updateSwingSide(e: Event): void {
+    if (!currentSelectedDoorId) return;
+    const newSide = (e.target as HTMLSelectElement).value as DoorSwingSide;
+    updateDoor(currentSelectedDoorId, { swingSide: newSide });
   }
 
   function deleteSelectedDoor(): void {
@@ -76,10 +82,18 @@
       </label>
 
       <label class="property-row swing-select">
-        <span>Swing Direction</span>
+        <span>Hinge Side</span>
         <select value={selectedDoor.swingDirection} on:change={updateSwingDirection}>
           <option value="right">Right</option>
           <option value="left">Left</option>
+        </select>
+      </label>
+
+      <label class="property-row swing-select">
+        <span>Swing Side</span>
+        <select value={selectedDoor.swingSide ?? 'inside'} on:change={updateSwingSide}>
+          <option value="inside">Inside</option>
+          <option value="outside">Outside</option>
         </select>
       </label>
 

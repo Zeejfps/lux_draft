@@ -1,4 +1,4 @@
-import type { RoomState, WallSegment, LightFixture, RafterConfig, DisplayPreferences, LightDefinition, Door, DoorSwingDirection } from '../types';
+import type { RoomState, WallSegment, LightFixture, RafterConfig, DisplayPreferences, LightDefinition, Door, DoorSwingDirection, DoorSwingSide } from '../types';
 import { mergeLightDefinitions } from '../stores/lightDefinitionsStore';
 import type { ExportData } from './jsonExport';
 
@@ -49,7 +49,11 @@ export function validateRoomState(data: unknown): RoomState {
     for (const door of obj.doors) {
       validateDoor(door);
     }
-    doors = obj.doors as Door[];
+    // Apply migration: add swingSide if missing
+    doors = (obj.doors as Door[]).map(door => ({
+      ...door,
+      swingSide: door.swingSide ?? 'inside',
+    }));
   }
 
   const result: RoomState = {
@@ -148,6 +152,14 @@ function validateDoor(data: unknown): void {
   const validSwingDirections: DoorSwingDirection[] = ['left', 'right'];
   if (!validSwingDirections.includes(door.swingDirection as DoorSwingDirection)) {
     throw new ValidationError('Invalid door swingDirection: must be "left" or "right"');
+  }
+
+  // swingSide is optional for backwards compatibility (defaults to 'inside')
+  if (door.swingSide !== undefined) {
+    const validSwingSides: DoorSwingSide[] = ['inside', 'outside'];
+    if (!validSwingSides.includes(door.swingSide as DoorSwingSide)) {
+      throw new ValidationError('Invalid door swingSide: must be "inside" or "outside"');
+    }
   }
 }
 

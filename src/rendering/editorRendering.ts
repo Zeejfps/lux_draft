@@ -214,9 +214,14 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
 
   const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
 
-  // Perpendicular direction (for door swing) - always the same side of the wall
-  // Using left-hand perpendicular: rotate 90° counterclockwise
-  const perpDir = { x: -normalizedDir.y, y: normalizedDir.x };
+  // Perpendicular direction (for door swing)
+  // Using left-hand perpendicular: rotate 90° counterclockwise for 'inside'
+  // Flip direction for 'outside'
+  const sideMultiplier = door.swingSide === 'outside' ? -1 : 1;
+  const perpDir = {
+    x: -normalizedDir.y * sideMultiplier,
+    y: normalizedDir.x * sideMultiplier
+  };
 
   const doorColor = isSelected ? theme.editor.doorSelected : theme.editor.door;
   const arcColor = isSelected ? theme.editor.doorSelected : theme.editor.doorArc;
@@ -246,15 +251,15 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
 
   // For 'right' swing: hinge at doorStart, arc goes from wall direction (+normalizedDir) to perpendicular
   // For 'left' swing: hinge at doorEnd, arc goes from opposite wall direction (-normalizedDir) to perpendicular
-  // Both swing to the same perpendicular direction (into the room)
+  // sideMultiplier flips the arc direction for 'outside' swing
 
   if (door.swingDirection === 'right') {
     // Arc from closed (along wall toward doorEnd) to open (perpendicular)
     const startAngle = Math.atan2(normalizedDir.y, normalizedDir.x);
     for (let i = 0; i <= arcSegments; i++) {
       const t = i / arcSegments;
-      // Sweep counterclockwise (positive angle) from wall direction to perpendicular
-      const angle = startAngle + (Math.PI / 2) * t;
+      // Sweep direction depends on swing side
+      const angle = startAngle + (Math.PI / 2) * t * sideMultiplier;
       const x = hingePos.x + Math.cos(angle) * door.width;
       const y = hingePos.y + Math.sin(angle) * door.width;
       arcPoints.push(new THREE.Vector3(x, y, 0.05));
@@ -264,8 +269,8 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
     const startAngle = Math.atan2(-normalizedDir.y, -normalizedDir.x);
     for (let i = 0; i <= arcSegments; i++) {
       const t = i / arcSegments;
-      // Sweep clockwise (negative angle) from opposite wall direction to perpendicular
-      const angle = startAngle - (Math.PI / 2) * t;
+      // Sweep direction depends on swing side
+      const angle = startAngle - (Math.PI / 2) * t * sideMultiplier;
       const x = hingePos.x + Math.cos(angle) * door.width;
       const y = hingePos.y + Math.sin(angle) * door.width;
       arcPoints.push(new THREE.Vector3(x, y, 0.05));

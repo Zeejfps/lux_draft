@@ -1,5 +1,5 @@
 import type { InputEvent } from '../../core/InputManager';
-import type { Door, DoorSwingDirection, WallSegment, Vector2 } from '../../types';
+import type { Door, DoorSwingDirection, DoorSwingSide, WallSegment, Vector2 } from '../../types';
 import type { InteractionContext } from '../../types/interaction';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { generateId } from '../../utils/id';
@@ -128,13 +128,14 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
       return true; // Consumed the event but couldn't place
     }
 
-    // Create door with default swing direction ('right')
+    // Create door with default swing direction ('right') and side ('inside')
     const newDoor: Door = {
       id: generateId(),
       wallId: wall.id,
       position: positionOnWall,
       width: doorWidth,
       swingDirection: 'right' as DoorSwingDirection,
+      swingSide: 'inside' as DoorSwingSide,
     };
 
     this.callbacks.onDoorPlaced(newDoor);
