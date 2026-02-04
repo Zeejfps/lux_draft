@@ -3,6 +3,7 @@
   import Canvas from './components/Canvas.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import PropertyPanel from './components/PropertyPanel.svelte';
+  import LightPropertiesPanel from './components/LightPropertiesPanel.svelte';
   import LightToolPanel from './components/LightToolPanel.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import LengthInput from './components/LengthInput.svelte';
@@ -143,7 +144,8 @@
       <RafterControls />
       <LightingStatsPanel />
       <LightToolPanel on:openLightManager={handleOpenLightManager} />
-      <PropertyPanel on:openLightManager={handleOpenLightManager} />
+      <PropertyPanel />
+      <LightPropertiesPanel />
     </div>
   </main>
 

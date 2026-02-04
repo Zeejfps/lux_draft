@@ -1,55 +1,30 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { roomStore, updateWallLength, getVertices, updateVertexPosition, deleteVertex } from '../stores/roomStore';
-  import { selectedLightId, selectedLightIds, selectedWallId, selectedVertexIndex, clearLightSelection, clearVertexSelection } from '../stores/appStore';
-  import { lightDefinitions, setSelectedDefinition } from '../stores/lightDefinitionsStore';
+  import { selectedWallId, selectedVertexIndex, clearVertexSelection } from '../stores/appStore';
   import { formatImperial, parseImperial } from '../utils/format';
   import { displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
   import { propertiesPanelConfig, togglePropertiesPanel } from '../stores/propertiesPanelStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { LightFixture, WallSegment, RoomState, LightDefinition, PropertiesPanelConfig } from '../types';
-
-  const dispatch = createEventDispatcher<{ openLightManager: void }>();
+  import type { WallSegment, RoomState, PropertiesPanelConfig } from '../types';
 
   let config: PropertiesPanelConfig;
 
   let currentRoom: RoomState;
-  let currentSelectedLightId: string | null;
-  let currentSelectedLightIds: Set<string> = new Set();
   let currentSelectedWallId: string | null;
   let currentSelectedVertexIndex: number | null;
-  let selectedLights: LightFixture[] = [];
   let selectedWall: WallSegment | null = null;
   let selectedVertex: import('../types').Vector2 | null = null;
   let ceilingHeightInput: string = '';
   let wallLengthInput: string = '';
   let vertexXInput: string = '';
   let vertexYInput: string = '';
-  let definitions: LightDefinition[] = [];
   let unitFormat: 'feet-inches' | 'inches';
 
   $: config = $propertiesPanelConfig;
   $: currentRoom = $roomStore;
   $: unitFormat = $displayPreferences.unitFormat;
-  $: currentSelectedLightId = $selectedLightId;
-  $: currentSelectedLightIds = $selectedLightIds;
   $: currentSelectedWallId = $selectedWallId;
   $: currentSelectedVertexIndex = $selectedVertexIndex;
-  $: definitions = $lightDefinitions;
-
-  $: selectedLights = currentRoom.lights.filter(l => currentSelectedLightIds.has(l.id));
-
-  // Check if all selected lights share the same definition
-  $: commonDefinitionId = (() => {
-    if (selectedLights.length === 0) return null;
-    const firstDefId = selectedLights[0].definitionId;
-    const allSame = selectedLights.every(l => l.definitionId === firstDefId);
-    return allSame ? firstDefId : null;
-  })();
-
-  $: selectedLight = currentSelectedLightId
-    ? currentRoom.lights.find(l => l.id === currentSelectedLightId) ?? null
-    : null;
 
   $: selectedWall = currentSelectedWallId
     ? currentRoom.walls.find(w => w.id === currentSelectedWallId) ?? null
@@ -91,53 +66,6 @@
       // Reset to current value if invalid
       ceilingHeightInput = formatImperial(currentRoom.ceilingHeight);
     }
-  }
-
-  function updateLightDefinition(e: Event): void {
-    const newDefinitionId = (e.target as HTMLSelectElement).value;
-    const definition = getDefinitionById(newDefinitionId);
-    if (!definition) return;
-
-    roomStore.update(state => ({
-      ...state,
-      lights: state.lights.map(light => {
-        if (currentSelectedLightIds.has(light.id)) {
-          return {
-            ...light,
-            definitionId: newDefinitionId,
-            properties: {
-              lumen: definition.lumen,
-              beamAngle: definition.beamAngle,
-              warmth: definition.warmth,
-            }
-          };
-        }
-        return light;
-      })
-    }));
-  }
-
-  function handleNewLightDefinitionChange(e: Event): void {
-    const newDefinitionId = (e.target as HTMLSelectElement).value;
-    setSelectedDefinition(newDefinitionId);
-  }
-
-  function openLightManager(): void {
-    dispatch('openLightManager');
-  }
-
-  function getDefinitionForLight(light: LightFixture): LightDefinition | undefined {
-    return light.definitionId ? getDefinitionById(light.definitionId) : undefined;
-  }
-
-  function deleteSelectedLights(): void {
-    if (currentSelectedLightIds.size === 0) return;
-
-    roomStore.update(state => ({
-      ...state,
-      lights: state.lights.filter(l => !currentSelectedLightIds.has(l.id))
-    }));
-    clearLightSelection();
   }
 
   function handleWallLengthChange(e: Event): void {
@@ -330,91 +258,7 @@
         Format: 10' 6" or 10.5
       </p>
     </div>
-  {:else if selectedLights.length > 1}
-    <div class="property-section">
-      <h4>{selectedLights.length} Lights Selected</h4>
-      <p class="multi-select-hint">Shift+click to add/remove lights from selection</p>
-      <label class="property-row definition-select">
-        <span>{commonDefinitionId ? 'Type' : 'Change All To'}</span>
-        <select value={commonDefinitionId || ''} on:change={updateLightDefinition}>
-          {#if !commonDefinitionId}
-            <option value="" disabled>Mixed types...</option>
-          {/if}
-          {#each definitions as def}
-            <option value={def.id}>{def.name}</option>
-          {/each}
-        </select>
-      </label>
-      {#if commonDefinitionId}
-        {@const def = getDefinitionById(commonDefinitionId)}
-        {#if def}
-          <div class="light-specs">
-            <div class="spec-row">
-              <span>Lumens (each)</span>
-              <span>{def.lumen} lm</span>
-            </div>
-            <div class="spec-row">
-              <span>Beam Angle</span>
-              <span>{def.beamAngle}°</span>
-            </div>
-            <div class="spec-row">
-              <span>Color Temp</span>
-              <span>{def.warmth}K</span>
-            </div>
-          </div>
-        {/if}
-      {/if}
-      <div class="light-summary">
-        <div class="summary-row">
-          <span>Total Lumens</span>
-          <span>{selectedLights.reduce((sum, l) => sum + l.properties.lumen, 0).toLocaleString()} lm</span>
-        </div>
-      </div>
-      <button class="delete-button" on:click={deleteSelectedLights}>
-        Delete {selectedLights.length} Lights
-      </button>
-    </div>
-  {:else if selectedLights.length === 1}
-    {@const light = selectedLights[0]}
-    <div class="property-section">
-      <h4>Light Fixture</h4>
-      <p class="multi-select-hint">Shift+click to select multiple lights</p>
-      <label class="property-row definition-select">
-        <span>Type</span>
-        <select
-          value={light.definitionId || definitions[0]?.id}
-          on:change={updateLightDefinition}
-        >
-          {#each definitions as def}
-            <option value={def.id}>{def.name}</option>
-          {/each}
-        </select>
-      </label>
-      <div class="light-specs">
-        <div class="spec-row">
-          <span>Lumens</span>
-          <span>{light.properties.lumen} lm</span>
-        </div>
-        <div class="spec-row">
-          <span>Beam Angle</span>
-          <span>{light.properties.beamAngle}°</span>
-        </div>
-        <div class="spec-row">
-          <span>Color Temp</span>
-          <span>{light.properties.warmth}K</span>
-        </div>
-      </div>
-      <div class="property-row">
-        <span>Position</span>
-        <span class="coords">
-          ({light.position.x.toFixed(1)}, {light.position.y.toFixed(1)})
-        </span>
-      </div>
-      <button class="delete-button" on:click={deleteSelectedLights}>
-        Delete Light
-      </button>
-    </div>
-  {:else}
+  {:else if !currentRoom.isClosed}
     <div class="property-section hint">
       <p>Close the room polygon to edit walls and place lights.</p>
     </div>
@@ -532,86 +376,6 @@
   .coords {
     font-family: monospace;
     font-size: 12px;
-  }
-
-  .definition-select {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
-
-  .definition-select span:first-child {
-    margin-bottom: 2px;
-  }
-
-  .definition-select select {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid var(--input-border);
-    border-radius: 4px;
-    font-size: 13px;
-    background: var(--input-bg);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .definition-select select:focus {
-    outline: none;
-    border-color: var(--button-active);
-  }
-
-  .light-specs {
-    background: var(--input-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 8px 12px;
-    margin: 8px 0;
-  }
-
-  .spec-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    padding: 2px 0;
-  }
-
-  .spec-row span:first-child {
-    color: var(--text-muted);
-  }
-
-  .spec-row span:last-child {
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-
-  .multi-select-hint {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin: 0 0 12px 0;
-    font-style: italic;
-  }
-
-  .light-summary {
-    background: var(--input-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 8px 12px;
-    margin: 8px 0;
-  }
-
-  .summary-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-  }
-
-  .summary-row span:first-child {
-    color: var(--text-muted);
-  }
-
-  .summary-row span:last-child {
-    font-weight: 600;
-    color: var(--button-active);
   }
 
   .wall-hint {
