@@ -5,7 +5,7 @@ import type { WallBuilder } from '../../geometry/WallBuilder';
 import type { PolygonValidator } from '../../geometry/PolygonValidator';
 import type { SnapController } from '../../controllers/SnapController';
 import { BaseInteractionHandler } from '../InteractionHandler';
-import { applyGridSnap, shouldApplyGridSnap, getEffectiveGridSize } from '../../utils/gridSnap';
+import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
 
 export interface DrawingHandlerCallbacks {
   onUpdateDrawingVertices: (vertices: Vector2[]) => void;
@@ -47,13 +47,13 @@ export class DrawingHandler extends BaseInteractionHandler {
   handleClick(event: InputEvent, context: InteractionContext): boolean {
     if (!context.isDrawingEnabled) return false;
 
-    const { wallBuilder, polygonValidator } = this.config;
+    const { wallBuilder, polygonValidator, snapController } = this.config;
     const pos = event.worldPos;
-    const gridSize = getEffectiveGridSize(this.config.getGridSize);
+    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
 
     // Grid snap mode
-    if (shouldApplyGridSnap(this.config)) {
-      const gridPos = applyGridSnap(pos, this.config);
+    if (this.config.getGridSnapEnabled() && gridSize > 0) {
+      const gridPos = snapController.snapToGrid(pos, gridSize);
 
       if (!wallBuilder.drawing) {
         wallBuilder.startDrawing(gridPos);
@@ -104,11 +104,16 @@ export class DrawingHandler extends BaseInteractionHandler {
       return false;
     }
 
-    const { wallBuilder } = this.config;
+    const { wallBuilder, snapController } = this.config;
     if (!wallBuilder.drawing) {
       // Show preview vertex at cursor when not actively drawing
-      const previewPos = applyGridSnap(event.worldPos, this.config);
-      this.callbacks.onSetPreviewVertex(previewPos);
+      const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
+      if (this.config.getGridSnapEnabled() && gridSize > 0) {
+        const gridPos = snapController.snapToGrid(event.worldPos, gridSize);
+        this.callbacks.onSetPreviewVertex(gridPos);
+      } else {
+        this.callbacks.onSetPreviewVertex(event.worldPos);
+      }
       return false;
     }
 
@@ -118,9 +123,11 @@ export class DrawingHandler extends BaseInteractionHandler {
       return false;
     }
 
+    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
+
     // Grid snap mode - bypass angle snapping entirely
-    if (shouldApplyGridSnap(this.config)) {
-      const gridPos = applyGridSnap(event.worldPos, this.config);
+    if (this.config.getGridSnapEnabled() && gridSize > 0) {
+      const gridPos = snapController.snapToGrid(event.worldPos, gridSize);
       this.callbacks.onSetPhantomLine(lastVertex, gridPos);
       this.callbacks.onSetPreviewVertex(gridPos);
       return true;
