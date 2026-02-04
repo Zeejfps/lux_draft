@@ -190,7 +190,7 @@
   }
 
   $: if (editorRenderer && currentRoomState) {
-    editorRenderer.updateWalls(currentRoomState.walls, currentSelectedWallId, currentSelectedVertexIndices);
+    editorRenderer.updateWalls(currentRoomState.walls, currentSelectedWallId, currentSelectedVertexIndices, currentRoomState.doors ?? []);
     editorRenderer.updateLights(currentRoomState.lights, currentRoomState.ceilingHeight, currentSelectedLightIds);
     editorRenderer.updateDoors(currentRoomState.doors ?? [], currentRoomState.walls, currentSelectedDoorId);
     lightManager?.setLights(currentRoomState.lights);

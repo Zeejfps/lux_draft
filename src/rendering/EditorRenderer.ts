@@ -2,13 +2,13 @@ import * as THREE from 'three';
 import type { Vector2, WallSegment, LightFixture, UnitFormat, LightRadiusVisibility, Door } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { LightIcon } from '../lighting/LightIcon';
-import { getAllDimensionLabels } from '../geometry/DimensionLabel';
+import { getAllDimensionLabelsWithDoors } from '../geometry/DimensionLabel';
 import { MeasurementRenderer } from './MeasurementRenderer';
 import { distancePointToSegment } from '../utils/math';
 import { clearGroup, disposeObject3D } from '../utils/three';
 import { WALL_HIT_TOLERANCE_FT } from '../constants/editor';
 import {
-  createWallLine,
+  createWallLinesWithDoors,
   createVertexCircle,
   createPhantomLine,
   createDrawingVertex,
@@ -38,6 +38,7 @@ export class EditorRenderer {
   private vertexMeshes: THREE.Mesh[] = [];
   private currentUnitFormat: UnitFormat = 'feet-inches';
   private currentWalls: WallSegment[] = [];
+  private currentDoors: Door[] = [];
   private selectionBoxLine: THREE.Line | null = null;
   private lightRadiusVisibility: LightRadiusVisibility = 'selected';
 
@@ -69,7 +70,8 @@ export class EditorRenderer {
   updateWalls(
     walls: WallSegment[],
     selectedWallId: string | null = null,
-    selectedVertexIndices: Set<number> | number | null = null
+    selectedVertexIndices: Set<number> | number | null = null,
+    doors: Door[] = []
   ): void {
     clearGroup(this.wallsGroup);
     this.disposeVertexMeshes();
@@ -86,9 +88,10 @@ export class EditorRenderer {
       selectedSet = selectedVertexIndices;
     }
 
-    this.renderWallLines(walls, selectedWallId);
+    this.currentDoors = doors;
+    this.renderWallLines(walls, selectedWallId, doors);
     this.renderVertices(vertexList, selectedSet);
-    this.updateLabels(walls);
+    this.updateLabels(walls, doors);
   }
 
   private buildVertexList(walls: WallSegment[]): Array<{ x: number; y: number; index: number }> {
@@ -99,11 +102,14 @@ export class EditorRenderer {
     }));
   }
 
-  private renderWallLines(walls: WallSegment[], selectedWallId: string | null): void {
+  private renderWallLines(walls: WallSegment[], selectedWallId: string | null, doors: Door[]): void {
     for (const wall of walls) {
       const isSelected = wall.id === selectedWallId;
-      const line = createWallLine(wall, isSelected);
-      this.wallsGroup.add(line);
+      // Create wall lines with gaps for doors
+      const lines = createWallLinesWithDoors(wall, doors, isSelected);
+      for (const line of lines) {
+        this.wallsGroup.add(line);
+      }
     }
   }
 
@@ -148,11 +154,12 @@ export class EditorRenderer {
   // Labels
   // ============================================
 
-  private updateLabels(walls: WallSegment[]): void {
+  private updateLabels(walls: WallSegment[], doors: Door[] = []): void {
     this.currentWalls = walls;
+    this.currentDoors = doors;
     clearGroup(this.labelsGroup);
 
-    const labels = getAllDimensionLabels(walls, {
+    const labels = getAllDimensionLabelsWithDoors(walls, doors, {
       offset: 0.5,
       unitFormat: this.currentUnitFormat,
     });
@@ -167,7 +174,7 @@ export class EditorRenderer {
   setUnitFormat(format: UnitFormat): void {
     if (this.currentUnitFormat !== format) {
       this.currentUnitFormat = format;
-      this.updateLabels(this.currentWalls);
+      this.updateLabels(this.currentWalls, this.currentDoors);
       this.measurementRenderer.setUnitFormat(format);
     }
   }

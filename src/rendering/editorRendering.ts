@@ -9,6 +9,97 @@ import { getTheme } from '../constants/themes';
  * These functions create THREE.js objects without side effects.
  */
 
+/**
+ * Represents a visible segment of a wall (between doors or wall endpoints).
+ */
+export interface WallSegmentPart {
+  start: Vector2;
+  end: Vector2;
+  length: number;
+  /** Distance from wall start to this segment's start */
+  startDistance: number;
+  /** Distance from wall start to this segment's end */
+  endDistance: number;
+}
+
+/**
+ * Calculate the visible wall segments for a wall, accounting for door openings.
+ * Returns an array of segment parts that should be rendered as solid wall lines.
+ */
+export function getWallSegmentsWithDoors(wall: WallSegment, doors: Door[]): WallSegmentPart[] {
+  const wallDir = {
+    x: wall.end.x - wall.start.x,
+    y: wall.end.y - wall.start.y,
+  };
+  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+  if (wallLength === 0) return [];
+
+  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+
+  // Get doors on this wall, sorted by position
+  const doorsOnWall = doors
+    .filter(d => d.wallId === wall.id)
+    .sort((a, b) => a.position - b.position);
+
+  if (doorsOnWall.length === 0) {
+    // No doors - return the full wall as a single segment
+    return [{
+      start: wall.start,
+      end: wall.end,
+      length: wallLength,
+      startDistance: 0,
+      endDistance: wallLength,
+    }];
+  }
+
+  const segments: WallSegmentPart[] = [];
+  let currentStart = 0;
+
+  for (const door of doorsOnWall) {
+    const doorStart = door.position - door.width / 2;
+    const doorEnd = door.position + door.width / 2;
+
+    // Add segment from current position to door start (if there's space)
+    if (doorStart > currentStart + 0.01) { // Small epsilon to avoid tiny segments
+      const segmentStart = {
+        x: wall.start.x + normalizedDir.x * currentStart,
+        y: wall.start.y + normalizedDir.y * currentStart,
+      };
+      const segmentEnd = {
+        x: wall.start.x + normalizedDir.x * doorStart,
+        y: wall.start.y + normalizedDir.y * doorStart,
+      };
+      segments.push({
+        start: segmentStart,
+        end: segmentEnd,
+        length: doorStart - currentStart,
+        startDistance: currentStart,
+        endDistance: doorStart,
+      });
+    }
+
+    // Move past the door
+    currentStart = doorEnd;
+  }
+
+  // Add final segment from last door to wall end (if there's space)
+  if (wallLength > currentStart + 0.01) {
+    const segmentStart = {
+      x: wall.start.x + normalizedDir.x * currentStart,
+      y: wall.start.y + normalizedDir.y * currentStart,
+    };
+    segments.push({
+      start: segmentStart,
+      end: wall.end,
+      length: wallLength - currentStart,
+      startDistance: currentStart,
+      endDistance: wallLength,
+    });
+  }
+
+  return segments;
+}
+
 export function createWallLine(wall: WallSegment, isSelected: boolean): THREE.Line {
   const theme = getTheme();
   const points = [
@@ -24,6 +115,35 @@ export function createWallLine(wall: WallSegment, isSelected: boolean): THREE.Li
   const line = new THREE.Line(geometry, material);
   line.userData.wallId = wall.id;
   return line;
+}
+
+/**
+ * Create wall lines for a wall with door gaps.
+ * Returns multiple line objects, one for each visible segment.
+ */
+export function createWallLinesWithDoors(
+  wall: WallSegment,
+  doors: Door[],
+  isSelected: boolean
+): THREE.Line[] {
+  const theme = getTheme();
+  const segments = getWallSegmentsWithDoors(wall, doors);
+
+  return segments.map(segment => {
+    const points = [
+      new THREE.Vector3(segment.start.x, segment.start.y, 0),
+      new THREE.Vector3(segment.end.x, segment.end.y, 0),
+    ];
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({
+      color: isSelected ? theme.editor.wallSelected : theme.editor.wall,
+      linewidth: isSelected ? theme.editor.wallLineWidthSelected : theme.editor.wallLineWidth,
+    });
+    const line = new THREE.Line(geometry, material);
+    line.userData.wallId = wall.id;
+    return line;
+  });
 }
 
 export function createVertexCircle(
