@@ -168,20 +168,44 @@ export class MeasurementHandler extends BaseInteractionHandler {
 
   private handleClickFromVertex(
     event: InputEvent,
-    _context: InteractionContext,
+    context: InteractionContext,
     vertices: Vector2[]
   ): boolean {
+    const { measurementController } = this.config;
 
-    // Allow vertex selection for dragging
     const clickedVertexIndex = findVertexAtPosition(
       event.worldPos,
       vertices,
       MEASUREMENT_CLICK_TOLERANCE_FT
     );
 
-    if (clickedVertexIndex !== null) {
+    // Check if clicking on the source vertex to drag it
+    if (clickedVertexIndex !== null && clickedVertexIndex === measurementController.sourceVertexIndex) {
       this.callbacks.onSelectVertex(clickedVertexIndex, false);
       this.callbacks.onStartDrag(clickedVertexIndex, null, event.worldPos);
+      return true;
+    }
+
+    // Check if clicking on another vertex to measure to it
+    if (clickedVertexIndex !== null && clickedVertexIndex !== measurementController.sourceVertexIndex) {
+      measurementController.setTargetVertex(clickedVertexIndex, vertices[clickedVertexIndex]);
+      this.updateDisplay();
+      return true;
+    }
+
+    // Check for light click
+    const clickedLight = this.config.lightManager.getLightAt(event.worldPos, LIGHT_HIT_TOLERANCE_FT);
+    if (clickedLight) {
+      measurementController.setTargetLight(clickedLight.id, clickedLight.position);
+      this.updateDisplay();
+      return true;
+    }
+
+    // Check for wall click
+    const wall = this.callbacks.getWallAtPosition(event.worldPos, context.roomState.walls, WALL_CLICK_TOLERANCE_FT);
+    if (wall) {
+      measurementController.setTargetWall(wall.id, wall);
+      this.updateDisplay();
       return true;
     }
 
