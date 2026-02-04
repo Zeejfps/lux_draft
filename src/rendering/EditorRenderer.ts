@@ -29,6 +29,7 @@ export class EditorRenderer {
   private labelsGroup: THREE.Group;
   private lightsGroup: THREE.Group;
   private doorsGroup: THREE.Group;
+  private doorPreviewGroup: THREE.Group;
   private phantomLine: THREE.Line | null = null;
   private drawingVerticesGroup: THREE.Group;
   private snapGuidesGroup: THREE.Group;
@@ -49,6 +50,7 @@ export class EditorRenderer {
     this.labelsGroup = new THREE.Group();
     this.lightsGroup = new THREE.Group();
     this.doorsGroup = new THREE.Group();
+    this.doorPreviewGroup = new THREE.Group();
     this.drawingVerticesGroup = new THREE.Group();
     this.snapGuidesGroup = new THREE.Group();
     this.selectionBoxGroup = new THREE.Group();
@@ -58,6 +60,7 @@ export class EditorRenderer {
     this.scene.add(this.labelsGroup);
     this.scene.add(this.lightsGroup);
     this.scene.add(this.doorsGroup);
+    this.scene.add(this.doorPreviewGroup);
     this.scene.add(this.drawingVerticesGroup);
     this.scene.add(this.snapGuidesGroup);
     this.scene.add(this.selectionBoxGroup);
@@ -289,6 +292,38 @@ export class EditorRenderer {
         this.doorsGroup.add(obj);
       }
     }
+  }
+
+  /**
+   * Show a preview of a door being placed.
+   */
+  setDoorPreview(door: Door | null, wall: WallSegment | null): void {
+    clearGroup(this.doorPreviewGroup);
+
+    if (!door || !wall) return;
+
+    // Create semi-transparent preview graphics
+    const graphics = createDoorGraphics(door, wall, false);
+    for (const obj of graphics) {
+      // Make preview semi-transparent
+      if (obj instanceof THREE.Line) {
+        const material = obj.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
+        material.opacity = 0.5;
+        material.transparent = true;
+      } else if (obj instanceof THREE.Mesh) {
+        const material = obj.material as THREE.MeshBasicMaterial;
+        material.opacity = 0.5;
+        material.transparent = true;
+      }
+      this.doorPreviewGroup.add(obj);
+    }
+  }
+
+  /**
+   * Clear the door preview.
+   */
+  clearDoorPreview(): void {
+    clearGroup(this.doorPreviewGroup);
   }
 
   // ============================================

@@ -7,6 +7,7 @@ import { vectorSubtract, vectorDot, vectorLength } from '../../utils/math';
 
 export interface DoorPlacementHandlerCallbacks {
   onDoorPlaced: (door: Door) => void;
+  onDoorPreview: (door: Door | null, wall: WallSegment | null) => void;
 }
 
 export interface DoorPlacementHandlerConfig {
@@ -14,6 +15,8 @@ export interface DoorPlacementHandlerConfig {
   getDoors: () => Door[];
   getWallAtPosition: (pos: Vector2, walls: WallSegment[], tolerance: number) => WallSegment | null;
   getSelectedDoorWidth: () => number;
+  getSelectedDoorSwingDirection: () => DoorSwingDirection;
+  getSelectedDoorSwingSide: () => DoorSwingSide;
   canPlaceDoors: () => boolean;
 }
 
@@ -119,8 +122,10 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
     // Project click point onto wall to get position along wall
     const positionOnWall = projectPointOntoWall(pos, wall);
 
-    // Get selected door width
+    // Get selected door settings
     const doorWidth = this.config.getSelectedDoorWidth();
+    const swingDirection = this.config.getSelectedDoorSwingDirection();
+    const swingSide = this.config.getSelectedDoorSwingSide();
 
     // Validate door fits
     const existingDoors = this.config.getDoors();
@@ -128,17 +133,64 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
       return true; // Consumed the event but couldn't place
     }
 
-    // Create door with default swing direction ('right') and side ('inside')
+    // Create door with selected settings
     const newDoor: Door = {
       id: generateId(),
       wallId: wall.id,
       position: positionOnWall,
       width: doorWidth,
-      swingDirection: 'right' as DoorSwingDirection,
-      swingSide: 'inside' as DoorSwingSide,
+      swingDirection,
+      swingSide,
     };
 
+    // Clear preview before placing
+    this.callbacks.onDoorPreview(null, null);
     this.callbacks.onDoorPlaced(newDoor);
     return true;
+  }
+
+  handleMouseMove(event: InputEvent, context: InteractionContext): boolean {
+    if (!context.isPlacingDoors || !this.config.canPlaceDoors()) {
+      this.callbacks.onDoorPreview(null, null);
+      return false;
+    }
+
+    const walls = this.config.getWalls();
+    const pos = event.worldPos;
+
+    // Find wall at mouse position
+    const wall = this.config.getWallAtPosition(pos, walls, DOOR_PLACEMENT_TOLERANCE);
+    if (!wall) {
+      this.callbacks.onDoorPreview(null, null);
+      return false;
+    }
+
+    // Project mouse point onto wall to get position along wall
+    const positionOnWall = projectPointOntoWall(pos, wall);
+
+    // Get selected door settings
+    const doorWidth = this.config.getSelectedDoorWidth();
+    const swingDirection = this.config.getSelectedDoorSwingDirection();
+    const swingSide = this.config.getSelectedDoorSwingSide();
+
+    // Check if door can be placed here
+    const existingDoors = this.config.getDoors();
+    if (!canPlaceDoorAtPosition(wall, positionOnWall, doorWidth, existingDoors)) {
+      this.callbacks.onDoorPreview(null, null);
+      return false;
+    }
+
+    // Create preview door (without id since it's not placed yet)
+    const previewDoor: Door = {
+      id: 'preview',
+      wallId: wall.id,
+      position: positionOnWall,
+      width: doorWidth,
+      swingDirection,
+      swingSide,
+    };
+
+    this.callbacks.onDoorPreview(previewDoor, wall);
+    return false; // Don't consume the event, let other handlers process if needed
   }
 }

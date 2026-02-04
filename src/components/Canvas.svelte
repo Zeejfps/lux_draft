@@ -48,6 +48,7 @@
         viewMode
     } from '../stores/appStore';
     import {historyStore} from '../stores/historyStore';
+    import {getDoorPlacementSettings} from '../stores/doorStore';
     import {displayPreferences, rafterConfig, toggleUnitFormat} from '../stores/settingsStore';
     import {deadZoneConfig} from '../stores/deadZoneStore';
     import {spacingConfig, spacingWarnings} from '../stores/spacingStore';
@@ -169,6 +170,12 @@
   $: isDrawing = $isDrawingEnabled;
   $: isPlacingLights = $isLightPlacementEnabled;
   $: isPlacingDoors = $isDoorPlacementEnabled;
+
+  // Clear door preview when exiting door placement mode
+  $: if (editorRenderer && !isPlacingDoors) {
+    editorRenderer.clearDoorPreview();
+  }
+
   $: currentSelectedLightId = $selectedLightId;
   $: currentSelectedLightIds = $selectedLightIds;
   $: currentSelectedWallId = $selectedWallId;
@@ -569,11 +576,20 @@
         getWalls: () => currentRoomState.walls,
         getDoors: () => currentRoomState.doors ?? [],
         getWallAtPosition: (pos, walls, tolerance) => editorRenderer.getWallAtPosition(pos, walls, tolerance),
-        getSelectedDoorWidth: () => DEFAULT_DOOR_WIDTH,
+        getSelectedDoorWidth: () => getDoorPlacementSettings().width,
+        getSelectedDoorSwingDirection: () => getDoorPlacementSettings().swingDirection,
+        getSelectedDoorSwingSide: () => getDoorPlacementSettings().swingSide,
         canPlaceDoors: () => get(canPlaceDoors),
       },
       {
         onDoorPlaced: (door) => addDoor(door),
+        onDoorPreview: (door, wall) => {
+          if (door && wall) {
+            editorRenderer.setDoorPreview(door, wall);
+          } else {
+            editorRenderer.clearDoorPreview();
+          }
+        },
       }
     );
 

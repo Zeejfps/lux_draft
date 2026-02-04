@@ -6,6 +6,7 @@
   import LightPropertiesPanel from './components/LightPropertiesPanel.svelte';
   import DoorPropertiesPanel from './components/DoorPropertiesPanel.svelte';
   import LightToolPanel from './components/LightToolPanel.svelte';
+  import DoorToolPanel from './components/DoorToolPanel.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import LengthInput from './components/LengthInput.svelte';
   import RafterControls from './components/RafterControls.svelte';
@@ -147,6 +148,7 @@
       <RafterControls />
       <LightingStatsPanel />
       <LightToolPanel on:openLightManager={handleOpenLightManager} />
+      <DoorToolPanel />
       <PropertyPanel />
       <LightPropertiesPanel />
       <DoorPropertiesPanel />
