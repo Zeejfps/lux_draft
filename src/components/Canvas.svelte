@@ -18,11 +18,13 @@
         canPlaceDoors,
         deleteVertex,
         getVertices,
+        getDoorsByWallId,
         insertVertexOnWall,
         moveWall,
         roomBounds,
         roomStore,
         updateVertexPosition,
+        updateDoor,
         addDoor,
         removeDoor
     } from '../stores/roomStore';
@@ -70,6 +72,7 @@
     import {
         BoxSelectionHandler,
         createDefaultKeyboardShortcuts,
+        DoorDragOperation,
         DragManager,
         DrawingHandler,
         DoorPlacementHandler,
@@ -508,6 +511,7 @@
         }));
       },
       onMoveWall: (wallId, newStart, newEnd) => moveWall(wallId, newStart, newEnd),
+      onUpdateDoorPosition: (doorId, position) => updateDoor(doorId, { position }),
       onSetSnapGuides: (guides) => editorRenderer?.setSnapGuides(guides),
       onPauseHistory: () => historyStore.pauseRecording(),
       onResumeHistory: () => historyStore.resumeRecording(),
@@ -660,6 +664,9 @@
             getLights: () => currentRoomState.lights,
             getWalls: () => currentRoomState.walls,
             getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
+            getDoors: () => currentRoomState.doors ?? [],
+            getDoorById: (id) => (currentRoomState.doors ?? []).find(d => d.id === id),
+            getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
             isRoomClosed: () => currentRoomState.isClosed,
             getCurrentMousePos: () => currentMousePos,
           },
@@ -672,6 +679,9 @@
         getVertices: () => getVertices(currentRoomState),
         getLights: () => currentRoomState.lights,
         getWalls: () => currentRoomState.walls,
+        getDoors: () => currentRoomState.doors ?? [],
+        getDoorById: (id) => (currentRoomState.doors ?? []).find(d => d.id === id),
+        getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
       },
       {
         onGrabModeStart: () => {},
@@ -687,6 +697,7 @@
         boxSelectionHandler,
         createUnifiedDragOperation,
         createWallDragOperation,
+        createDoorDragOperation,
         getSelection: () => buildInteractionContext().selection,
       },
       {
@@ -771,6 +782,17 @@
         getVertices: () => getVertices(currentRoomState),
         getWalls: () => currentRoomState.walls,
         getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
+      },
+      dragManager.getCallbacks()
+    );
+  }
+
+  function createDoorDragOperation(): DoorDragOperation {
+    return new DoorDragOperation(
+      {
+        getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
+        getDoorById: (id) => (currentRoomState.doors ?? []).find(d => d.id === id),
+        getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
       },
       dragManager.getCallbacks()
     );

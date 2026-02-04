@@ -5,6 +5,7 @@ import type { LightManager } from '../../lighting/LightManager';
 import type { DragManager } from '../DragManager';
 import type { UnifiedDragOperation } from '../operations/UnifiedDragOperation';
 import type { WallDragOperation } from '../operations/WallDragOperation';
+import type { DoorDragOperation } from '../operations/DoorDragOperation';
 import type { BoxSelectionHandler } from './BoxSelectionHandler';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { findVertexAtPosition, projectPointOntoSegmentForInsertion, distancePointToSegment } from '../../utils/math';
@@ -38,6 +39,7 @@ export interface SelectionHandlerConfig {
   boxSelectionHandler: BoxSelectionHandler;
   createUnifiedDragOperation: () => UnifiedDragOperation;
   createWallDragOperation: () => WallDragOperation;
+  createDoorDragOperation: () => DoorDragOperation;
   getSelection: () => SelectionState;
 }
 
@@ -150,7 +152,8 @@ export class SelectionHandler extends BaseInteractionHandler {
     const hasSelection =
       selection.selectedVertexIndices.size > 0 ||
       selection.selectedLightIds.size > 0 ||
-      selection.selectedWallId !== null;
+      selection.selectedWallId !== null ||
+      selection.selectedDoorId !== null;
 
     if (hasSelection && !event.ctrlKey && !event.altKey && !context.isGrabMode) {
       if (event.key?.toLowerCase() === 'x') {
@@ -275,6 +278,17 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.callbacks.onClearVertexSelection();
     this.callbacks.onClearWallSelection();
 
+    // Start door drag
+    const operation = this.config.createDoorDragOperation();
+    operation.setDoorId(door.id);
+
+    this.config.dragManager.startDrag(operation, {
+      position: pos,
+      modifiers: { shiftKey: false, ctrlKey: false, altKey: false },
+      roomState: null as any,
+      selection: this.config.getSelection(),
+    });
+
     return { handled: true };
   }
 
@@ -374,6 +388,27 @@ export class SelectionHandler extends BaseInteractionHandler {
           x: (wall.start.x + wall.end.x) / 2,
           y: (wall.start.y + wall.end.y) / 2,
         };
+      }
+    }
+
+    if (selection.selectedDoorId) {
+      const door = context.roomState.doors.find(d => d.id === selection.selectedDoorId);
+      if (door) {
+        const wall = context.roomState.walls.find(w => w.id === door.wallId);
+        if (wall) {
+          const wallDir = {
+            x: wall.end.x - wall.start.x,
+            y: wall.end.y - wall.start.y,
+          };
+          const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+          if (wallLength > 0) {
+            const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+            return {
+              x: wall.start.x + normalizedDir.x * door.position,
+              y: wall.start.y + normalizedDir.y * door.position,
+            };
+          }
+        }
       }
     }
 
