@@ -221,7 +221,7 @@ export class EditorRenderer {
     }
   }
 
-  setPreviewLight(pos: Vector2 | null): void {
+  setPreviewLight(pos: Vector2 | null, isValid: boolean = true): void {
     if (this.previewLightGroup) {
       this.scene.remove(this.previewLightGroup);
       disposeObject3D(this.previewLightGroup);
@@ -231,10 +231,13 @@ export class EditorRenderer {
     if (pos) {
       this.previewLightGroup = new THREE.Group();
 
+      // Choose color based on validity
+      const color = isValid ? 0xfbbf24 : 0xef4444; // Amber for valid, red for invalid
+
       // Outer circle (6 inches = 0.5 feet radius)
       const outerGeometry = new THREE.RingGeometry(0.48, 0.5, 32);
       const outerMaterial = new THREE.MeshBasicMaterial({
-        color: 0xfbbf24,
+        color: color,
         opacity: 0.4,
         transparent: true,
         side: THREE.DoubleSide,
@@ -246,7 +249,7 @@ export class EditorRenderer {
       // Center dot
       const dotGeometry = new THREE.CircleGeometry(0.08, 16);
       const dotMaterial = new THREE.MeshBasicMaterial({
-        color: 0xfbbf24,
+        color: color,
         opacity: 0.6,
         transparent: true,
       });
