@@ -5,7 +5,7 @@ import type { LightManager } from '../../lighting/LightManager';
 import type { PolygonValidator } from '../../geometry/PolygonValidator';
 import type { SnapController } from '../../controllers/SnapController';
 import { BaseInteractionHandler } from '../InteractionHandler';
-import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
+import { applyGridSnap } from '../../utils/gridSnap';
 
 export interface LightPlacementHandlerCallbacks {
   onLightPlaced: (light: LightFixture) => void;
@@ -49,15 +49,9 @@ export class LightPlacementHandler extends BaseInteractionHandler {
       return false;
     }
 
-    const { lightManager, polygonValidator, snapController } = this.config;
+    const { lightManager, polygonValidator } = this.config;
     const walls = this.config.getWalls();
-    let pos = event.worldPos;
-
-    // Apply grid snapping if enabled
-    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-    if (this.config.getGridSnapEnabled() && gridSize > 0) {
-      pos = snapController.snapToGrid(pos, gridSize);
-    }
+    const pos = applyGridSnap(event.worldPos, this.config);
 
     // Only place lights inside the room
     if (!polygonValidator.isPointInside(pos, walls)) {
@@ -77,15 +71,9 @@ export class LightPlacementHandler extends BaseInteractionHandler {
       return false;
     }
 
-    const { polygonValidator, snapController } = this.config;
+    const { polygonValidator } = this.config;
     const walls = this.config.getWalls();
-    let pos = event.worldPos;
-
-    // Apply grid snapping if enabled
-    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-    if (this.config.getGridSnapEnabled() && gridSize > 0) {
-      pos = snapController.snapToGrid(pos, gridSize);
-    }
+    const pos = applyGridSnap(event.worldPos, this.config);
 
     // Check if position is inside the room
     const isInside = polygonValidator.isPointInside(pos, walls);

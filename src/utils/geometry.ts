@@ -1,5 +1,21 @@
 import type { Vector2, WallSegment } from '../types';
-import { distancePointToSegment } from './math';
+import { distancePointToSegment, vectorSubtract, vectorLength, vectorNormalize } from './math';
+
+/**
+ * Gets the direction vector and length of a wall segment.
+ * @param wall - The wall segment to analyze
+ * @returns Object containing the direction vector, normalized direction, and wall length
+ */
+export function getWallDirection(wall: WallSegment): {
+  direction: Vector2;
+  normalized: Vector2;
+  length: number;
+} {
+  const direction = vectorSubtract(wall.end, wall.start);
+  const length = vectorLength(direction);
+  const normalized = length > 0 ? vectorNormalize(direction) : { x: 0, y: 0 };
+  return { direction, normalized, length };
+}
 
 /**
  * Determines if a point lies inside a polygon using the ray casting algorithm.

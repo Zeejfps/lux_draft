@@ -8,7 +8,7 @@ import type { SnapController, SnapGuide } from '../../controllers/SnapController
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
 import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
-import { isPointInPolygon } from '../../utils/geometry';
+import { isPointInPolygon, getWallDirection } from '../../utils/geometry';
 
 export interface GrabModeConfig {
   snapController: SnapController;
@@ -105,16 +105,11 @@ export class GrabModeDragOperation extends BaseDragOperation {
         // Calculate door's world position for offset calculation
         const wall = this.config.getWallById(door.wallId);
         if (wall) {
-          const wallDir = {
-            x: wall.end.x - wall.start.x,
-            y: wall.end.y - wall.start.y,
-          };
-          const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-          if (wallLength > 0) {
-            const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+          const { normalized, length } = getWallDirection(wall);
+          if (length > 0) {
             anchorPos = {
-              x: wall.start.x + normalizedDir.x * door.position,
-              y: wall.start.y + normalizedDir.y * door.position,
+              x: wall.start.x + normalized.x * door.position,
+              y: wall.start.y + normalized.y * door.position,
             };
           }
         }
@@ -312,14 +307,8 @@ export class GrabModeDragOperation extends BaseDragOperation {
     if (!wall) return;
 
     // Calculate wall properties
-    const wallDir = {
-      x: wall.end.x - wall.start.x,
-      y: wall.end.y - wall.start.y,
-    };
-    const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+    const { normalized: normalizedDir, length: wallLength } = getWallDirection(wall);
     if (wallLength === 0) return;
-
-    const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
 
     // Project mouse position onto the wall to get new door position
     const mouseToWallStart = {

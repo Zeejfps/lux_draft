@@ -58,6 +58,10 @@ export class MeasurementController {
     return this._source?.type === 'light' ? this._source.id : null;
   }
 
+  get sourceVertexIndex(): number | null {
+    return this._source?.type === 'vertex' ? this._source.index : null;
+  }
+
   get targetLightId(): string | null {
     return this._target?.type === 'light' ? this._target.id : null;
   }
