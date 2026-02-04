@@ -4,6 +4,7 @@
   import { canPlaceLights, roomStore, resetRoom } from '../stores/roomStore';
   import { toggleRafters, rafterConfig, displayPreferences } from '../stores/settingsStore';
   import { toggleLightingStats, lightingStatsConfig } from '../stores/lightingStatsStore';
+  import { togglePropertiesPanel, propertiesPanelConfig } from '../stores/propertiesPanelStore';
   import { toggleDeadZones, deadZoneConfig } from '../stores/deadZoneStore';
   import { toggleSpacingWarnings, spacingConfig } from '../stores/spacingStore';
   import { historyStore, canUndo, canRedo } from '../stores/historyStore';
@@ -30,6 +31,7 @@
   let undoEnabled: boolean;
   let redoEnabled: boolean;
   let statsVisible: boolean;
+  let propertiesVisible: boolean;
   let deadZonesEnabled: boolean;
   let spacingEnabled: boolean;
   let gridSnapEnabled: boolean;
@@ -45,6 +47,7 @@
   $: undoEnabled = $canUndo;
   $: redoEnabled = $canRedo;
   $: statsVisible = $lightingStatsConfig.visible;
+  $: propertiesVisible = $propertiesPanelConfig.visible;
   $: deadZonesEnabled = $deadZoneConfig.enabled;
   $: spacingEnabled = $spacingConfig.enabled;
   $: gridSnapEnabled = $displayPreferences.gridSnapEnabled;
@@ -470,6 +473,18 @@
           <line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
         <span class="label">Stats</span>
+      </button>
+      <button
+        class="toggle-button"
+        class:active={propertiesVisible}
+        on:click={togglePropertiesPanel}
+        title="Toggle Properties Panel (P)"
+      >
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <line x1="9" y1="3" x2="9" y2="21"/>
+        </svg>
+        <span class="label">Properties</span>
       </button>
       <button
         class="tool-button"

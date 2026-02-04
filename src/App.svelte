@@ -3,6 +3,7 @@
   import Canvas from './components/Canvas.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import PropertyPanel from './components/PropertyPanel.svelte';
+  import LightToolPanel from './components/LightToolPanel.svelte';
   import StatusBar from './components/StatusBar.svelte';
   import LengthInput from './components/LengthInput.svelte';
   import RafterControls from './components/RafterControls.svelte';
@@ -12,6 +13,7 @@
   import { activeTool, setActiveTool, setViewMode } from './stores/appStore';
   import { loadFromLocalStorage, setupAutoSave } from './persistence/localStorage';
   import { initSettingsFromRoom, displayPreferences } from './stores/settingsStore';
+  import { togglePropertiesPanel } from './stores/propertiesPanelStore';
   import './stores/themeStore'; // Initialize theme CSS variables
   import type { Vector2 } from './types';
 
@@ -82,6 +84,9 @@
       case 's':
         displayPreferences.update(p => ({ ...p, gridSnapEnabled: !p.gridSnapEnabled }));
         break;
+      case 'p':
+        togglePropertiesPanel();
+        break;
     }
   }
 
@@ -137,8 +142,9 @@
       {/if}
       <RafterControls />
       <LightingStatsPanel />
+      <LightToolPanel on:openLightManager={handleOpenLightManager} />
+      <PropertyPanel on:openLightManager={handleOpenLightManager} />
     </div>
-    <PropertyPanel on:openLightManager={handleOpenLightManager} />
   </main>
 
   <StatusBar {mousePos} {snapType} />
