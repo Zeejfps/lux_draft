@@ -141,42 +141,6 @@ LuxDraft Studio supports industry-standard IES photometric data files:
 3. Select your `.ies` file
 4. The parser extracts lumen values and calculates beam angles automatically
 
-## Project Structure
-
-```
-lux_draft/
-├── src/
-│   ├── components/        # Svelte UI components
-│   │   ├── Canvas.svelte
-│   │   ├── Toolbar.svelte
-│   │   ├── PropertyPanel.svelte
-│   │   └── ...
-│   ├── core/             # Core engine classes
-│   │   ├── Scene.ts
-│   │   ├── InputManager.ts
-│   │   └── UnitConverter.ts
-│   ├── geometry/         # Geometric utilities
-│   │   ├── WallBuilder.ts
-│   │   ├── SnapEngine.ts
-│   │   └── PolygonValidator.ts
-│   ├── lighting/         # Lighting calculations
-│   │   ├── LightCalculator.ts
-│   │   ├── IESParser.ts
-│   │   ├── LightManager.ts
-│   │   └── SpacingAnalyzer.ts
-│   ├── rendering/        # Rendering systems
-│   │   ├── EditorRenderer.ts
-│   │   ├── HeatmapRenderer.ts
-│   │   ├── ShadowRenderer.ts
-│   │   └── shaders/
-│   ├── stores/           # Svelte stores (state management)
-│   ├── interactions/     # User interaction handlers
-│   ├── persistence/      # Save/load functionality
-│   └── types/           # TypeScript type definitions
-├── public/              # Static assets
-└── package.json
-```
-
 ## Photometric Calculations
 
 LuxDraft Studio implements physically-based lighting calculations:
