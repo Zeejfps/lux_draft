@@ -1,6 +1,9 @@
 import type { Vector2, WallSegment, Door, LightFixture } from '../../types';
-import type { SelectionState } from '../../types/interaction';
+import type { SelectionState, AxisLock } from '../../types/interaction';
+import type { SnapGuide, SnapController } from '../../controllers/SnapController';
 import { getWallDirection, isPointInPolygon } from '../../utils/geometry';
+import { applyGridSnap, type GridSnapConfig } from '../utils/snapHelpers';
+import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
 
 /**
  * Calculates the grab offset (distance from mouse to anchor object) when grab mode starts.
@@ -180,4 +183,73 @@ export function captureOriginalPositions(
   }
 
   return { vertexPositions, lightPositions, wallVertices, doorPosition };
+}
+
+/**
+ * Handle shift-key snapping for single vertex or light selection.
+ */
+export function handleShiftSnapping(
+  targetPos: Vector2,
+  selection: SelectionState | null,
+  anchorVertexIndex: number | null,
+  anchorLightId: string | null,
+  snapController: SnapController,
+  getVertices: () => Vector2[],
+  getLights: () => LightFixture[]
+): { snappedPos: Vector2; guides: SnapGuide[] } {
+  if (!selection) {
+    return { snappedPos: targetPos, guides: [] };
+  }
+
+  // Only snap for single vertex selection
+  if (selection.selectedVertexIndices.size === 1 &&
+      selection.selectedLightIds.size === 0 &&
+      anchorVertexIndex !== null) {
+    return snapController.snapToVertices(targetPos, getVertices(), anchorVertexIndex);
+  }
+
+  // Only snap for single light selection
+  if (selection.selectedLightIds.size === 1 &&
+      selection.selectedVertexIndices.size === 0 &&
+      anchorLightId !== null) {
+    return snapController.snapToLights(targetPos, getLights(), anchorLightId);
+  }
+
+  return { snappedPos: targetPos, guides: [] };
+}
+
+/**
+ * Apply grid snap or axis constraint to a target position.
+ * Returns the snapped position and whether snap guides should be cleared.
+ */
+export function applyGridSnapOrAxisLock(
+  targetPos: Vector2,
+  startPosition: Vector2,
+  axisLock: AxisLock,
+  config: GridSnapConfig,
+  applyAxisConstraint: (pos: Vector2, lock: AxisLock, origin: Vector2) => Vector2
+): { position: Vector2; clearGuides: boolean } {
+  const gridResult = applyGridSnap(
+    targetPos,
+    startPosition,
+    axisLock,
+    config,
+    DEFAULT_GRID_SIZE_FT
+  );
+
+  if (gridResult.wasSnapped) {
+    return {
+      position: gridResult.position,
+      clearGuides: axisLock === 'none',
+    };
+  }
+
+  if (axisLock !== 'none') {
+    return {
+      position: applyAxisConstraint(targetPos, axisLock, startPosition),
+      clearGuides: false,
+    };
+  }
+
+  return { position: targetPos, clearGuides: true };
 }

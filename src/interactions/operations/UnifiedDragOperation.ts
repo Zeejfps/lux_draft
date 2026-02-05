@@ -4,13 +4,15 @@ import type {
   DragUpdateContext,
   SelectionState,
 } from '../../types/interaction';
-import type { SnapGuide } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
 import type { BaseDragConfig } from '../types';
 import { BaseDragOperation } from '../DragOperation';
-import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
-import { applyGridSnap } from '../utils';
-import { calculateDelta, checkPointInRoom } from './grabModeHelpers';
+import {
+  calculateDelta,
+  checkPointInRoom,
+  handleShiftSnapping,
+  applyGridSnapOrAxisLock,
+} from './grabModeHelpers';
 
 /**
  * Configuration for unified drag operations.
@@ -95,35 +97,33 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
     // SHIFT alignment takes priority - snap to other vertices/lights (only for single item)
     if (context.modifiers.shiftKey) {
-      const guides = this.handleShiftSnapping(targetPos, context.axisLock);
-      targetPos = guides.snappedPos;
+      const result = handleShiftSnapping(
+        targetPos,
+        this.selection,
+        this.anchorVertexIndex,
+        this.anchorLightId,
+        this.config.snapController,
+        this.config.getVertices,
+        this.config.getLights
+      );
+      targetPos = result.snappedPos;
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-        // Don't clear guides - axis lock guides are managed by DragManager
       } else {
-        this.callbacks.onSetSnapGuides(guides.guides);
+        this.callbacks.onSetSnapGuides(result.guides);
       }
     }
     // Grid snap - apply when SHIFT is not held
     else {
-      const gridResult = applyGridSnap(
+      const result = applyGridSnapOrAxisLock(
         targetPos,
         this.startPosition,
         context.axisLock,
         this.config,
-        DEFAULT_GRID_SIZE_FT
+        this.applyAxisConstraint.bind(this)
       );
-
-      if (gridResult.wasSnapped) {
-        targetPos = gridResult.position;
-        // Clear snap guides only when no axis lock (axis lock guides managed by DragManager)
-        if (context.axisLock === 'none') {
-          this.callbacks.onSetSnapGuides([]);
-        }
-      } else if (context.axisLock !== 'none') {
-        // No grid snap - just apply axis lock
-        targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-      } else {
+      targetPos = result.position;
+      if (result.clearGuides) {
         this.callbacks.onSetSnapGuides([]);
       }
     }
@@ -165,33 +165,6 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
     this._isActive = false;
     this.cleanup();
-  }
-
-  private handleShiftSnapping(
-    targetPos: Vector2,
-    _axisLock: string
-  ): { snappedPos: Vector2; guides: SnapGuide[] } {
-    if (!this.selection) {
-      return { snappedPos: targetPos, guides: [] };
-    }
-
-    // Only snap for single vertex selection
-    if (this.selection.selectedVertexIndices.size === 1 &&
-        this.selection.selectedLightIds.size === 0 &&
-        this.anchorVertexIndex !== null) {
-      const vertices = this.config.getVertices();
-      return this.config.snapController.snapToVertices(targetPos, vertices, this.anchorVertexIndex);
-    }
-
-    // Only snap for single light selection
-    if (this.selection.selectedLightIds.size === 1 &&
-        this.selection.selectedVertexIndices.size === 0 &&
-        this.anchorLightId !== null) {
-      const lights = this.config.getLights();
-      return this.config.snapController.snapToLights(targetPos, lights, this.anchorLightId);
-    }
-
-    return { snappedPos: targetPos, guides: [] };
   }
 
   private calculateDeltaFromAnchor(targetPos: Vector2): Vector2 {
