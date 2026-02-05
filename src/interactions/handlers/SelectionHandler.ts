@@ -9,14 +9,19 @@ import type { DoorDragOperation } from '../operations/DoorDragOperation';
 import type { BoxSelectionHandler } from './BoxSelectionHandler';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { findVertexAtPosition, projectPointOntoSegmentForInsertion, distancePointToSegment } from '../../utils/math';
-import { getWallDirection, getDoorEndpoints } from '../../utils/geometry';
+import { getDoorEndpoints } from '../../utils/geometry';
 import {
   LIGHT_HIT_TOLERANCE_FT,
   VERTEX_HIT_TOLERANCE_FT,
+  DOOR_HIT_TOLERANCE_FT,
 } from '../../constants/editor';
-import { attemptItemSelection, checkToggleOff } from './selectionHelpers';
-
-const DOOR_HIT_TOLERANCE_FT = 0.3;
+import { attemptItemSelection, handleSelectionAction } from './selectionHelpers';
+import {
+  EMPTY_MODIFIERS,
+  hasSelection,
+  getSelectionOriginFromRoomState,
+  handleAxisLockKey,
+} from '../utils';
 
 export interface SelectionHandlerCallbacks {
   onSelectVertex: (index: number, addToSelection: boolean) => void;
@@ -152,33 +157,17 @@ export class SelectionHandler extends BaseInteractionHandler {
   handleKeyDown(event: InputEvent, context: InteractionContext): boolean {
     // Axis lock for selected objects (can be set before or during drag)
     const selection = this.config.getSelection();
-    const hasSelection =
-      selection.selectedVertexIndices.size > 0 ||
-      selection.selectedLightIds.size > 0 ||
-      selection.selectedWallId !== null ||
-      selection.selectedDoorId !== null;
+    const selectionExists = hasSelection(selection);
 
-    if (hasSelection && !event.ctrlKey && !event.altKey && !context.isGrabMode) {
-      if (event.key?.toLowerCase() === 'x') {
-        this.config.dragManager.setAxisLock('x');
-        // Use drag start position for guides if dragging, otherwise use current selection origin
-        const guideOrigin = this.config.dragManager.startPosition || this.getSelectionOrigin(context);
-        this.config.dragManager.updateAxisLockGuides(guideOrigin);
-        // Trigger immediate update if actively dragging
-        if (this.config.dragManager.isActive) {
-          this.triggerImmediateUpdate();
-        }
-        return true;
-      }
-      if (event.key?.toLowerCase() === 'y') {
-        this.config.dragManager.setAxisLock('y');
-        // Use drag start position for guides if dragging, otherwise use current selection origin
-        const guideOrigin = this.config.dragManager.startPosition || this.getSelectionOrigin(context);
-        this.config.dragManager.updateAxisLockGuides(guideOrigin);
-        // Trigger immediate update if actively dragging
-        if (this.config.dragManager.isActive) {
-          this.triggerImmediateUpdate();
-        }
+    if (selectionExists && !context.isGrabMode) {
+      if (handleAxisLockKey(event, {
+        dragManager: this.config.dragManager,
+        getGuideOrigin: () => this.config.dragManager.startPosition || this.getSelectionOrigin(context),
+        // Only trigger immediate update if actively dragging
+        triggerImmediateUpdate: this.config.dragManager.isActive
+          ? () => this.triggerImmediateUpdate()
+          : undefined,
+      })) {
         return true;
       }
     }
@@ -189,7 +178,7 @@ export class SelectionHandler extends BaseInteractionHandler {
         this.config.dragManager.clearAxisLock();
         return true;
       }
-      if (hasSelection) {
+      if (selectionExists) {
         this.callbacks.onClearSelection();
         return true;
       }
@@ -216,36 +205,16 @@ export class SelectionHandler extends BaseInteractionHandler {
       hitTolerance: VERTEX_HIT_TOLERANCE_FT,
     });
 
-    if (!attempt.found || attempt.itemId === null) return { handled: false };
+    const handled = handleSelectionAction(attempt, addToSelection, {
+      onSelect: (idx, add) => this.callbacks.onSelectVertex(idx, add),
+      onClearOtherSelection: () => this.callbacks.onClearLightSelection(),
+      onClearWallSelection: () => this.callbacks.onClearWallSelection(),
+      onClearDoorSelection: () => this.callbacks.onClearDoorSelection(),
+      isSelectedNow: (idx) => this.callbacks.getSelectedVertexIndices().has(idx),
+      startDrag: (idx) => this.startUnifiedDrag(idx, null, pos, vertices),
+    });
 
-    const vertexIndex = attempt.itemId;
-    const isMultiSelection = attempt.wasAlreadySelected && (selectedIndices.size > 1 || selectedLightIds.size > 0);
-
-    // Shift+click toggles vertex in/out of selection
-    if (addToSelection) {
-      this.callbacks.onSelectVertex(vertexIndex, true);
-
-      if (checkToggleOff(vertexIndex, (idx) => this.callbacks.getSelectedVertexIndices().has(idx))) {
-        this.callbacks.onClearWallSelection();
-        return { handled: true };
-      }
-
-      this.startUnifiedDrag(vertexIndex, null, pos, vertices);
-    }
-    // Click on already-selected vertex with multiple items: start multi-drag
-    else if (isMultiSelection) {
-      this.startUnifiedDrag(vertexIndex, null, pos, vertices);
-    }
-    // Normal single vertex selection
-    else {
-      this.callbacks.onSelectVertex(vertexIndex, false);
-      this.callbacks.onClearLightSelection();
-      this.startUnifiedDrag(vertexIndex, null, pos, vertices);
-    }
-
-    this.callbacks.onClearWallSelection();
-    this.callbacks.onClearDoorSelection();
-    return { handled: true };
+    return { handled };
   }
 
   private trySelectLight(
@@ -267,36 +236,16 @@ export class SelectionHandler extends BaseInteractionHandler {
       hitTolerance: LIGHT_HIT_TOLERANCE_FT,
     });
 
-    if (!attempt.found || attempt.itemId === null) return { handled: false };
+    const handled = handleSelectionAction(attempt, addToSelection, {
+      onSelect: (id, add) => this.callbacks.onSelectLight(id, add),
+      onClearOtherSelection: () => this.callbacks.onClearVertexSelection(),
+      onClearWallSelection: () => this.callbacks.onClearWallSelection(),
+      onClearDoorSelection: () => this.callbacks.onClearDoorSelection(),
+      isSelectedNow: (id) => this.callbacks.getSelectedLightIds().has(id),
+      startDrag: (id) => this.startUnifiedDrag(null, id, pos, vertices),
+    });
 
-    const lightId = attempt.itemId;
-    const isMultiSelection = attempt.wasAlreadySelected && (selectedLightIds.size > 1 || selectedIndices.size > 0);
-
-    // Shift+click toggles light in/out of selection
-    if (addToSelection) {
-      this.callbacks.onSelectLight(lightId, true);
-
-      if (checkToggleOff(lightId, (id) => this.callbacks.getSelectedLightIds().has(id))) {
-        this.callbacks.onClearWallSelection();
-        return { handled: true };
-      }
-
-      this.startUnifiedDrag(null, lightId, pos, vertices);
-    }
-    // Click on already-selected light with multiple items: start multi-drag
-    else if (isMultiSelection) {
-      this.startUnifiedDrag(null, lightId, pos, vertices);
-    }
-    // Normal single light selection
-    else {
-      this.callbacks.onSelectLight(lightId, false);
-      this.callbacks.onClearVertexSelection();
-      this.startUnifiedDrag(null, lightId, pos, vertices);
-    }
-
-    this.callbacks.onClearWallSelection();
-    this.callbacks.onClearDoorSelection();
-    return { handled: true };
+    return { handled };
   }
 
   private trySelectDoor(pos: Vector2, walls: WallSegment[]): { handled: boolean } {
@@ -315,7 +264,7 @@ export class SelectionHandler extends BaseInteractionHandler {
 
     this.config.dragManager.startDrag(operation, {
       position: pos,
-      modifiers: { shiftKey: false, ctrlKey: false, altKey: false },
+      modifiers: EMPTY_MODIFIERS,
       roomState: null as any,
       selection: this.config.getSelection(),
     });
@@ -354,7 +303,7 @@ export class SelectionHandler extends BaseInteractionHandler {
 
     this.config.dragManager.startDrag(operation, {
       position: pos,
-      modifiers: { shiftKey: false, ctrlKey: false, altKey: false },
+      modifiers: EMPTY_MODIFIERS,
       roomState: null as any,
       selection: this.config.getSelection(),
     });
@@ -373,7 +322,7 @@ export class SelectionHandler extends BaseInteractionHandler {
 
     this.config.dragManager.startDrag(operation, {
       position: pos,
-      modifiers: { shiftKey: false, ctrlKey: false, altKey: false },
+      modifiers: EMPTY_MODIFIERS,
       roomState: null as any,
       selection: this.config.getSelection(),
     });
@@ -385,54 +334,17 @@ export class SelectionHandler extends BaseInteractionHandler {
    */
   private triggerImmediateUpdate(): void {
     const currentPos = this.config.getCurrentMousePos();
-    this.config.dragManager.updateDrag(currentPos, {
-      shiftKey: false,
-      ctrlKey: false,
-      altKey: false,
-    });
+    this.config.dragManager.updateDrag(currentPos, EMPTY_MODIFIERS);
   }
 
   private getSelectionOrigin(context: InteractionContext): Vector2 | undefined {
     const selection = this.config.getSelection();
-    const vertices = context.vertices;
-
-    if (selection.selectedVertexIndices.size > 0) {
-      const firstIdx = Array.from(selection.selectedVertexIndices)[0];
-      return vertices[firstIdx];
-    }
-
-    if (selection.selectedLightIds.size > 0) {
-      const firstId = Array.from(selection.selectedLightIds)[0];
-      const light = context.roomState.lights.find(l => l.id === firstId);
-      if (light) return light.position;
-    }
-
-    if (selection.selectedWallId) {
-      const wall = context.roomState.walls.find(w => w.id === selection.selectedWallId);
-      if (wall) {
-        return {
-          x: (wall.start.x + wall.end.x) / 2,
-          y: (wall.start.y + wall.end.y) / 2,
-        };
-      }
-    }
-
-    if (selection.selectedDoorId) {
-      const door = context.roomState.doors.find(d => d.id === selection.selectedDoorId);
-      if (door) {
-        const wall = context.roomState.walls.find(w => w.id === door.wallId);
-        if (wall) {
-          const { normalized, length } = getWallDirection(wall);
-          if (length > 0) {
-            return {
-              x: wall.start.x + normalized.x * door.position,
-              y: wall.start.y + normalized.y * door.position,
-            };
-          }
-        }
-      }
-    }
-
-    return undefined;
+    return getSelectionOriginFromRoomState(
+      selection,
+      context.vertices,
+      context.roomState.lights,
+      context.roomState.walls,
+      context.roomState.doors
+    );
   }
 }

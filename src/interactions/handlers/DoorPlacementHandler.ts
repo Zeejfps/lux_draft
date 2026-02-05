@@ -4,6 +4,7 @@ import type { InteractionContext } from '../../types/interaction';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { generateId } from '../../utils/id';
 import { doorPositioningService } from '../../services';
+import { DOOR_PLACEMENT_TOLERANCE_FT } from '../../constants/editor';
 
 export interface DoorPlacementHandlerCallbacks {
   onDoorPlaced: (door: Door) => void;
@@ -29,7 +30,6 @@ export const DOOR_WIDTHS = {
 } as const;
 
 export const DEFAULT_DOOR_WIDTH = DOOR_WIDTHS['3\'0"'];
-export const DOOR_PLACEMENT_TOLERANCE = 0.5; // feet
 
 /**
  * Handles door placement mode.
@@ -61,7 +61,7 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
     const pos = event.worldPos;
 
     // Find wall at click position
-    const wall = this.config.getWallAtPosition(pos, walls, DOOR_PLACEMENT_TOLERANCE);
+    const wall = this.config.getWallAtPosition(pos, walls, DOOR_PLACEMENT_TOLERANCE_FT);
     if (!wall) {
       return true; // Consumed the event but didn't place
     }
@@ -107,7 +107,7 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
     const pos = event.worldPos;
 
     // Find wall at mouse position
-    const wall = this.config.getWallAtPosition(pos, walls, DOOR_PLACEMENT_TOLERANCE);
+    const wall = this.config.getWallAtPosition(pos, walls, DOOR_PLACEMENT_TOLERANCE_FT);
     if (!wall) {
       this.callbacks.onDoorPreview(null, null, false);
       return false;

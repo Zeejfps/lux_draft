@@ -1,11 +1,12 @@
-import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
+import type { Vector2 } from '../../types';
 import type {
   DragStartContext,
   DragUpdateContext,
   SelectionState,
 } from '../../types/interaction';
-import type { SnapController, SnapGuide } from '../../controllers/SnapController';
+import type { SnapGuide } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
+import type { BaseDragConfig, RoomStateWithDoors } from '../types';
 import { BaseDragOperation } from '../DragOperation';
 import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
 import { doorPositioningService } from '../../services';
@@ -18,19 +19,13 @@ import {
   checkPointInRoom,
   captureOriginalPositions,
 } from './grabModeHelpers';
+import { applyGridSnap } from '../utils';
 
-export interface GrabModeConfig {
-  snapController: SnapController;
-  getGridSnapEnabled: () => boolean;
-  getGridSize: () => number;
-  getVertices: () => Vector2[];
-  getLights: () => LightFixture[];
-  getWalls: () => WallSegment[];
-  getWallById: (id: string) => WallSegment | undefined;
-  getDoors: () => Door[];
-  getDoorById: (id: string) => Door | undefined;
-  getDoorsByWallId: (wallId: string) => Door[];
-  isRoomClosed: () => boolean;
+/**
+ * Configuration for grab mode drag operations.
+ * Extends BaseDragConfig with door access and mouse position.
+ */
+export interface GrabModeConfig extends BaseDragConfig, RoomStateWithDoors {
   getCurrentMousePos: () => Vector2;
 }
 
@@ -186,25 +181,23 @@ export class GrabModeDragOperation extends BaseDragOperation {
       }
     }
     // Grid snap - apply when SHIFT is not held
-    else if (this.config.getGridSnapEnabled()) {
-      const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-      if (gridSize > 0) {
+    else {
+      const gridResult = applyGridSnap(
+        targetPos,
+        this.startPosition,
+        context.axisLock,
+        this.config,
+        DEFAULT_GRID_SIZE_FT
+      );
+
+      if (gridResult.wasSnapped) {
+        targetPos = gridResult.position;
+        // Clear snap guides only when no axis lock (axis lock guides managed by DragManager)
         if (context.axisLock === 'none') {
-          targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
           this.callbacks.onSetSnapGuides([]);
-        } else {
-          const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
-          if (context.axisLock === 'x') {
-            targetPos = { x: snapped.x, y: this.startPosition.y };
-          } else {
-            targetPos = { x: this.startPosition.x, y: snapped.y };
-          }
         }
-      } else if (context.axisLock === 'none') {
-        this.callbacks.onSetSnapGuides([]);
-      }
-    } else {
-      if (context.axisLock !== 'none') {
+      } else if (context.axisLock !== 'none') {
+        // No grid snap - just apply axis lock
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
       } else {
         this.callbacks.onSetSnapGuides([]);

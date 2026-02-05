@@ -11,6 +11,8 @@ export const LIGHT_HIT_TOLERANCE_FT = 0.5;
 export const VERTEX_HIT_TOLERANCE_FT = 0.3;
 export const WALL_CLICK_TOLERANCE_FT = 0.4;
 export const MEASUREMENT_CLICK_TOLERANCE_FT = 0.4;
+export const DOOR_HIT_TOLERANCE_FT = 0.3;
+export const DOOR_PLACEMENT_TOLERANCE_FT = 0.5;
 
 // Position comparison
 export const POSITION_EPSILON = 0.01;

@@ -70,3 +70,66 @@ export function checkToggleOff<TId>(
 ): boolean {
   return !isSelectedNow(itemId);
 }
+
+/**
+ * Callbacks for handling selection after item is found.
+ */
+export interface SelectionActionCallbacks<TId> {
+  /** Select the item */
+  onSelect: (id: TId, addToSelection: boolean) => void;
+  /** Clear the "other" selection type (e.g., clear lights when selecting vertex) */
+  onClearOtherSelection: () => void;
+  /** Clear wall selection */
+  onClearWallSelection: () => void;
+  /** Clear door selection */
+  onClearDoorSelection: () => void;
+  /** Check if item is still selected after toggle operation */
+  isSelectedNow: (id: TId) => boolean;
+  /** Start drag operation for the item */
+  startDrag: (id: TId) => void;
+}
+
+/**
+ * Handle the common selection action flow after finding an item.
+ * This reduces duplication between trySelectVertex and trySelectLight.
+ *
+ * Returns true if the selection was handled (caller should return { handled: true }).
+ */
+export function handleSelectionAction<TId>(
+  attempt: SelectionAttemptResult<TId>,
+  addToSelection: boolean,
+  callbacks: SelectionActionCallbacks<TId>
+): boolean {
+  if (!attempt.found || attempt.itemId === null) {
+    return false;
+  }
+
+  const itemId = attempt.itemId;
+
+  // Shift+click toggles item in/out of selection
+  if (addToSelection) {
+    callbacks.onSelect(itemId, true);
+
+    // Check if item was toggled off
+    if (checkToggleOff(itemId, callbacks.isSelectedNow)) {
+      callbacks.onClearWallSelection();
+      return true;
+    }
+
+    callbacks.startDrag(itemId);
+  }
+  // Click on already-selected item with multiple items: start multi-drag
+  else if (attempt.isMultiSelect) {
+    callbacks.startDrag(itemId);
+  }
+  // Normal single item selection
+  else {
+    callbacks.onSelect(itemId, false);
+    callbacks.onClearOtherSelection();
+    callbacks.startDrag(itemId);
+  }
+
+  callbacks.onClearWallSelection();
+  callbacks.onClearDoorSelection();
+  return true;
+}
