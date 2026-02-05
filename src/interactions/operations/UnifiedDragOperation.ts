@@ -56,7 +56,6 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
   start(context: DragStartContext): void {
     this._isActive = true;
-    this.startPosition = { ...context.position };
     this.selection = context.selection;
 
     const vertices = this.config.getVertices();
@@ -77,6 +76,17 @@ export class UnifiedDragOperation extends BaseDragOperation {
       if (light) {
         this.originalLightPositions.set(id, { ...light.position });
       }
+    }
+
+    // Set startPosition to the anchor's actual position (not mouse position)
+    // This ensures axis lock works correctly relative to the item's original position
+    if (this.anchorVertexIndex !== null && this.originalVertexPositions.has(this.anchorVertexIndex)) {
+      this.startPosition = { ...this.originalVertexPositions.get(this.anchorVertexIndex)! };
+    } else if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
+      this.startPosition = { ...this.originalLightPositions.get(this.anchorLightId)! };
+    } else {
+      // Fallback to mouse position if no anchor (shouldn't happen)
+      this.startPosition = { ...context.position };
     }
   }
 
