@@ -17,13 +17,14 @@ describe('JSON Export/Import', () => {
           },
         ],
         doors: [],
+        obstacles: [],
         isClosed: true,
       };
 
       const json = getJSONString(state);
       const parsed = JSON.parse(json);
 
-      expect(parsed.version).toBe(1);
+      expect(parsed.version).toBe(2);
       expect(parsed.roomState.lights[0].properties.lumen).toBe(800);
       expect(parsed.roomState.ceilingHeight).toBe(8);
       expect(parsed.lightDefinitions).toEqual([]);
@@ -35,6 +36,7 @@ describe('JSON Export/Import', () => {
         walls: [],
         lights: [],
         doors: [],
+        obstacles: [],
         isClosed: false,
       };
 

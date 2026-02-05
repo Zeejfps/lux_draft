@@ -15,6 +15,7 @@ describe('roomStore vertex operations', () => {
       ],
       lights: [],
       doors: [],
+      obstacles: [],
       isClosed: true,
     });
   });
@@ -102,6 +103,7 @@ describe('roomStore vertex operations', () => {
         ],
         lights: [],
         doors: [],
+        obstacles: [],
         isClosed: true,
       });
 
@@ -141,6 +143,7 @@ describe('roomStore vertex operations', () => {
         walls: [],
         lights: [],
         doors: [],
+        obstacles: [],
         isClosed: false,
       });
 
