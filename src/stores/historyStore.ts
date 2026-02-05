@@ -9,6 +9,14 @@ interface HistoryState {
 
 const MAX_HISTORY = 50;
 
+/**
+ * Check if two room states are equivalent (for avoiding duplicate history entries).
+ */
+function statesAreEqual(a: RoomState | null, b: RoomState): boolean {
+  if (!a) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function createHistoryStore() {
   const { subscribe, set, update } = writable<HistoryState>({
     past: [],
@@ -20,27 +28,34 @@ function createHistoryStore() {
   let lastSavedState: RoomState | null = null;
   let stateBeforePause: RoomState | null = null;
 
+  /**
+   * Push a state onto the history stack, respecting max history limit.
+   */
+  function pushToHistory(stateToPush: RoomState): void {
+    update((history) => {
+      const newPast = [...history.past, stateToPush];
+      // Limit history size
+      if (newPast.length > MAX_HISTORY) {
+        newPast.shift();
+      }
+      return {
+        past: newPast,
+        future: [], // Clear future on new action
+      };
+    });
+  }
+
   // Subscribe to room store changes to record history
   roomStore.subscribe((state) => {
     if (isPerformingHistoryOperation || isRecordingPaused) return;
 
     // Don't record if state hasn't meaningfully changed
-    if (lastSavedState && JSON.stringify(state) === JSON.stringify(lastSavedState)) {
+    if (statesAreEqual(lastSavedState, state)) {
       return;
     }
 
     if (lastSavedState !== null) {
-      update((history) => {
-        const newPast = [...history.past, lastSavedState!];
-        // Limit history size
-        if (newPast.length > MAX_HISTORY) {
-          newPast.shift();
-        }
-        return {
-          past: newPast,
-          future: [], // Clear future on new action
-        };
-      });
+      pushToHistory(lastSavedState);
     }
 
     lastSavedState = structuredClone(state);
@@ -122,17 +137,8 @@ function createHistoryStore() {
         const currentState = get(roomStore);
 
         // Only record if the state actually changed during the pause
-        if (stateBeforePause && JSON.stringify(currentState) !== JSON.stringify(stateBeforePause)) {
-          update((history) => {
-            const newPast = [...history.past, stateBeforePause!];
-            if (newPast.length > MAX_HISTORY) {
-              newPast.shift();
-            }
-            return {
-              past: newPast,
-              future: [], // Clear future on new action
-            };
-          });
+        if (stateBeforePause && !statesAreEqual(stateBeforePause, currentState)) {
+          pushToHistory(stateBeforePause);
           lastSavedState = structuredClone(currentState);
         }
 

@@ -62,14 +62,6 @@ export class MeasurementController {
     return this._source?.type === 'vertex' ? this._source.index : null;
   }
 
-  get targetLightId(): string | null {
-    return this._target?.type === 'light' ? this._target.id : null;
-  }
-
-  get targetWallId(): string | null {
-    return this._target?.type === 'wall' ? this._target.id : null;
-  }
-
   /**
    * Starts a measurement from a vertex.
    */
@@ -180,33 +172,4 @@ export class MeasurementController {
     };
   }
 
-  /**
-   * Checks if a given light ID is part of the current measurement.
-   */
-  isLightInMeasurement(lightId: string): boolean {
-    return this.sourceLightId === lightId || this.targetLightId === lightId;
-  }
-
-  /**
-   * Checks if a given vertex index is part of the current measurement.
-   */
-  isVertexInMeasurement(index: number, vertices: Vector2[]): boolean {
-    if (!this._fromPosition || !this._toPosition) return false;
-
-    // Check if from position matches
-    const fromVertex = vertices[index];
-    if (fromVertex) {
-      const fromMatch =
-        Math.abs(fromVertex.x - this._fromPosition.x) < 0.01 &&
-        Math.abs(fromVertex.y - this._fromPosition.y) < 0.01;
-      if (fromMatch) return true;
-    }
-
-    // Check if to position matches
-    if (this._target?.type === 'vertex' && this._target.index === index) {
-      return true;
-    }
-
-    return false;
-  }
 }

@@ -4,7 +4,13 @@ import type { InteractionContext, GrabModeState, SelectionState } from '../../ty
 import type { DragManager } from '../DragManager';
 import type { GrabModeDragOperation } from '../operations/GrabModeDragOperation';
 import { BaseInteractionHandler } from '../InteractionHandler';
-import { getWallDirection } from '../../utils/geometry';
+import {
+  EMPTY_MODIFIERS,
+  extractModifiers,
+  hasSelection,
+  getSelectionOrigin,
+  handleAxisLockKey,
+} from '../utils';
 
 export interface GrabModeHandlerCallbacks {
   onGrabModeStart: () => void;
@@ -65,11 +71,7 @@ export class GrabModeHandler extends BaseInteractionHandler {
     if (!context.isGrabMode) return false;
 
     const { dragManager } = this.config;
-    dragManager.updateDrag(event.worldPos, {
-      shiftKey: event.shiftKey,
-      ctrlKey: event.ctrlKey,
-      altKey: event.altKey,
-    });
+    dragManager.updateDrag(event.worldPos, extractModifiers(event));
 
     return true;
   }
@@ -89,19 +91,12 @@ export class GrabModeHandler extends BaseInteractionHandler {
       }
 
       // Axis lock handling
-      if (!event.ctrlKey && !event.altKey) {
-        if (event.key?.toLowerCase() === 'x') {
-          this.config.dragManager.setAxisLock('x');
-          this.updateAxisLockGuides();
-          this.triggerImmediateUpdate();
-          return true;
-        }
-        if (event.key?.toLowerCase() === 'y') {
-          this.config.dragManager.setAxisLock('y');
-          this.updateAxisLockGuides();
-          this.triggerImmediateUpdate();
-          return true;
-        }
+      if (handleAxisLockKey(event, {
+        dragManager: this.config.dragManager,
+        getGuideOrigin: () => this.originalSelectionOrigin ?? undefined,
+        triggerImmediateUpdate: () => this.triggerImmediateUpdate(),
+      })) {
+        return true;
       }
     }
 
@@ -113,20 +108,14 @@ export class GrabModeHandler extends BaseInteractionHandler {
     if (event.ctrlKey || event.altKey) return false;
     if (context.isGrabMode) return false;
 
-    const selection = this.config.getSelection();
-    return (
-      selection.selectedVertexIndices.size > 0 ||
-      selection.selectedLightIds.size > 0 ||
-      selection.selectedWallId !== null ||
-      selection.selectedDoorId !== null
-    );
+    return hasSelection(this.config.getSelection());
   }
 
   private startGrabMode(): void {
     const { dragManager, createGrabOperation, getSelection, getCurrentMousePos } = this.config;
 
     // Capture the original selection origin before any movement
-    this.originalSelectionOrigin = this.getSelectionOrigin();
+    this.originalSelectionOrigin = this.computeSelectionOrigin();
 
     this.config.setGrabModeActive(true);
 
@@ -135,7 +124,7 @@ export class GrabModeHandler extends BaseInteractionHandler {
 
     dragManager.startDrag(operation, {
       position: getCurrentMousePos(),
-      modifiers: { shiftKey: false, ctrlKey: false, altKey: false },
+      modifiers: EMPTY_MODIFIERS,
       roomState: null as any, // Will be populated by the operation
       selection,
     });
@@ -158,82 +147,26 @@ export class GrabModeHandler extends BaseInteractionHandler {
   }
 
   /**
-   * Update axis lock guides with the original selection origin.
-   * Uses the position captured when grab mode started, so guides
-   * match the axis constraint behavior (which uses original position).
-   */
-  private updateAxisLockGuides(): void {
-    if (this.originalSelectionOrigin) {
-      this.config.dragManager.updateAxisLockGuides(this.originalSelectionOrigin);
-    }
-  }
-
-  /**
    * Trigger an immediate drag update with the current mouse position.
    * This ensures the object position updates immediately when axis lock changes,
    * rather than waiting for the next mouse move.
    */
   private triggerImmediateUpdate(): void {
     const currentPos = this.config.getCurrentMousePos();
-    this.config.dragManager.updateDrag(currentPos, {
-      shiftKey: false,
-      ctrlKey: false,
-      altKey: false,
-    });
+    this.config.dragManager.updateDrag(currentPos, EMPTY_MODIFIERS);
   }
 
   /**
-   * Get the current position of the first selected object (vertex, light, wall, or door).
+   * Get the current position of the first selected object.
    * Used to capture the original position when grab mode starts.
    */
-  private getSelectionOrigin(): Vector2 | null {
-    const selection = this.config.getSelection();
-
-    // Check for selected vertices first
-    if (selection.selectedVertexIndices.size > 0) {
-      const vertices = this.config.getVertices();
-      const firstIndex = Array.from(selection.selectedVertexIndices)[0];
-      if (vertices[firstIndex]) {
-        return { ...vertices[firstIndex] };
-      }
-    }
-
-    // Check for selected lights
-    if (selection.selectedLightIds.size > 0) {
-      const lights = this.config.getLights();
-      const firstId = Array.from(selection.selectedLightIds)[0];
-      const light = lights.find(l => l.id === firstId);
-      if (light) {
-        return { ...light.position };
-      }
-    }
-
-    // Check for selected wall
-    if (selection.selectedWallId) {
-      const walls = this.config.getWalls();
-      const wall = walls.find(w => w.id === selection.selectedWallId);
-      if (wall) {
-        return { ...wall.start };
-      }
-    }
-
-    // Check for selected door
-    if (selection.selectedDoorId) {
-      const door = this.config.getDoorById(selection.selectedDoorId);
-      if (door) {
-        const wall = this.config.getWallById(door.wallId);
-        if (wall) {
-          const { normalized, length } = getWallDirection(wall);
-          if (length > 0) {
-            return {
-              x: wall.start.x + normalized.x * door.position,
-              y: wall.start.y + normalized.y * door.position,
-            };
-          }
-        }
-      }
-    }
-
-    return null;
+  private computeSelectionOrigin(): Vector2 | null {
+    return getSelectionOrigin(this.config.getSelection(), {
+      getVertices: this.config.getVertices,
+      getLights: this.config.getLights,
+      getWalls: this.config.getWalls,
+      getWallById: this.config.getWallById,
+      getDoorById: this.config.getDoorById,
+    });
   }
 }

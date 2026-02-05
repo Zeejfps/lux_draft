@@ -77,7 +77,7 @@
         DragManager,
         DrawingHandler,
         DoorPlacementHandler,
-        DEFAULT_DOOR_WIDTH,
+        EMPTY_MODIFIERS,
         GrabModeDragOperation,
         GrabModeHandler,
         InteractionManager,
@@ -674,7 +674,7 @@
           operation.setAnchor(vertexIndex, lightId);
           dragManager.startDrag(operation, {
             position: pos,
-            modifiers: { shiftKey: false, ctrlKey: false, altKey: false },
+            modifiers: EMPTY_MODIFIERS,
             roomState: currentRoomState,
             selection: buildInteractionContext().selection,
           });
@@ -852,9 +852,6 @@
     wallBuilder.setManualLength(length);
   }
 
-  export function clearManualLength(): void {
-    wallBuilder.clearManualLength();
-  }
 </script>
 
 <div class="canvas-container" bind:this={container}></div>

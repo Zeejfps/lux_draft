@@ -1,27 +1,31 @@
-import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
+import type { Vector2 } from '../../types';
 import type {
   DragStartContext,
   DragUpdateContext,
   SelectionState,
 } from '../../types/interaction';
-import type { SnapController, SnapGuide } from '../../controllers/SnapController';
+import type { SnapGuide } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
+import type { BaseDragConfig, RoomStateWithDoors } from '../types';
 import { BaseDragOperation } from '../DragOperation';
 import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
-import { isPointInPolygon, getWallDirection } from '../../utils/geometry';
+import { doorPositioningService } from '../../services';
+import {
+  calculateGrabOffset,
+  applyGrabOffset,
+  findAnchorPosition,
+  calculateDelta,
+  applyDelta,
+  checkPointInRoom,
+  captureOriginalPositions,
+} from './grabModeHelpers';
+import { applyGridSnap } from '../utils';
 
-export interface GrabModeConfig {
-  snapController: SnapController;
-  getGridSnapEnabled: () => boolean;
-  getGridSize: () => number;
-  getVertices: () => Vector2[];
-  getLights: () => LightFixture[];
-  getWalls: () => WallSegment[];
-  getWallById: (id: string) => WallSegment | undefined;
-  getDoors: () => Door[];
-  getDoorById: (id: string) => Door | undefined;
-  getDoorsByWallId: (wallId: string) => Door[];
-  isRoomClosed: () => boolean;
+/**
+ * Configuration for grab mode drag operations.
+ * Extends BaseDragConfig with door access and mouse position.
+ */
+export interface GrabModeConfig extends BaseDragConfig, RoomStateWithDoors {
   getCurrentMousePos: () => Vector2;
 }
 
@@ -60,69 +64,45 @@ export class GrabModeDragOperation extends BaseDragOperation {
     this._isActive = true;
     this.selection = context.selection;
 
-    const vertices = this.config.getVertices();
-    const lights = this.config.getLights();
     const currentMousePos = this.config.getCurrentMousePos();
 
-    // Store original positions of all selected vertices
-    this.originalVertexPositions.clear();
-    for (const idx of context.selection.selectedVertexIndices) {
-      if (vertices[idx]) {
-        this.originalVertexPositions.set(idx, { ...vertices[idx] });
-      }
+    // Capture original positions for all selected items
+    const captured = captureOriginalPositions(
+      context.selection,
+      this.config.getVertices,
+      this.config.getLights,
+      this.config.getWallById,
+      this.config.getDoorById
+    );
+
+    this.originalVertexPositions = captured.vertexPositions;
+    this.originalLightPositions = captured.lightPositions;
+    this.originalWallVertices = captured.wallVertices;
+    this.originalDoorPosition = captured.doorPosition;
+
+    // Find anchor position
+    const anchor = findAnchorPosition(
+      context.selection,
+      this.config.getVertices,
+      this.config.getLights,
+      this.config.getWallById,
+      this.config.getDoorById
+    );
+
+    // Store anchor identifiers
+    if (anchor.anchorType === 'vertex') {
+      this.anchorVertexIndex = anchor.anchorId as number;
+    } else if (anchor.anchorType === 'light') {
+      this.anchorLightId = anchor.anchorId as string;
+    } else if (anchor.anchorType === 'wall') {
+      this.wallId = anchor.anchorId as string;
+    } else if (anchor.anchorType === 'door') {
+      this.doorId = anchor.anchorId as string;
     }
 
-    // Store original positions of all selected lights
-    this.originalLightPositions.clear();
-    for (const id of context.selection.selectedLightIds) {
-      const light = lights.find(l => l.id === id);
-      if (light) {
-        this.originalLightPositions.set(id, { ...light.position });
-      }
-    }
-
-    // Determine anchor and calculate offset from mouse to anchor
-    let anchorPos: Vector2 | null = null;
-
-    if (context.selection.selectedVertexIndices.size > 0) {
-      this.anchorVertexIndex = Array.from(context.selection.selectedVertexIndices)[0];
-      anchorPos = this.originalVertexPositions.get(this.anchorVertexIndex)!;
-    } else if (context.selection.selectedLightIds.size > 0) {
-      this.anchorLightId = Array.from(context.selection.selectedLightIds)[0];
-      anchorPos = this.originalLightPositions.get(this.anchorLightId)!;
-    } else if (context.selection.selectedWallId) {
-      this.wallId = context.selection.selectedWallId;
-      const wall = this.config.getWallById(this.wallId);
-      if (wall) {
-        this.originalWallVertices = { start: { ...wall.start }, end: { ...wall.end } };
-        anchorPos = wall.start;
-      }
-    } else if (context.selection.selectedDoorId) {
-      this.doorId = context.selection.selectedDoorId;
-      const door = this.config.getDoorById(this.doorId);
-      if (door) {
-        this.originalDoorPosition = door.position;
-        // Calculate door's world position for offset calculation
-        const wall = this.config.getWallById(door.wallId);
-        if (wall) {
-          const { normalized, length } = getWallDirection(wall);
-          if (length > 0) {
-            anchorPos = {
-              x: wall.start.x + normalized.x * door.position,
-              y: wall.start.y + normalized.y * door.position,
-            };
-          }
-        }
-      }
-    }
-
-    if (anchorPos) {
-      // Offset = anchor position - mouse position
-      this.grabOffset = {
-        x: anchorPos.x - currentMousePos.x,
-        y: anchorPos.y - currentMousePos.y,
-      };
-      this.startPosition = { ...anchorPos };
+    if (anchor.anchorPos) {
+      this.grabOffset = calculateGrabOffset(anchor.anchorPos, currentMousePos);
+      this.startPosition = { ...anchor.anchorPos };
     }
   }
 
@@ -130,10 +110,7 @@ export class GrabModeDragOperation extends BaseDragOperation {
     if (!this._isActive || !this.grabOffset || !this.startPosition) return;
 
     // Adjust position with offset (as if we clicked on the object)
-    const adjustedPos = {
-      x: context.position.x + this.grabOffset.x,
-      y: context.position.y + this.grabOffset.y,
-    };
+    const adjustedPos = applyGrabOffset(context.position, this.grabOffset);
 
     // Handle door separately if only door is selected
     if (this.doorId && this.originalDoorPosition !== null &&
@@ -199,39 +176,29 @@ export class GrabModeDragOperation extends BaseDragOperation {
       targetPos = result.snappedPos;
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-        // Don't clear guides - axis lock guides are managed by DragManager
       } else {
         this.callbacks.onSetSnapGuides(result.guides);
       }
     }
     // Grid snap - apply when SHIFT is not held
-    else if (this.config.getGridSnapEnabled()) {
-      const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-      if (gridSize > 0) {
+    else {
+      const gridResult = applyGridSnap(
+        targetPos,
+        this.startPosition,
+        context.axisLock,
+        this.config,
+        DEFAULT_GRID_SIZE_FT
+      );
+
+      if (gridResult.wasSnapped) {
+        targetPos = gridResult.position;
+        // Clear snap guides only when no axis lock (axis lock guides managed by DragManager)
         if (context.axisLock === 'none') {
-          // No axis lock - snap both axes
-          targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
           this.callbacks.onSetSnapGuides([]);
-        } else {
-          // Axis lock active - only snap the free axis
-          const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
-          if (context.axisLock === 'x') {
-            // X-axis movement (horizontal) - only snap X, keep Y at original
-            targetPos = { x: snapped.x, y: this.startPosition.y };
-          } else {
-            // Y-axis movement (vertical) - only snap Y, keep X at original
-            targetPos = { x: this.startPosition.x, y: snapped.y };
-          }
-          // Don't clear guides - axis lock guides are managed by DragManager
         }
-      } else if (context.axisLock === 'none') {
-        this.callbacks.onSetSnapGuides([]);
-      }
-    } else {
-      // No snapping - just apply axis lock if active
-      if (context.axisLock !== 'none') {
+      } else if (context.axisLock !== 'none') {
+        // No grid snap - just apply axis lock
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-        // Don't clear guides - axis lock guides are managed by DragManager
       } else {
         this.callbacks.onSetSnapGuides([]);
       }
@@ -242,10 +209,7 @@ export class GrabModeDragOperation extends BaseDragOperation {
 
     // Move vertices
     for (const [idx, originalPos] of this.originalVertexPositions) {
-      const newPos = {
-        x: originalPos.x + delta.x,
-        y: originalPos.y + delta.y,
-      };
+      const newPos = applyDelta(originalPos, delta);
       this.callbacks.onUpdateVertexPosition(idx, newPos);
     }
 
@@ -256,12 +220,9 @@ export class GrabModeDragOperation extends BaseDragOperation {
       const updates = new Map<string, Vector2>();
 
       for (const [id, originalPos] of this.originalLightPositions) {
-        const newPos = {
-          x: originalPos.x + delta.x,
-          y: originalPos.y + delta.y,
-        };
+        const newPos = applyDelta(originalPos, delta);
 
-        if (!isClosed || this.isPointInsideRoom(newPos, walls)) {
+        if (!isClosed || checkPointInRoom(newPos, walls)) {
           updates.set(id, newPos);
         }
       }
@@ -277,17 +238,15 @@ export class GrabModeDragOperation extends BaseDragOperation {
 
     let constrainedPos = adjustedPos;
 
-    // Apply axis lock using the original position
     if (context.axisLock !== 'none') {
       constrainedPos = this.applyAxisConstraint(adjustedPos, context.axisLock, this.startPosition);
     }
 
-    const delta = this.calculateDelta(this.startPosition, constrainedPos);
+    const delta = calculateDelta(this.startPosition, constrainedPos);
 
-    let newStart = this.applyDelta(this.originalWallVertices.start, delta);
-    let newEnd = this.applyDelta(this.originalWallVertices.end, delta);
+    let newStart = applyDelta(this.originalWallVertices.start, delta);
+    let newEnd = applyDelta(this.originalWallVertices.end, delta);
 
-    // Snap when holding Shift
     if (context.modifiers.shiftKey) {
       const result = this.handleWallSnapping(newStart, newEnd);
       newStart = result.snappedStart;
@@ -311,73 +270,17 @@ export class GrabModeDragOperation extends BaseDragOperation {
     const wall = this.config.getWallById(door.wallId);
     if (!wall) return;
 
-    // Calculate wall properties
-    const { normalized: normalizedDir, length: wallLength } = getWallDirection(wall);
-    if (wallLength === 0) return;
-
-    // Project mouse position onto the wall to get new door position
-    const mouseToWallStart = {
-      x: mousePos.x - wall.start.x,
-      y: mousePos.y - wall.start.y,
-    };
-
-    // Dot product gives position along wall
-    let newPosition = mouseToWallStart.x * normalizedDir.x + mouseToWallStart.y * normalizedDir.y;
-
-    // Constrain position to wall bounds (accounting for door width)
-    const halfWidth = door.width / 2;
-    const minPosition = halfWidth;
-    const maxPosition = wallLength - halfWidth;
-
-    newPosition = Math.max(minPosition, Math.min(maxPosition, newPosition));
-
-    // Check for overlap with other doors on the same wall
-    const otherDoors = this.config.getDoorsByWallId(door.wallId).filter(d => d.id !== this.doorId);
-    newPosition = this.avoidDoorOverlap(newPosition, door.width, otherDoors, minPosition, maxPosition);
+    // Calculate new position using the service
+    const existingDoors = this.config.getDoorsByWallId(door.wallId);
+    const newPosition = doorPositioningService.calculateDragPosition(
+      mousePos,
+      wall,
+      door.width,
+      existingDoors,
+      this.doorId
+    );
 
     this.callbacks.onUpdateDoorPosition(this.doorId, newPosition);
-  }
-
-  /**
-   * Adjust position to avoid overlapping with other doors.
-   */
-  private avoidDoorOverlap(
-    targetPosition: number,
-    doorWidth: number,
-    otherDoors: Door[],
-    minPos: number,
-    maxPos: number
-  ): number {
-    const halfWidth = doorWidth / 2;
-    const minGap = 0.1; // Minimum gap between doors in feet
-
-    for (const other of otherDoors) {
-      const otherHalfWidth = other.width / 2;
-      const minDistance = halfWidth + otherHalfWidth + minGap;
-
-      const distance = Math.abs(targetPosition - other.position);
-
-      if (distance < minDistance) {
-        // Overlap detected - push to the nearest valid side
-        if (targetPosition < other.position) {
-          const newPos = other.position - minDistance;
-          if (newPos >= minPos) {
-            targetPosition = newPos;
-          } else {
-            targetPosition = Math.min(maxPos, other.position + minDistance);
-          }
-        } else {
-          const newPos = other.position + minDistance;
-          if (newPos <= maxPos) {
-            targetPosition = newPos;
-          } else {
-            targetPosition = Math.max(minPos, other.position - minDistance);
-          }
-        }
-      }
-    }
-
-    return targetPosition;
   }
 
   private handleShiftSnapping(
@@ -429,29 +332,17 @@ export class GrabModeDragOperation extends BaseDragOperation {
   }
 
   private calculateDeltaFromAnchor(targetPos: Vector2): Vector2 {
-    let delta = { x: 0, y: 0 };
-
     if (this.anchorVertexIndex !== null && this.originalVertexPositions.has(this.anchorVertexIndex)) {
       const anchorOriginal = this.originalVertexPositions.get(this.anchorVertexIndex)!;
-      delta = {
-        x: targetPos.x - anchorOriginal.x,
-        y: targetPos.y - anchorOriginal.y,
-      };
-    } else if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
-      const anchorOriginal = this.originalLightPositions.get(this.anchorLightId)!;
-      delta = {
-        x: targetPos.x - anchorOriginal.x,
-        y: targetPos.y - anchorOriginal.y,
-      };
+      return calculateDelta(anchorOriginal, targetPos);
     }
 
-    return delta;
-  }
+    if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
+      const anchorOriginal = this.originalLightPositions.get(this.anchorLightId)!;
+      return calculateDelta(anchorOriginal, targetPos);
+    }
 
-  private isPointInsideRoom(point: Vector2, walls: WallSegment[]): boolean {
-    if (walls.length < 3) return false;
-    const vertices = walls.map(w => w.start);
-    return isPointInPolygon(point, vertices);
+    return { x: 0, y: 0 };
   }
 
   private cleanup(): void {

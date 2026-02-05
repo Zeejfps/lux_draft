@@ -113,14 +113,7 @@ export class MeasurementHandler extends BaseInteractionHandler {
     this.callbacks.onMeasurementUpdate(data);
   }
 
-  /**
-   * Get the measurement controller for external access.
-   */
-  getController(): MeasurementController {
-    return this.config.measurementController;
-  }
-
-  private handleClickFromLight(
+    private handleClickFromLight(
     event: InputEvent,
     _context: InteractionContext,
     vertices: Vector2[],

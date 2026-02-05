@@ -5,7 +5,7 @@ import type {
 } from '../../types/interaction';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
-import { getWallDirection } from '../../utils/geometry';
+import { doorPositioningService } from '../../services';
 
 export interface DoorDragConfig {
   getWallById: (id: string) => WallSegment | undefined;
@@ -59,29 +59,15 @@ export class DoorDragOperation extends BaseDragOperation {
     const wall = this.config.getWallById(door.wallId);
     if (!wall) return;
 
-    // Calculate wall properties
-    const { normalized, length: wallLength } = getWallDirection(wall);
-    if (wallLength === 0) return;
-
-    // Project mouse position onto the wall to get new door position
-    const mouseToWallStart = {
-      x: context.position.x - wall.start.x,
-      y: context.position.y - wall.start.y,
-    };
-
-    // Dot product gives position along wall
-    let newPosition = mouseToWallStart.x * normalized.x + mouseToWallStart.y * normalized.y;
-
-    // Constrain position to wall bounds (accounting for door width)
-    const halfWidth = door.width / 2;
-    const minPosition = halfWidth;
-    const maxPosition = wallLength - halfWidth;
-
-    newPosition = Math.max(minPosition, Math.min(maxPosition, newPosition));
-
-    // Check for overlap with other doors on the same wall
-    const otherDoors = this.config.getDoorsByWallId(door.wallId).filter(d => d.id !== this.doorId);
-    newPosition = this.avoidDoorOverlap(newPosition, door.width, otherDoors, minPosition, maxPosition);
+    // Calculate new position using the service
+    const existingDoors = this.config.getDoorsByWallId(door.wallId);
+    const newPosition = doorPositioningService.calculateDragPosition(
+      context.position,
+      wall,
+      door.width,
+      existingDoors,
+      this.doorId
+    );
 
     this.callbacks.onUpdateDoorPosition(this.doorId, newPosition);
   }
@@ -101,53 +87,6 @@ export class DoorDragOperation extends BaseDragOperation {
 
     this._isActive = false;
     this.cleanup();
-  }
-
-  /**
-   * Adjust position to avoid overlapping with other doors.
-   * Returns the closest valid position to the target.
-   */
-  private avoidDoorOverlap(
-    targetPosition: number,
-    doorWidth: number,
-    otherDoors: Door[],
-    minPos: number,
-    maxPos: number
-  ): number {
-    const halfWidth = doorWidth / 2;
-    const minGap = 0.1; // Minimum gap between doors in feet
-
-    for (const other of otherDoors) {
-      const otherHalfWidth = other.width / 2;
-      const minDistance = halfWidth + otherHalfWidth + minGap;
-
-      const distance = Math.abs(targetPosition - other.position);
-
-      if (distance < minDistance) {
-        // Overlap detected - push to the nearest valid side
-        if (targetPosition < other.position) {
-          // Moving door is to the left of other door
-          const newPos = other.position - minDistance;
-          if (newPos >= minPos) {
-            targetPosition = newPos;
-          } else {
-            // Can't fit on the left, try right
-            targetPosition = Math.min(maxPos, other.position + minDistance);
-          }
-        } else {
-          // Moving door is to the right of other door
-          const newPos = other.position + minDistance;
-          if (newPos <= maxPos) {
-            targetPosition = newPos;
-          } else {
-            // Can't fit on the right, try left
-            targetPosition = Math.max(minPos, other.position - minDistance);
-          }
-        }
-      }
-    }
-
-    return targetPosition;
   }
 
   private cleanup(): void {
