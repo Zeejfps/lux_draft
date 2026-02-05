@@ -263,14 +263,4 @@ export class UnifiedDragOperation extends BaseDragOperation {
     this.startPosition = null;
   }
 
-  /**
-   * Get the original positions for measurement updates.
-   */
-  getOriginalVertexPositions(): Map<number, Vector2> {
-    return this.originalVertexPositions;
-  }
-
-  getOriginalLightPositions(): Map<string, Vector2> {
-    return this.originalLightPositions;
-  }
 }

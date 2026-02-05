@@ -24,19 +24,7 @@ export class KeyboardShortcutManager {
     }
   }
 
-  /**
-   * Unregister a binding by key combination.
-   */
-  unregister(key: string, ctrlKey?: boolean, shiftKey?: boolean, altKey?: boolean): void {
-    this.bindings = this.bindings.filter(b =>
-      !(b.key.toLowerCase() === key.toLowerCase() &&
-        (b.ctrlKey ?? false) === (ctrlKey ?? false) &&
-        (b.shiftKey ?? false) === (shiftKey ?? false) &&
-        (b.altKey ?? false) === (altKey ?? false))
-    );
-  }
-
-  /**
+    /**
    * Handle a key down event.
    * Returns true if a binding was matched and executed.
    */
@@ -83,14 +71,7 @@ export class KeyboardShortcutManager {
     return ctrlMatch && shiftMatch && altMatch;
   }
 
-  /**
-   * Get all registered bindings.
-   */
-  getBindings(): KeyBinding[] {
-    return [...this.bindings];
-  }
-
-  /**
+    /**
    * Clear all bindings.
    */
   clear(): void {

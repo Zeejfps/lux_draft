@@ -55,12 +55,7 @@ export const DEFAULT_ROOM_STATE: RoomState = {
   isClosed: false,
 };
 
-export const DEFAULT_APP_STATE: AppState = {
-  mode: 'drafting',
-  viewMode: 'editor',
-  activeTool: 'select',
-  selectedLightId: null,
-};
+
 
 export const DEFAULT_RAFTER_CONFIG: RafterConfig = {
   orientation: 'horizontal',
