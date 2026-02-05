@@ -7,21 +7,4 @@ export * from './operations';
 export * from './handlers';
 export {
   EMPTY_MODIFIERS,
-  extractModifiers,
-  hasSelection,
-  getSelectionOrigin,
-  getSelectionOriginFromRoomState,
-  applyGridSnap,
-  applyAxisConstraint,
-  type GridSnapConfig,
-  type GridSnapResult,
 } from './utils';
-export type {
-  RoomStateAccessor,
-  RoomStateWithLights,
-  RoomStateWithWallLookup,
-  RoomStateWithDoors,
-  SnapConfig,
-  GridSnapEnabledConfig,
-  BaseDragConfig,
-} from './types';

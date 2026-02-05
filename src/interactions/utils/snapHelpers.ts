@@ -8,7 +8,7 @@ export interface GridSnapConfig {
   getGridSize: () => number;
 }
 
-export interface GridSnapResult {
+interface GridSnapResult {
   position: Vector2;
   wasSnapped: boolean;
 }
@@ -54,24 +54,4 @@ export function applyGridSnap(
       wasSnapped: true,
     };
   }
-}
-
-/**
- * Apply axis constraint to a position.
- * When axis locked, restricts movement to only that axis.
- */
-export function applyAxisConstraint(
-  pos: Vector2,
-  axisLock: AxisLock,
-  origin: Vector2
-): Vector2 {
-  if (axisLock === 'none' || !origin) return pos;
-
-  if (axisLock === 'x') {
-    return { x: pos.x, y: origin.y };
-  } else if (axisLock === 'y') {
-    return { x: origin.x, y: pos.y };
-  }
-
-  return pos;
 }

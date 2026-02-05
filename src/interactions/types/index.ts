@@ -1,9 +1,4 @@
 export type {
-  RoomStateAccessor,
-  RoomStateWithLights,
-  RoomStateWithWallLookup,
-  RoomStateWithDoors,
-  SnapConfig,
-  GridSnapEnabledConfig,
   BaseDragConfig,
+  RoomStateWithDoors,
 } from './configInterfaces';

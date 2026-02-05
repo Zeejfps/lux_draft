@@ -10,18 +10,9 @@ export interface AxisLockHandlerConfig {
 }
 
 /**
- * Check if the event is an axis lock key press (X or Y).
- */
-export function isAxisLockKey(event: InputEvent): boolean {
-  if (event.ctrlKey || event.altKey) return false;
-  const key = event.key?.toLowerCase();
-  return key === 'x' || key === 'y';
-}
-
-/**
  * Get the axis from a key event.
  */
-export function getAxisFromKey(event: InputEvent): AxisLock | null {
+function getAxisFromKey(event: InputEvent): AxisLock | null {
   const key = event.key?.toLowerCase();
   if (key === 'x') return 'x';
   if (key === 'y') return 'y';
