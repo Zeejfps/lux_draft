@@ -40,6 +40,25 @@ export class DrawingHandler extends BaseInteractionHandler {
     this.callbacks = callbacks;
   }
 
+  private getEffectiveGridSize(): number {
+    return this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
+  }
+
+  private resetDrawingState(): void {
+    this.callbacks.onUpdateDrawingVertices([]);
+    this.callbacks.onSetPhantomLine(null, null);
+  }
+
+  private handleClosureAttempt(walls: WallSegment[] | null): void {
+    if (walls && this.config.polygonValidator.isValid(walls)) {
+      this.resetDrawingState();
+      this.callbacks.onCloseRoom(walls);
+    } else {
+      this.config.wallBuilder.cancel();
+      this.resetDrawingState();
+    }
+  }
+
   canHandle(_event: InputEvent, context: InteractionContext): boolean {
     return context.isDrawingEnabled;
   }
@@ -47,9 +66,9 @@ export class DrawingHandler extends BaseInteractionHandler {
   handleClick(event: InputEvent, context: InteractionContext): boolean {
     if (!context.isDrawingEnabled) return false;
 
-    const { wallBuilder, polygonValidator, snapController } = this.config;
+    const { wallBuilder, snapController } = this.config;
     const pos = event.worldPos;
-    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
+    const gridSize = this.getEffectiveGridSize();
 
     // Grid snap mode
     if (this.config.getGridSnapEnabled() && gridSize > 0) {
@@ -60,7 +79,7 @@ export class DrawingHandler extends BaseInteractionHandler {
         this.callbacks.onUpdateDrawingVertices(wallBuilder.getVertices());
       } else {
         // Check for closure
-        if (this.tryClosureWithGridSnap(gridPos, gridSize, wallBuilder, polygonValidator)) {
+        if (this.tryClosureWithGridSnap(gridPos, gridSize)) {
           return true;
         }
 
@@ -79,16 +98,7 @@ export class DrawingHandler extends BaseInteractionHandler {
       const snap = wallBuilder.currentSnap;
 
       if (snap?.snapType === 'closure' && wallBuilder.vertexCount >= 3) {
-        const walls = wallBuilder.closeLoop();
-        if (walls && polygonValidator.isValid(walls)) {
-          this.callbacks.onUpdateDrawingVertices([]);
-          this.callbacks.onSetPhantomLine(null, null);
-          this.callbacks.onCloseRoom(walls);
-        } else {
-          wallBuilder.cancel();
-          this.callbacks.onUpdateDrawingVertices([]);
-          this.callbacks.onSetPhantomLine(null, null);
-        }
+        this.handleClosureAttempt(wallBuilder.closeLoop());
       } else {
         wallBuilder.placeVertex(snappedPos);
         this.callbacks.onUpdateDrawingVertices(wallBuilder.getVertices());
@@ -105,12 +115,13 @@ export class DrawingHandler extends BaseInteractionHandler {
     }
 
     const { wallBuilder, snapController } = this.config;
+    const gridSize = this.getEffectiveGridSize();
+    const isGridSnapActive = this.config.getGridSnapEnabled() && gridSize > 0;
+
     if (!wallBuilder.drawing) {
       // Show preview vertex at cursor when not actively drawing
-      const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-      if (this.config.getGridSnapEnabled() && gridSize > 0) {
-        const gridPos = snapController.snapToGrid(event.worldPos, gridSize);
-        this.callbacks.onSetPreviewVertex(gridPos);
+      if (isGridSnapActive) {
+        this.callbacks.onSetPreviewVertex(snapController.snapToGrid(event.worldPos, gridSize));
       } else {
         this.callbacks.onSetPreviewVertex(event.worldPos);
       }
@@ -123,10 +134,8 @@ export class DrawingHandler extends BaseInteractionHandler {
       return false;
     }
 
-    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-
     // Grid snap mode - bypass angle snapping entirely
-    if (this.config.getGridSnapEnabled() && gridSize > 0) {
+    if (isGridSnapActive) {
       const gridPos = snapController.snapToGrid(event.worldPos, gridSize);
       this.callbacks.onSetPhantomLine(lastVertex, gridPos);
       this.callbacks.onSetPreviewVertex(gridPos);
@@ -153,37 +162,22 @@ export class DrawingHandler extends BaseInteractionHandler {
 
     if (event.key === 'Escape' && wallBuilder.drawing) {
       wallBuilder.cancel();
-      this.callbacks.onSetPhantomLine(null, null);
+      this.resetDrawingState();
       this.callbacks.onSetPreviewVertex(null);
-      this.callbacks.onUpdateDrawingVertices([]);
       return true;
     }
 
     return false;
   }
 
-  private tryClosureWithGridSnap(
-    gridPos: Vector2,
-    gridSize: number,
-    wallBuilder: WallBuilder,
-    polygonValidator: PolygonValidator
-  ): boolean {
+  private tryClosureWithGridSnap(gridPos: Vector2, gridSize: number): boolean {
+    const { wallBuilder } = this.config;
     const startVertex = wallBuilder.startVertex;
-    const closureThreshold = gridSize;
 
     if (startVertex && wallBuilder.vertexCount >= 3) {
       const dist = Math.hypot(gridPos.x - startVertex.x, gridPos.y - startVertex.y);
-      if (dist < closureThreshold) {
-        const walls = wallBuilder.closeLoop();
-        if (walls && polygonValidator.isValid(walls)) {
-          this.callbacks.onUpdateDrawingVertices([]);
-          this.callbacks.onSetPhantomLine(null, null);
-          this.callbacks.onCloseRoom(walls);
-        } else {
-          wallBuilder.cancel();
-          this.callbacks.onUpdateDrawingVertices([]);
-          this.callbacks.onSetPhantomLine(null, null);
-        }
+      if (dist < gridSize) {
+        this.handleClosureAttempt(wallBuilder.closeLoop());
         return true;
       }
     }
