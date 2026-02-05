@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import type { RoomState, WallSegment, Vector2, Door } from '../types';
+import type { RoomState, WallSegment, Vector2, Door, Obstacle } from '../types';
 import { DEFAULT_ROOM_STATE } from '../types';
 import { vectorSubtract, vectorNormalize, vectorAdd, vectorScale, distancePointToPoint } from '../utils/math';
 import { geometryService } from '../services/GeometryService';
@@ -8,6 +8,7 @@ export const roomStore = writable<RoomState>({ ...DEFAULT_ROOM_STATE });
 
 export const canPlaceLights = derived(roomStore, ($room) => $room.isClosed);
 export const canPlaceDoors = derived(roomStore, ($room) => $room.isClosed);
+export const canDrawObstacles = derived(roomStore, ($room) => $room.isClosed);
 
 export const roomBounds = derived(roomStore, ($room) => {
   if ($room.walls.length === 0) {
@@ -224,5 +225,112 @@ export function removeDoor(doorId: string): void {
 
 export function getDoorsByWallId(state: RoomState, wallId: string): Door[] {
   return state.doors.filter(d => d.wallId === wallId);
+}
+
+// ============================================
+// Obstacle Operations
+// ============================================
+
+export function addObstacle(obstacle: Obstacle): void {
+  roomStore.update(state => ({
+    ...state,
+    obstacles: [...(state.obstacles ?? []), obstacle],
+  }));
+}
+
+export function updateObstacle(id: string, updates: Partial<Omit<Obstacle, 'id'>>): void {
+  roomStore.update(state => ({
+    ...state,
+    obstacles: (state.obstacles ?? []).map(obs =>
+      obs.id === id ? { ...obs, ...updates } : obs
+    ),
+  }));
+}
+
+export function removeObstacle(id: string): void {
+  roomStore.update(state => ({
+    ...state,
+    obstacles: (state.obstacles ?? []).filter(obs => obs.id !== id),
+  }));
+}
+
+export function updateObstacleVertexPosition(obstacleId: string, vertexIndex: number, newPosition: Vector2): void {
+  roomStore.update(state => {
+    const obstacles = state.obstacles ?? [];
+    const obstacleIndex = obstacles.findIndex(o => o.id === obstacleId);
+    if (obstacleIndex === -1) return state;
+
+    const obstacle = obstacles[obstacleIndex];
+    const numWalls = obstacle.walls.length;
+    if (vertexIndex < 0 || vertexIndex >= numWalls) return state;
+
+    const newWalls = [...obstacle.walls];
+
+    // Vertex at index i is the start of wall[i] and end of wall[i-1]
+    const currentWall = newWalls[vertexIndex];
+    const newLength = distancePointToPoint(newPosition, currentWall.end);
+    newWalls[vertexIndex] = {
+      ...currentWall,
+      start: { ...newPosition },
+      length: newLength,
+    };
+
+    const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
+    const prevWall = newWalls[prevWallIndex];
+    const prevLength = distancePointToPoint(prevWall.start, newPosition);
+    newWalls[prevWallIndex] = {
+      ...prevWall,
+      end: { ...newPosition },
+      length: prevLength,
+    };
+
+    const newObstacles = [...obstacles];
+    newObstacles[obstacleIndex] = { ...obstacle, walls: newWalls };
+
+    return { ...state, obstacles: newObstacles };
+  });
+}
+
+export function moveObstacle(obstacleId: string, vertexPositions: Map<number, Vector2>): void {
+  roomStore.update(state => {
+    const obstacles = state.obstacles ?? [];
+    const obstacleIndex = obstacles.findIndex(o => o.id === obstacleId);
+    if (obstacleIndex === -1) return state;
+
+    const obstacle = obstacles[obstacleIndex];
+    const newWalls = [...obstacle.walls];
+
+    // Update each vertex position
+    for (const [vertexIndex, newPosition] of vertexPositions) {
+      const numWalls = newWalls.length;
+      if (vertexIndex < 0 || vertexIndex >= numWalls) continue;
+
+      const currentWall = newWalls[vertexIndex];
+      newWalls[vertexIndex] = {
+        ...currentWall,
+        start: { ...newPosition },
+      };
+
+      const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
+      const prevWall = newWalls[prevWallIndex];
+      newWalls[prevWallIndex] = {
+        ...prevWall,
+        end: { ...newPosition },
+      };
+    }
+
+    // Recalculate all wall lengths after all positions are updated
+    for (let i = 0; i < newWalls.length; i++) {
+      newWalls[i] = {
+        ...newWalls[i],
+        length: distancePointToPoint(newWalls[i].start, newWalls[i].end),
+      };
+    }
+
+    const newObstacles = [...obstacles];
+    newObstacles[obstacleIndex] = { ...obstacle, walls: newWalls };
+
+    return { ...state, obstacles: newObstacles };
+  });
 }
 
