@@ -96,15 +96,21 @@ export class MeasurementRenderer {
     }
   }
 
-  private renderXComponent(from: Vector2, to: Vector2, deltaX: number): void {
-    // Horizontal dashed line
+  private renderComponent(
+    lineStart: Vector2,
+    lineEnd: Vector2,
+    labelPos: Vector2,
+    distance: number,
+    color: number
+  ): void {
+    // Dashed line
     const points = [
-      new THREE.Vector3(from.x, from.y, Z_LAYERS.MEASUREMENT),
-      new THREE.Vector3(to.x, from.y, Z_LAYERS.MEASUREMENT),
+      new THREE.Vector3(lineStart.x, lineStart.y, Z_LAYERS.MEASUREMENT),
+      new THREE.Vector3(lineEnd.x, lineEnd.y, Z_LAYERS.MEASUREMENT),
     ];
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineDashedMaterial({
-      color: this.colors.xComponent,
+      color,
       dashSize: DASH_PATTERNS.MEASUREMENT_COMPONENT.dashSize,
       gapSize: DASH_PATTERNS.MEASUREMENT_COMPONENT.gapSize,
     });
@@ -114,36 +120,31 @@ export class MeasurementRenderer {
 
     // Label
     const label = this.createLabel(
-      formatImperial(deltaX, { format: this.currentUnitFormat }),
-      this.colors.xComponent
+      formatImperial(distance, { format: this.currentUnitFormat }),
+      color
     );
-    label.position.set((from.x + to.x) / 2, from.y - 0.4, Z_LAYERS.MEASUREMENT + 0.01);
+    label.position.set(labelPos.x, labelPos.y, Z_LAYERS.MEASUREMENT + 0.01);
     this.group.add(label);
   }
 
-  private renderYComponent(from: Vector2, to: Vector2, deltaY: number): void {
-    // Vertical dashed line
-    const points = [
-      new THREE.Vector3(to.x, from.y, Z_LAYERS.MEASUREMENT),
-      new THREE.Vector3(to.x, to.y, Z_LAYERS.MEASUREMENT),
-    ];
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineDashedMaterial({
-      color: this.colors.yComponent,
-      dashSize: DASH_PATTERNS.MEASUREMENT_COMPONENT.dashSize,
-      gapSize: DASH_PATTERNS.MEASUREMENT_COMPONENT.gapSize,
-    });
-    const line = new THREE.Line(geometry, material);
-    line.computeLineDistances();
-    this.group.add(line);
+  private renderXComponent(from: Vector2, to: Vector2, deltaX: number): void {
+    this.renderComponent(
+      from,
+      { x: to.x, y: from.y },
+      { x: (from.x + to.x) / 2, y: from.y - 0.4 },
+      deltaX,
+      this.colors.xComponent
+    );
+  }
 
-    // Label
-    const label = this.createLabel(
-      formatImperial(deltaY, { format: this.currentUnitFormat }),
+  private renderYComponent(from: Vector2, to: Vector2, deltaY: number): void {
+    this.renderComponent(
+      { x: to.x, y: from.y },
+      to,
+      { x: to.x + 0.5, y: (from.y + to.y) / 2 },
+      deltaY,
       this.colors.yComponent
     );
-    label.position.set(to.x + 0.5, (from.y + to.y) / 2, Z_LAYERS.MEASUREMENT + 0.01);
-    this.group.add(label);
   }
 
   private createLabel(text: string, backgroundColor: number): THREE.Sprite {

@@ -1,4 +1,4 @@
-import type { Vector2, WallSegment } from '../../types';
+import type { Vector2 } from '../../types';
 import type {
   DragStartContext,
   DragUpdateContext,
@@ -9,8 +9,8 @@ import type { DragManagerCallbacks } from '../DragManager';
 import type { BaseDragConfig } from '../types';
 import { BaseDragOperation } from '../DragOperation';
 import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
-import { isPointInPolygon } from '../../utils/geometry';
 import { applyGridSnap } from '../utils';
+import { calculateDelta, checkPointInRoom } from './grabModeHelpers';
 
 /**
  * Configuration for unified drag operations.
@@ -195,23 +195,13 @@ export class UnifiedDragOperation extends BaseDragOperation {
   }
 
   private calculateDeltaFromAnchor(targetPos: Vector2): Vector2 {
-    let delta = { x: 0, y: 0 };
-
     if (this.anchorVertexIndex !== null && this.originalVertexPositions.has(this.anchorVertexIndex)) {
-      const anchorOriginal = this.originalVertexPositions.get(this.anchorVertexIndex)!;
-      delta = {
-        x: targetPos.x - anchorOriginal.x,
-        y: targetPos.y - anchorOriginal.y,
-      };
-    } else if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
-      const anchorOriginal = this.originalLightPositions.get(this.anchorLightId)!;
-      delta = {
-        x: targetPos.x - anchorOriginal.x,
-        y: targetPos.y - anchorOriginal.y,
-      };
+      return calculateDelta(this.originalVertexPositions.get(this.anchorVertexIndex)!, targetPos);
     }
-
-    return delta;
+    if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
+      return calculateDelta(this.originalLightPositions.get(this.anchorLightId)!, targetPos);
+    }
+    return { x: 0, y: 0 };
   }
 
   private moveSelectedVertices(delta: Vector2): void {
@@ -238,7 +228,7 @@ export class UnifiedDragOperation extends BaseDragOperation {
       };
 
       // Only move if inside room (when room is closed)
-      if (!isClosed || this.isPointInsideRoom(newPos, walls)) {
+      if (!isClosed || checkPointInRoom(newPos, walls)) {
         updates.set(id, newPos);
       }
     }
@@ -246,12 +236,6 @@ export class UnifiedDragOperation extends BaseDragOperation {
     if (updates.size > 0) {
       this.callbacks.onUpdateLightPositions(updates);
     }
-  }
-
-  private isPointInsideRoom(point: Vector2, walls: WallSegment[]): boolean {
-    if (walls.length < 3) return false;
-    const vertices = walls.map(w => w.start);
-    return isPointInPolygon(point, vertices);
   }
 
   private cleanup(): void {

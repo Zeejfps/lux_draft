@@ -2,7 +2,7 @@ import { writable, derived } from 'svelte/store';
 import type { RoomState, WallSegment, Vector2, Door } from '../types';
 import { DEFAULT_ROOM_STATE } from '../types';
 import { vectorSubtract, vectorNormalize, vectorAdd, vectorScale, distancePointToPoint } from '../utils/math';
-import { generateId } from '../utils/id';
+import { geometryService } from '../services/GeometryService';
 
 export const roomStore = writable<RoomState>({ ...DEFAULT_ROOM_STATE });
 
@@ -121,40 +121,9 @@ export function insertVertexOnWall(wallId: string, position: Vector2): number | 
   let insertedIndex: number | null = null;
 
   roomStore.update(state => {
-    if (!state.isClosed || state.walls.length === 0) return state;
-
-    const wallIndex = state.walls.findIndex(w => w.id === wallId);
-    if (wallIndex === -1) return state;
-
-    const wall = state.walls[wallIndex];
-
-    // Create two new walls from the split
-    const newWall1: WallSegment = {
-      id: generateId(),
-      start: { ...wall.start },
-      end: { ...position },
-      length: distancePointToPoint(wall.start, position),
-    };
-
-    const newWall2: WallSegment = {
-      id: generateId(),
-      start: { ...position },
-      end: { ...wall.end },
-      length: distancePointToPoint(position, wall.end),
-    };
-
-    // Replace the old wall with two new walls
-    const newWalls = [
-      ...state.walls.slice(0, wallIndex),
-      newWall1,
-      newWall2,
-      ...state.walls.slice(wallIndex + 1),
-    ];
-
-    // The new vertex is at index wallIndex + 1 (start of newWall2)
-    insertedIndex = wallIndex + 1;
-
-    return { ...state, walls: newWalls };
+    const result = geometryService.insertVertexOnWall(state, wallId, position);
+    insertedIndex = result.insertedIndex;
+    return result.state;
   });
 
   return insertedIndex;
@@ -207,43 +176,20 @@ export function deleteVertex(vertexIndex: number): boolean {
   let success = false;
 
   roomStore.update(state => {
-    if (!state.isClosed || state.walls.length <= 3) return state; // Need at least 3 vertices for a polygon
+    // Get the wall that will be deleted (needed for door cleanup)
+    const deletedWallId = state.walls[vertexIndex]?.id;
 
-    const numWalls = state.walls.length;
-    if (vertexIndex < 0 || vertexIndex >= numWalls) return state;
+    const result = geometryService.deleteVertex(state, vertexIndex);
+    success = result.success;
 
-    // The vertex at index i is the start of wall[i] and end of wall[i-1]
-    // Deleting it means merging wall[i-1] and wall[i] into one wall
-    const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
-    const currentWallIndex = vertexIndex;
+    if (!result.success) return state;
 
-    const prevWall = state.walls[prevWallIndex];
-    const currentWall = state.walls[currentWallIndex];
-
-    // Create merged wall (from prevWall.start to currentWall.end)
-    const mergedWall: WallSegment = {
-      id: prevWall.id, // Keep the previous wall's id
-      start: { ...prevWall.start },
-      end: { ...currentWall.end },
-      length: distancePointToPoint(prevWall.start, currentWall.end),
-    };
-
-    // Build new walls array
-    const newWalls: WallSegment[] = [];
-    for (let i = 0; i < numWalls; i++) {
-      if (i === prevWallIndex) {
-        newWalls.push(mergedWall);
-      } else if (i === currentWallIndex) {
-        // Skip this wall, it's been merged
-      } else {
-        newWalls.push(state.walls[i]);
-      }
-    }
-
-    success = true;
     // Remove doors on the deleted wall
-    const newDoors = state.doors.filter(d => d.wallId !== currentWall.id);
-    return { ...state, walls: newWalls, doors: newDoors };
+    const newDoors = deletedWallId
+      ? result.state.doors.filter(d => d.wallId !== deletedWallId)
+      : result.state.doors;
+
+    return { ...result.state, doors: newDoors };
   });
 
   return success;
