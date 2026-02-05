@@ -7,6 +7,7 @@ import type { SnapController } from '../../controllers/SnapController';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
 import { isPointInRoom } from '../../utils/geometry';
+import { handleDrawingMouseMove } from '../utils/drawingMouseMove';
 
 export interface ObstacleDrawingHandlerCallbacks {
   onUpdateDrawingVertices: (vertices: Vector2[]) => void;
@@ -126,42 +127,15 @@ export class ObstacleDrawingHandler extends BaseInteractionHandler {
       return false;
     }
 
-    const { wallBuilder, snapController } = this.config;
     const gridSize = this.getEffectiveGridSize();
-    const isGridSnapActive = this.config.getGridSnapEnabled() && gridSize > 0;
-
-    if (!wallBuilder.drawing) {
-      if (isGridSnapActive) {
-        this.callbacks.onSetPreviewVertex(snapController.snapToGrid(event.worldPos, gridSize));
-      } else {
-        this.callbacks.onSetPreviewVertex(event.worldPos);
-      }
-      return false;
-    }
-
-    const lastVertex = wallBuilder.lastVertex;
-    if (!lastVertex) {
-      this.callbacks.onSetPreviewVertex(null);
-      return false;
-    }
-
-    if (isGridSnapActive) {
-      const gridPos = snapController.snapToGrid(event.worldPos, gridSize);
-      this.callbacks.onSetPhantomLine(lastVertex, gridPos);
-      this.callbacks.onSetPreviewVertex(gridPos);
-      return true;
-    }
-
-    const snappedPos = wallBuilder.continueDrawing(event.worldPos);
-    this.callbacks.onSetPhantomLine(lastVertex, snappedPos);
-    this.callbacks.onSetPreviewVertex(snappedPos);
-
-    const snap = wallBuilder.currentSnap;
-    if (snap) {
-      this.callbacks.onSnapChange(snap.snapType);
-    }
-
-    return true;
+    return handleDrawingMouseMove(
+      event.worldPos,
+      this.config.wallBuilder,
+      this.config.snapController,
+      this.config.getGridSnapEnabled() && gridSize > 0,
+      gridSize,
+      this.callbacks
+    );
   }
 
   handleKeyDown(event: InputEvent, context: InteractionContext): boolean {

@@ -80,6 +80,29 @@ export function updateWallLength(wallId: string, newLength: number): void {
   });
 }
 
+/**
+ * Update a vertex in a closed wall loop: sets wall[vertexIndex].start and wall[prevIndex].end,
+ * recalculating lengths for both affected walls. Mutates the provided walls array in place.
+ */
+function updateVertexInWalls(walls: WallSegment[], vertexIndex: number, newPosition: Vector2): void {
+  const numWalls = walls.length;
+
+  const currentWall = walls[vertexIndex];
+  walls[vertexIndex] = {
+    ...currentWall,
+    start: { ...newPosition },
+    length: distancePointToPoint(newPosition, currentWall.end),
+  };
+
+  const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
+  const prevWall = walls[prevWallIndex];
+  walls[prevWallIndex] = {
+    ...prevWall,
+    end: { ...newPosition },
+    length: distancePointToPoint(prevWall.start, newPosition),
+  };
+}
+
 export function getVertices(state: RoomState): Vector2[] {
   if (state.walls.length === 0) return [];
   return state.walls.map(w => w.start);
@@ -93,27 +116,7 @@ export function updateVertexPosition(vertexIndex: number, newPosition: Vector2):
     if (vertexIndex < 0 || vertexIndex >= numWalls) return state;
 
     const newWalls = [...state.walls];
-
-    // The vertex at index i is the start of wall[i] and end of wall[i-1]
-    // Update wall[vertexIndex].start
-    const currentWall = newWalls[vertexIndex];
-    const newLength = distancePointToPoint(newPosition, currentWall.end);
-    newWalls[vertexIndex] = {
-      ...currentWall,
-      start: { ...newPosition },
-      length: newLength,
-    };
-
-    // Update wall[(vertexIndex - 1 + numWalls) % numWalls].end
-    const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
-    const prevWall = newWalls[prevWallIndex];
-    const prevLength = distancePointToPoint(prevWall.start, newPosition);
-    newWalls[prevWallIndex] = {
-      ...prevWall,
-      end: { ...newPosition },
-      length: prevLength,
-    };
-
+    updateVertexInWalls(newWalls, vertexIndex, newPosition);
     return { ...state, walls: newWalls };
   });
 }
@@ -265,24 +268,7 @@ export function updateObstacleVertexPosition(obstacleId: string, vertexIndex: nu
     if (vertexIndex < 0 || vertexIndex >= numWalls) return state;
 
     const newWalls = [...obstacle.walls];
-
-    // Vertex at index i is the start of wall[i] and end of wall[i-1]
-    const currentWall = newWalls[vertexIndex];
-    const newLength = distancePointToPoint(newPosition, currentWall.end);
-    newWalls[vertexIndex] = {
-      ...currentWall,
-      start: { ...newPosition },
-      length: newLength,
-    };
-
-    const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
-    const prevWall = newWalls[prevWallIndex];
-    const prevLength = distancePointToPoint(prevWall.start, newPosition);
-    newWalls[prevWallIndex] = {
-      ...prevWall,
-      end: { ...newPosition },
-      length: prevLength,
-    };
+    updateVertexInWalls(newWalls, vertexIndex, newPosition);
 
     const newObstacles = [...obstacles];
     newObstacles[obstacleIndex] = { ...obstacle, walls: newWalls };
