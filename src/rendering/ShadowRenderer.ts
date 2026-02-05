@@ -2,35 +2,7 @@ import * as THREE from 'three';
 import type { Vector2, WallSegment, LightFixture, BoundingBox, Door } from '../types';
 import { raySegmentIntersect } from '../utils/math';
 import { disposeMeshArray } from '../utils/three';
-
-/**
- * Converts a door to a wall segment for shadow casting.
- */
-function getDoorSegment(door: Door, wall: WallSegment): { start: Vector2; end: Vector2 } {
-  const wallDir = {
-    x: wall.end.x - wall.start.x,
-    y: wall.end.y - wall.start.y,
-  };
-  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-  if (wallLength === 0) {
-    return { start: wall.start, end: wall.start };
-  }
-
-  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
-  const halfWidth = door.width / 2;
-
-  // Door endpoints on the wall
-  const doorStart = {
-    x: wall.start.x + normalizedDir.x * (door.position - halfWidth),
-    y: wall.start.y + normalizedDir.y * (door.position - halfWidth),
-  };
-  const doorEnd = {
-    x: wall.start.x + normalizedDir.x * (door.position + halfWidth),
-    y: wall.start.y + normalizedDir.y * (door.position + halfWidth),
-  };
-
-  return { start: doorStart, end: doorEnd };
-}
+import { getDoorEndpoints } from '../utils/geometry';
 
 export class ShadowRenderer {
   private scene: THREE.Scene;
@@ -62,7 +34,7 @@ export class ShadowRenderer {
     for (const door of doors) {
       const wall = walls.find(w => w.id === door.wallId);
       if (wall) {
-        const segment = getDoorSegment(door, wall);
+        const segment = getDoorEndpoints(door, wall);
         doorSegments.push(segment);
         allPoints.push(segment.start);
         allPoints.push(segment.end);

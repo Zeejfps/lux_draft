@@ -1,4 +1,4 @@
-import type { Vector2, WallSegment } from '../types';
+import type { Vector2, WallSegment, Door } from '../types';
 import { distancePointToSegment, vectorSubtract, vectorLength, vectorNormalize } from './math';
 
 /**
@@ -15,6 +15,36 @@ export function getWallDirection(wall: WallSegment): {
   const length = vectorLength(direction);
   const normalized = length > 0 ? vectorNormalize(direction) : { x: 0, y: 0 };
   return { direction, normalized, length };
+}
+
+/**
+ * Gets the start and end positions of a door on its wall.
+ * Optionally includes the hinge position based on swing direction.
+ */
+export function getDoorEndpoints(
+  door: Door,
+  wall: WallSegment
+): { start: Vector2; end: Vector2; hingePos: Vector2 } {
+  const { normalized, length } = getWallDirection(wall);
+  if (length === 0) {
+    return { start: wall.start, end: wall.start, hingePos: wall.start };
+  }
+
+  const halfWidth = door.width / 2;
+
+  const start = {
+    x: wall.start.x + normalized.x * (door.position - halfWidth),
+    y: wall.start.y + normalized.y * (door.position - halfWidth),
+  };
+  const end = {
+    x: wall.start.x + normalized.x * (door.position + halfWidth),
+    y: wall.start.y + normalized.y * (door.position + halfWidth),
+  };
+
+  // Hinge position depends on swing direction
+  const hingePos = door.swingDirection === 'right' ? start : end;
+
+  return { start, end, hingePos };
 }
 
 /**

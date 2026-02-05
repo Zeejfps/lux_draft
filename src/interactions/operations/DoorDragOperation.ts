@@ -5,6 +5,7 @@ import type {
 } from '../../types/interaction';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
+import { getWallDirection } from '../../utils/geometry';
 
 export interface DoorDragConfig {
   getWallById: (id: string) => WallSegment | undefined;
@@ -59,14 +60,8 @@ export class DoorDragOperation extends BaseDragOperation {
     if (!wall) return;
 
     // Calculate wall properties
-    const wallDir = {
-      x: wall.end.x - wall.start.x,
-      y: wall.end.y - wall.start.y,
-    };
-    const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+    const { normalized, length: wallLength } = getWallDirection(wall);
     if (wallLength === 0) return;
-
-    const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
 
     // Project mouse position onto the wall to get new door position
     const mouseToWallStart = {
@@ -75,7 +70,7 @@ export class DoorDragOperation extends BaseDragOperation {
     };
 
     // Dot product gives position along wall
-    let newPosition = mouseToWallStart.x * normalizedDir.x + mouseToWallStart.y * normalizedDir.y;
+    let newPosition = mouseToWallStart.x * normalized.x + mouseToWallStart.y * normalized.y;
 
     // Constrain position to wall bounds (accounting for door width)
     const halfWidth = door.width / 2;

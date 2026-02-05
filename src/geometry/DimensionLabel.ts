@@ -1,6 +1,7 @@
 import type { Vector2, WallSegment, Door, UnitFormat } from '../types';
 import { vectorAdd, vectorScale, vectorSubtract, vectorNormalize, vectorPerpendicular } from '../utils/math';
 import { formatImperial } from '../utils/format';
+import { getWallDirection } from '../utils/geometry';
 
 export interface DimensionLabelData {
   position: Vector2;
@@ -83,14 +84,8 @@ export function getWallDimensionLabels(
     return [getDimensionLabel(wall, options)];
   }
 
-  const wallDir = {
-    x: wall.end.x - wall.start.x,
-    y: wall.end.y - wall.start.y,
-  };
-  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+  const { normalized, length: wallLength } = getWallDirection(wall);
   if (wallLength === 0) return [];
-
-  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
 
   const labels: DimensionLabelData[] = [];
   let currentStart = 0;
@@ -102,12 +97,12 @@ export function getWallDimensionLabels(
     // Add label for segment from current position to door start
     if (doorStart > currentStart + 0.1) { // Min segment length to show label
       const segmentStart = {
-        x: wall.start.x + normalizedDir.x * currentStart,
-        y: wall.start.y + normalizedDir.y * currentStart,
+        x: wall.start.x + normalized.x * currentStart,
+        y: wall.start.y + normalized.y * currentStart,
       };
       const segmentEnd = {
-        x: wall.start.x + normalizedDir.x * doorStart,
-        y: wall.start.y + normalizedDir.y * doorStart,
+        x: wall.start.x + normalized.x * doorStart,
+        y: wall.start.y + normalized.y * doorStart,
       };
       labels.push(getSegmentDimensionLabel(
         segmentStart,
@@ -124,8 +119,8 @@ export function getWallDimensionLabels(
   // Add label for final segment from last door to wall end
   if (wallLength > currentStart + 0.1) {
     const segmentStart = {
-      x: wall.start.x + normalizedDir.x * currentStart,
-      y: wall.start.y + normalizedDir.y * currentStart,
+      x: wall.start.x + normalized.x * currentStart,
+      y: wall.start.y + normalized.y * currentStart,
     };
     labels.push(getSegmentDimensionLabel(
       segmentStart,
