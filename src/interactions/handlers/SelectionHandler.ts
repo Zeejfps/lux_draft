@@ -42,6 +42,7 @@ export interface SelectionHandlerConfig {
   createWallDragOperation: () => WallDragOperation;
   createDoorDragOperation: () => DoorDragOperation;
   getSelection: () => SelectionState;
+  getCurrentMousePos: () => Vector2;
 }
 
 /**
@@ -159,12 +160,24 @@ export class SelectionHandler extends BaseInteractionHandler {
     if (hasSelection && !event.ctrlKey && !event.altKey && !context.isGrabMode) {
       if (event.key?.toLowerCase() === 'x') {
         this.config.dragManager.setAxisLock('x');
-        this.config.dragManager.updateAxisLockGuides(this.getSelectionOrigin(context));
+        // Use drag start position for guides if dragging, otherwise use current selection origin
+        const guideOrigin = this.config.dragManager.startPosition || this.getSelectionOrigin(context);
+        this.config.dragManager.updateAxisLockGuides(guideOrigin);
+        // Trigger immediate update if actively dragging
+        if (this.config.dragManager.isActive) {
+          this.triggerImmediateUpdate();
+        }
         return true;
       }
       if (event.key?.toLowerCase() === 'y') {
         this.config.dragManager.setAxisLock('y');
-        this.config.dragManager.updateAxisLockGuides(this.getSelectionOrigin(context));
+        // Use drag start position for guides if dragging, otherwise use current selection origin
+        const guideOrigin = this.config.dragManager.startPosition || this.getSelectionOrigin(context);
+        this.config.dragManager.updateAxisLockGuides(guideOrigin);
+        // Trigger immediate update if actively dragging
+        if (this.config.dragManager.isActive) {
+          this.triggerImmediateUpdate();
+        }
         return true;
       }
     }
@@ -346,6 +359,19 @@ export class SelectionHandler extends BaseInteractionHandler {
       modifiers: { shiftKey: false, ctrlKey: false, altKey: false },
       roomState: null as any,
       selection: this.config.getSelection(),
+    });
+  }
+
+  /**
+   * Trigger an immediate drag update with the current mouse position.
+   * This ensures the object position updates immediately when axis lock changes.
+   */
+  private triggerImmediateUpdate(): void {
+    const currentPos = this.config.getCurrentMousePos();
+    this.config.dragManager.updateDrag(currentPos, {
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
     });
   }
 

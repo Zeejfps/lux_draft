@@ -199,8 +199,8 @@ export class GrabModeDragOperation extends BaseDragOperation {
       targetPos = result.snappedPos;
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-      }
-      if (context.axisLock === 'none') {
+        // Don't clear guides - axis lock guides are managed by DragManager
+      } else {
         this.callbacks.onSetSnapGuides(result.guides);
       }
     }
@@ -211,6 +211,7 @@ export class GrabModeDragOperation extends BaseDragOperation {
         if (context.axisLock === 'none') {
           // No axis lock - snap both axes
           targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
+          this.callbacks.onSetSnapGuides([]);
         } else {
           // Axis lock active - only snap the free axis
           const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
@@ -221,15 +222,19 @@ export class GrabModeDragOperation extends BaseDragOperation {
             // Y-axis movement (vertical) - only snap Y, keep X at original
             targetPos = { x: this.startPosition.x, y: snapped.y };
           }
+          // Don't clear guides - axis lock guides are managed by DragManager
         }
+      } else if (context.axisLock === 'none') {
+        this.callbacks.onSetSnapGuides([]);
       }
-      this.callbacks.onSetSnapGuides([]);
     } else {
       // No snapping - just apply axis lock if active
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
+        // Don't clear guides - axis lock guides are managed by DragManager
+      } else {
+        this.callbacks.onSetSnapGuides([]);
       }
-      this.callbacks.onSetSnapGuides([]);
     }
 
     // Calculate delta from anchor point
