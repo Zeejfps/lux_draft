@@ -8,7 +8,7 @@ import type { SnapController, SnapGuide } from '../../controllers/SnapController
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
 import { DEFAULT_GRID_SIZE_FT } from '../../constants/editor';
-import { isPointInPolygon } from '../../utils/geometry';
+import { isPointInPolygon, getWallDirection } from '../../utils/geometry';
 
 export interface GrabModeConfig {
   snapController: SnapController;
@@ -105,16 +105,11 @@ export class GrabModeDragOperation extends BaseDragOperation {
         // Calculate door's world position for offset calculation
         const wall = this.config.getWallById(door.wallId);
         if (wall) {
-          const wallDir = {
-            x: wall.end.x - wall.start.x,
-            y: wall.end.y - wall.start.y,
-          };
-          const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-          if (wallLength > 0) {
-            const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+          const { normalized, length } = getWallDirection(wall);
+          if (length > 0) {
             anchorPos = {
-              x: wall.start.x + normalizedDir.x * door.position,
-              y: wall.start.y + normalizedDir.y * door.position,
+              x: wall.start.x + normalized.x * door.position,
+              y: wall.start.y + normalized.y * door.position,
             };
           }
         }
@@ -198,41 +193,46 @@ export class GrabModeDragOperation extends BaseDragOperation {
 
     let targetPos = adjustedPos;
 
-    // Grid snap - apply before axis lock, but only to the free axis when locked
-    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-    if (this.config.getGridSnapEnabled() && gridSize > 0) {
-      if (context.axisLock === 'none') {
-        // No axis lock - snap both axes
-        targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
-        this.callbacks.onSetSnapGuides([]);
-      } else {
-        // Axis lock active - only snap the free axis
-        const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
-        if (context.axisLock === 'x') {
-          // X-axis movement (horizontal) - only snap X, keep Y at original
-          targetPos = { x: snapped.x, y: this.startPosition.y };
-        } else {
-          // Y-axis movement (vertical) - only snap Y, keep X at original
-          targetPos = { x: this.startPosition.x, y: snapped.y };
-        }
-      }
-    }
-    // Shift snapping for single items
-    else if (context.modifiers.shiftKey) {
+    // SHIFT alignment takes priority - snap to other vertices/lights (only for single item)
+    if (context.modifiers.shiftKey) {
       const result = this.handleShiftSnapping(targetPos);
       targetPos = result.snappedPos;
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-      }
-      if (context.axisLock === 'none') {
+        // Don't clear guides - axis lock guides are managed by DragManager
+      } else {
         this.callbacks.onSetSnapGuides(result.guides);
       }
+    }
+    // Grid snap - apply when SHIFT is not held
+    else if (this.config.getGridSnapEnabled()) {
+      const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
+      if (gridSize > 0) {
+        if (context.axisLock === 'none') {
+          // No axis lock - snap both axes
+          targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
+          this.callbacks.onSetSnapGuides([]);
+        } else {
+          // Axis lock active - only snap the free axis
+          const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
+          if (context.axisLock === 'x') {
+            // X-axis movement (horizontal) - only snap X, keep Y at original
+            targetPos = { x: snapped.x, y: this.startPosition.y };
+          } else {
+            // Y-axis movement (vertical) - only snap Y, keep X at original
+            targetPos = { x: this.startPosition.x, y: snapped.y };
+          }
+          // Don't clear guides - axis lock guides are managed by DragManager
+        }
+      } else if (context.axisLock === 'none') {
+        this.callbacks.onSetSnapGuides([]);
+      }
     } else {
-      // No grid snap, no shift snap - just apply axis lock if active
+      // No snapping - just apply axis lock if active
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-      }
-      if (context.axisLock === 'none') {
+        // Don't clear guides - axis lock guides are managed by DragManager
+      } else {
         this.callbacks.onSetSnapGuides([]);
       }
     }
@@ -312,14 +312,8 @@ export class GrabModeDragOperation extends BaseDragOperation {
     if (!wall) return;
 
     // Calculate wall properties
-    const wallDir = {
-      x: wall.end.x - wall.start.x,
-      y: wall.end.y - wall.start.y,
-    };
-    const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+    const { normalized: normalizedDir, length: wallLength } = getWallDirection(wall);
     if (wallLength === 0) return;
-
-    const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
 
     // Project mouse position onto the wall to get new door position
     const mouseToWallStart = {

@@ -9,6 +9,7 @@ import type { DoorDragOperation } from '../operations/DoorDragOperation';
 import type { BoxSelectionHandler } from './BoxSelectionHandler';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { findVertexAtPosition, projectPointOntoSegmentForInsertion, distancePointToSegment } from '../../utils/math';
+import { getWallDirection, getDoorEndpoints } from '../../utils/geometry';
 import {
   LIGHT_HIT_TOLERANCE_FT,
   VERTEX_HIT_TOLERANCE_FT,
@@ -41,6 +42,7 @@ export interface SelectionHandlerConfig {
   createWallDragOperation: () => WallDragOperation;
   createDoorDragOperation: () => DoorDragOperation;
   getSelection: () => SelectionState;
+  getCurrentMousePos: () => Vector2;
 }
 
 /**
@@ -158,12 +160,24 @@ export class SelectionHandler extends BaseInteractionHandler {
     if (hasSelection && !event.ctrlKey && !event.altKey && !context.isGrabMode) {
       if (event.key?.toLowerCase() === 'x') {
         this.config.dragManager.setAxisLock('x');
-        this.config.dragManager.updateAxisLockGuides(this.getSelectionOrigin(context));
+        // Use drag start position for guides if dragging, otherwise use current selection origin
+        const guideOrigin = this.config.dragManager.startPosition || this.getSelectionOrigin(context);
+        this.config.dragManager.updateAxisLockGuides(guideOrigin);
+        // Trigger immediate update if actively dragging
+        if (this.config.dragManager.isActive) {
+          this.triggerImmediateUpdate();
+        }
         return true;
       }
       if (event.key?.toLowerCase() === 'y') {
         this.config.dragManager.setAxisLock('y');
-        this.config.dragManager.updateAxisLockGuides(this.getSelectionOrigin(context));
+        // Use drag start position for guides if dragging, otherwise use current selection origin
+        const guideOrigin = this.config.dragManager.startPosition || this.getSelectionOrigin(context);
+        this.config.dragManager.updateAxisLockGuides(guideOrigin);
+        // Trigger immediate update if actively dragging
+        if (this.config.dragManager.isActive) {
+          this.triggerImmediateUpdate();
+        }
         return true;
       }
     }
@@ -297,28 +311,10 @@ export class SelectionHandler extends BaseInteractionHandler {
       const wall = walls.find(w => w.id === door.wallId);
       if (!wall) continue;
 
-      // Calculate door segment on wall
-      const wallDir = {
-        x: wall.end.x - wall.start.x,
-        y: wall.end.y - wall.start.y,
-      };
-      const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-      if (wallLength === 0) continue;
-
-      const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
-      const halfWidth = door.width / 2;
-
-      const doorStart = {
-        x: wall.start.x + normalizedDir.x * (door.position - halfWidth),
-        y: wall.start.y + normalizedDir.y * (door.position - halfWidth),
-      };
-      const doorEnd = {
-        x: wall.start.x + normalizedDir.x * (door.position + halfWidth),
-        y: wall.start.y + normalizedDir.y * (door.position + halfWidth),
-      };
+      const { start, end } = getDoorEndpoints(door, wall);
 
       // Check if click is near door segment
-      const dist = distancePointToSegment(pos, doorStart, doorEnd);
+      const dist = distancePointToSegment(pos, start, end);
       if (dist <= tolerance) {
         return door;
       }
@@ -366,6 +362,19 @@ export class SelectionHandler extends BaseInteractionHandler {
     });
   }
 
+  /**
+   * Trigger an immediate drag update with the current mouse position.
+   * This ensures the object position updates immediately when axis lock changes.
+   */
+  private triggerImmediateUpdate(): void {
+    const currentPos = this.config.getCurrentMousePos();
+    this.config.dragManager.updateDrag(currentPos, {
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+    });
+  }
+
   private getSelectionOrigin(context: InteractionContext): Vector2 | undefined {
     const selection = this.config.getSelection();
     const vertices = context.vertices;
@@ -396,16 +405,11 @@ export class SelectionHandler extends BaseInteractionHandler {
       if (door) {
         const wall = context.roomState.walls.find(w => w.id === door.wallId);
         if (wall) {
-          const wallDir = {
-            x: wall.end.x - wall.start.x,
-            y: wall.end.y - wall.start.y,
-          };
-          const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-          if (wallLength > 0) {
-            const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+          const { normalized, length } = getWallDirection(wall);
+          if (length > 0) {
             return {
-              x: wall.start.x + normalizedDir.x * door.position,
-              y: wall.start.y + normalizedDir.y * door.position,
+              x: wall.start.x + normalized.x * door.position,
+              y: wall.start.y + normalized.y * door.position,
             };
           }
         }

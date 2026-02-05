@@ -4,6 +4,7 @@ import type { InteractionContext, GrabModeState, SelectionState } from '../../ty
 import type { DragManager } from '../DragManager';
 import type { GrabModeDragOperation } from '../operations/GrabModeDragOperation';
 import { BaseInteractionHandler } from '../InteractionHandler';
+import { getWallDirection } from '../../utils/geometry';
 
 export interface GrabModeHandlerCallbacks {
   onGrabModeStart: () => void;
@@ -222,17 +223,11 @@ export class GrabModeHandler extends BaseInteractionHandler {
       if (door) {
         const wall = this.config.getWallById(door.wallId);
         if (wall) {
-          // Calculate door's world position on the wall
-          const wallDir = {
-            x: wall.end.x - wall.start.x,
-            y: wall.end.y - wall.start.y,
-          };
-          const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-          if (wallLength > 0) {
-            const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+          const { normalized, length } = getWallDirection(wall);
+          if (length > 0) {
             return {
-              x: wall.start.x + normalizedDir.x * door.position,
-              y: wall.start.y + normalizedDir.y * door.position,
+              x: wall.start.x + normalized.x * door.position,
+              y: wall.start.y + normalized.y * door.position,
             };
           }
         }

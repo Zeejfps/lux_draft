@@ -20,6 +20,14 @@ export abstract class BaseDragOperation implements IDragOperation {
     return this._isActive;
   }
 
+  /**
+   * Get the start position for axis lock calculations.
+   * This is the anchor item's original position, not the mouse click position.
+   */
+  getStartPosition(): Vector2 | null {
+    return this.startPosition;
+  }
+
   abstract start(context: DragStartContext): void;
   abstract update(context: DragUpdateContext): void;
   abstract commit(): void;

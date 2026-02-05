@@ -3,6 +3,7 @@ import type { Vector2, WallSegment, Door } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { VERTEX_RADIUS_SELECTED, VERTEX_RADIUS_DEFAULT, DRAWING_VERTEX_START_RADIUS, DRAWING_VERTEX_RADIUS } from '../constants/editor';
 import { getTheme } from '../constants/themes';
+import { getWallDirection, getDoorEndpoints } from '../utils/geometry';
 
 /**
  * Pure rendering functions for editor geometry.
@@ -27,14 +28,8 @@ export interface WallSegmentPart {
  * Returns an array of segment parts that should be rendered as solid wall lines.
  */
 export function getWallSegmentsWithDoors(wall: WallSegment, doors: Door[]): WallSegmentPart[] {
-  const wallDir = {
-    x: wall.end.x - wall.start.x,
-    y: wall.end.y - wall.start.y,
-  };
-  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
+  const { normalized, length: wallLength } = getWallDirection(wall);
   if (wallLength === 0) return [];
-
-  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
 
   // Get doors on this wall, sorted by position
   const doorsOnWall = doors
@@ -62,12 +57,12 @@ export function getWallSegmentsWithDoors(wall: WallSegment, doors: Door[]): Wall
     // Add segment from current position to door start (if there's space)
     if (doorStart > currentStart + 0.01) { // Small epsilon to avoid tiny segments
       const segmentStart = {
-        x: wall.start.x + normalizedDir.x * currentStart,
-        y: wall.start.y + normalizedDir.y * currentStart,
+        x: wall.start.x + normalized.x * currentStart,
+        y: wall.start.y + normalized.y * currentStart,
       };
       const segmentEnd = {
-        x: wall.start.x + normalizedDir.x * doorStart,
-        y: wall.start.y + normalizedDir.y * doorStart,
+        x: wall.start.x + normalized.x * doorStart,
+        y: wall.start.y + normalized.y * doorStart,
       };
       segments.push({
         start: segmentStart,
@@ -85,8 +80,8 @@ export function getWallSegmentsWithDoors(wall: WallSegment, doors: Door[]): Wall
   // Add final segment from last door to wall end (if there's space)
   if (wallLength > currentStart + 0.01) {
     const segmentStart = {
-      x: wall.start.x + normalizedDir.x * currentStart,
-      y: wall.start.y + normalizedDir.y * currentStart,
+      x: wall.start.x + normalized.x * currentStart,
+      y: wall.start.y + normalized.y * currentStart,
     };
     segments.push({
       start: segmentStart,
@@ -281,38 +276,6 @@ export function createDimensionLabel(text: string): THREE.Sprite {
 }
 
 /**
- * Helper function to get door endpoints on a wall.
- */
-function getDoorEndpoints(door: Door, wall: WallSegment): { start: Vector2; end: Vector2; hingePos: Vector2 } {
-  const wallDir = {
-    x: wall.end.x - wall.start.x,
-    y: wall.end.y - wall.start.y,
-  };
-  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-  if (wallLength === 0) {
-    return { start: wall.start, end: wall.start, hingePos: wall.start };
-  }
-
-  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
-  const halfWidth = door.width / 2;
-
-  // Door start and end positions on the wall
-  const doorStart = {
-    x: wall.start.x + normalizedDir.x * (door.position - halfWidth),
-    y: wall.start.y + normalizedDir.y * (door.position - halfWidth),
-  };
-  const doorEnd = {
-    x: wall.start.x + normalizedDir.x * (door.position + halfWidth),
-    y: wall.start.y + normalizedDir.y * (door.position + halfWidth),
-  };
-
-  // Hinge position (left side of door opening for 'right' swing, right side for 'left' swing)
-  const hingePos = door.swingDirection === 'right' ? doorStart : doorEnd;
-
-  return { start: doorStart, end: doorEnd, hingePos };
-}
-
-/**
  * Creates the visual representation of a door including:
  * - Door panel line (at 90° open position)
  * - Swing arc (quarter circle)
@@ -325,22 +288,16 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
   const { start: doorStart, end: doorEnd, hingePos } = getDoorEndpoints(door, wall);
 
   // Calculate wall direction and perpendicular (for swing direction)
-  const wallDir = {
-    x: wall.end.x - wall.start.x,
-    y: wall.end.y - wall.start.y,
-  };
-  const wallLength = Math.sqrt(wallDir.x * wallDir.x + wallDir.y * wallDir.y);
-  if (wallLength === 0) return objects;
-
-  const normalizedDir = { x: wallDir.x / wallLength, y: wallDir.y / wallLength };
+  const { normalized, length } = getWallDirection(wall);
+  if (length === 0) return objects;
 
   // Perpendicular direction (for door swing)
   // Using left-hand perpendicular: rotate 90° counterclockwise for 'inside'
   // Flip direction for 'outside'
   const sideMultiplier = door.swingSide === 'outside' ? -1 : 1;
   const perpDir = {
-    x: -normalizedDir.y * sideMultiplier,
-    y: normalizedDir.x * sideMultiplier
+    x: -normalized.y * sideMultiplier,
+    y: normalized.x * sideMultiplier
   };
 
   const doorColor = isSelected ? theme.editor.doorSelected : theme.editor.door;
@@ -375,7 +332,7 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
 
   if (door.swingDirection === 'right') {
     // Arc from closed (along wall toward doorEnd) to open (perpendicular)
-    const startAngle = Math.atan2(normalizedDir.y, normalizedDir.x);
+    const startAngle = Math.atan2(normalized.y, normalized.x);
     for (let i = 0; i <= arcSegments; i++) {
       const t = i / arcSegments;
       // Sweep direction depends on swing side
@@ -386,7 +343,7 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
     }
   } else {
     // Arc from closed (along wall toward doorStart, i.e., -normalizedDir) to open (perpendicular)
-    const startAngle = Math.atan2(-normalizedDir.y, -normalizedDir.x);
+    const startAngle = Math.atan2(-normalized.y, -normalized.x);
     for (let i = 0; i <= arcSegments; i++) {
       const t = i / arcSegments;
       // Sweep direction depends on swing side

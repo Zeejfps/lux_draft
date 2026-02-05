@@ -56,7 +56,6 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
   start(context: DragStartContext): void {
     this._isActive = true;
-    this.startPosition = { ...context.position };
     this.selection = context.selection;
 
     const vertices = this.config.getVertices();
@@ -78,6 +77,17 @@ export class UnifiedDragOperation extends BaseDragOperation {
         this.originalLightPositions.set(id, { ...light.position });
       }
     }
+
+    // Set startPosition to the anchor's actual position (not mouse position)
+    // This ensures axis lock works correctly relative to the item's original position
+    if (this.anchorVertexIndex !== null && this.originalVertexPositions.has(this.anchorVertexIndex)) {
+      this.startPosition = { ...this.originalVertexPositions.get(this.anchorVertexIndex)! };
+    } else if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
+      this.startPosition = { ...this.originalLightPositions.get(this.anchorLightId)! };
+    } else {
+      // Fallback to mouse position if no anchor (shouldn't happen)
+      this.startPosition = { ...context.position };
+    }
   }
 
   update(context: DragUpdateContext): void {
@@ -85,41 +95,46 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
     let targetPos = context.position;
 
-    // Grid snap - apply before axis lock, but only to the free axis when locked
-    const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
-    if (this.config.getGridSnapEnabled() && gridSize > 0) {
-      if (context.axisLock === 'none') {
-        // No axis lock - snap both axes
-        targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
-        this.callbacks.onSetSnapGuides([]);
-      } else {
-        // Axis lock active - only snap the free axis
-        const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
-        if (context.axisLock === 'x') {
-          // X-axis movement (horizontal) - only snap X, keep Y at original
-          targetPos = { x: snapped.x, y: this.startPosition.y };
-        } else {
-          // Y-axis movement (vertical) - only snap Y, keep X at original
-          targetPos = { x: this.startPosition.x, y: snapped.y };
-        }
-      }
-    }
-    // Snap to other vertices/lights when holding Shift (only for single item)
-    else if (context.modifiers.shiftKey) {
+    // SHIFT alignment takes priority - snap to other vertices/lights (only for single item)
+    if (context.modifiers.shiftKey) {
       const guides = this.handleShiftSnapping(targetPos, context.axisLock);
       targetPos = guides.snappedPos;
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-      }
-      if (context.axisLock === 'none') {
+        // Don't clear guides - axis lock guides are managed by DragManager
+      } else {
         this.callbacks.onSetSnapGuides(guides.guides);
       }
+    }
+    // Grid snap - apply when SHIFT is not held
+    else if (this.config.getGridSnapEnabled()) {
+      const gridSize = this.config.getGridSize() || DEFAULT_GRID_SIZE_FT;
+      if (gridSize > 0) {
+        if (context.axisLock === 'none') {
+          // No axis lock - snap both axes
+          targetPos = this.config.snapController.snapToGrid(targetPos, gridSize);
+          this.callbacks.onSetSnapGuides([]);
+        } else {
+          // Axis lock active - only snap the free axis
+          const snapped = this.config.snapController.snapToGrid(targetPos, gridSize);
+          if (context.axisLock === 'x') {
+            // X-axis movement (horizontal) - only snap X, keep Y at original
+            targetPos = { x: snapped.x, y: this.startPosition.y };
+          } else {
+            // Y-axis movement (vertical) - only snap Y, keep X at original
+            targetPos = { x: this.startPosition.x, y: snapped.y };
+          }
+          // Don't clear guides - axis lock guides are managed by DragManager
+        }
+      } else if (context.axisLock === 'none') {
+        this.callbacks.onSetSnapGuides([]);
+      }
     } else {
-      // No grid snap, no shift snap - just apply axis lock if active
+      // No snapping - just apply axis lock if active
       if (context.axisLock !== 'none') {
         targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-      }
-      if (context.axisLock === 'none') {
+        // Don't clear guides - axis lock guides are managed by DragManager
+      } else {
         this.callbacks.onSetSnapGuides([]);
       }
     }
