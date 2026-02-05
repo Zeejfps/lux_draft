@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Vector2, UnitFormat } from '../types';
 import { formatImperial } from '../utils/format';
-import { clearGroup } from '../utils/three';
+import { clearGroup, createTextSprite } from '../utils/three';
 import {
   Z_LAYERS,
   GEOMETRY,
@@ -148,36 +148,14 @@ export class MeasurementRenderer {
   }
 
   private createLabel(text: string, backgroundColor: number): THREE.Sprite {
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d')!;
-
-    const fontSize = 20;
-    const padding = 6;
-    context.font = `bold ${fontSize}px Arial`;
-    const textWidth = context.measureText(text).width;
-
-    canvas.width = Math.ceil(textWidth + padding * 2);
-    canvas.height = fontSize + padding;
-
-    // Draw background
-    context.fillStyle = `#${backgroundColor.toString(16).padStart(6, '0')}`;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Draw text
-    context.font = `bold ${fontSize}px Arial`;
-    context.fillStyle = 'white';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(text, canvas.width / 2, canvas.height / 2);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(material);
-
-    const aspectRatio = canvas.width / canvas.height;
-    sprite.scale.set(aspectRatio * LABEL_SCALE.MEASUREMENT_LABEL, LABEL_SCALE.MEASUREMENT_LABEL, 1);
-
-    return sprite;
+    return createTextSprite(text, {
+      fontSize: 20,
+      padding: 6,
+      fontWeight: 'bold',
+      backgroundColor,
+      textColor: 'white',
+      scale: LABEL_SCALE.MEASUREMENT_LABEL,
+    });
   }
 
   /**
