@@ -1,6 +1,8 @@
-# LuxDraft
+# LuxDraft Studio
 
-A 2D lighting design and analysis tool created as a personal project to help with home renovation planning. LuxDraft enables room layout creation, light fixture placement, and real-time illuminance calculations with IES photometric data support.
+**[Try it live at luxdraft.studio](https://luxdraft.studio)**
+
+A 2D lighting design and analysis tool created as a personal project to help with home renovation planning. LuxDraft Studio enables room layout creation, light fixture placement, and real-time illuminance calculations with IES photometric data support.
 
 While built for personal use, it may be useful for anyone planning lighting layouts for their home or small projects.
 
@@ -132,7 +134,7 @@ npm run test:run
 
 ### Importing IES Files
 
-LuxDraft supports industry-standard IES photometric data files:
+LuxDraft Studio supports industry-standard IES photometric data files:
 
 1. Open the Light Definition Manager
 2. Click "Import IES File"
@@ -177,7 +179,7 @@ lux_draft/
 
 ## Photometric Calculations
 
-LuxDraft implements physically-based lighting calculations:
+LuxDraft Studio implements physically-based lighting calculations:
 
 - **Inverse Square Law** - Light intensity decreases with the square of distance
 - **Lambert's Cosine Law** - Surface illumination based on angle of incidence
@@ -200,7 +202,7 @@ Contributions are welcome! Please ensure:
 
 MIT License
 
-Copyright (c) 2026 LuxDraft
+Copyright (c) 2026 LuxDraft Studio
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
