@@ -10,8 +10,7 @@ import { BaseDragOperation } from '../DragOperation';
 import {
   calculateDelta,
   checkPointInRoom,
-  handleShiftSnapping,
-  applyGridSnapOrAxisLock,
+  processTargetWithSnapping,
 } from './grabModeHelpers';
 
 /**
@@ -93,43 +92,29 @@ export class UnifiedDragOperation extends BaseDragOperation {
   update(context: DragUpdateContext): void {
     if (!this._isActive || !this.startPosition || !this.selection) return;
 
-    let targetPos = context.position;
+    const snapResult = processTargetWithSnapping(
+      context.position,
+      this.startPosition,
+      context,
+      this.config,
+      {
+        selection: this.selection,
+        anchorVertexIndex: this.anchorVertexIndex,
+        anchorLightId: this.anchorLightId,
+        getVertices: this.config.getVertices,
+        getLights: this.config.getLights,
+      },
+      this.applyAxisConstraint.bind(this)
+    );
 
-    // SHIFT alignment takes priority - snap to other vertices/lights (only for single item)
-    if (context.modifiers.shiftKey) {
-      const result = handleShiftSnapping(
-        targetPos,
-        this.selection,
-        this.anchorVertexIndex,
-        this.anchorLightId,
-        this.config.snapController,
-        this.config.getVertices,
-        this.config.getLights
-      );
-      targetPos = result.snappedPos;
-      if (context.axisLock !== 'none') {
-        targetPos = this.applyAxisConstraint(targetPos, context.axisLock, this.startPosition);
-      } else {
-        this.callbacks.onSetSnapGuides(result.guides);
-      }
-    }
-    // Grid snap - apply when SHIFT is not held
-    else {
-      const result = applyGridSnapOrAxisLock(
-        targetPos,
-        this.startPosition,
-        context.axisLock,
-        this.config,
-        this.applyAxisConstraint.bind(this)
-      );
-      targetPos = result.position;
-      if (result.clearGuides) {
-        this.callbacks.onSetSnapGuides([]);
-      }
+    if (snapResult.guides.length > 0) {
+      this.callbacks.onSetSnapGuides(snapResult.guides);
+    } else if (snapResult.clearGuides) {
+      this.callbacks.onSetSnapGuides([]);
     }
 
     // Calculate delta from anchor point
-    const delta = this.calculateDeltaFromAnchor(targetPos);
+    const delta = this.calculateDeltaFromAnchor(snapResult.position);
 
     // Move all selected vertices
     this.moveSelectedVertices(delta);

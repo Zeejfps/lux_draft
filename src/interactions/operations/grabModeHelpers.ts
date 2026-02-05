@@ -253,3 +253,90 @@ export function applyGridSnapOrAxisLock(
 
   return { position: targetPos, clearGuides: true };
 }
+
+export interface SnapAndGridConfig extends GridSnapConfig {
+  getWalls: () => WallSegment[];
+}
+
+export interface ShiftSnapContext {
+  selection: SelectionState | null;
+  anchorVertexIndex: number | null;
+  anchorLightId: string | null;
+  getVertices: () => Vector2[];
+  getLights: () => LightFixture[];
+}
+
+/**
+ * Process target position with shift snapping or grid snap + axis lock.
+ * Returns the final position and any snap guides to display.
+ */
+export function processTargetWithSnapping(
+  targetPos: Vector2,
+  startPosition: Vector2,
+  context: { axisLock: AxisLock; modifiers: { shiftKey: boolean } },
+  config: GridSnapConfig,
+  shiftSnapContext: ShiftSnapContext,
+  applyAxisConstraint: (pos: Vector2, lock: AxisLock, origin: Vector2) => Vector2
+): { position: Vector2; guides: SnapGuide[]; clearGuides: boolean } {
+  // SHIFT alignment takes priority
+  if (context.modifiers.shiftKey) {
+    const result = handleShiftSnapping(
+      targetPos,
+      shiftSnapContext.selection,
+      shiftSnapContext.anchorVertexIndex,
+      shiftSnapContext.anchorLightId,
+      config.snapController,
+      shiftSnapContext.getVertices,
+      shiftSnapContext.getLights
+    );
+    let snappedPos = result.snappedPos;
+    if (context.axisLock !== 'none') {
+      snappedPos = applyAxisConstraint(snappedPos, context.axisLock, startPosition);
+      return { position: snappedPos, guides: [], clearGuides: false };
+    }
+    return { position: snappedPos, guides: result.guides, clearGuides: false };
+  }
+
+  // Grid snap - apply when SHIFT is not held
+  const gridResult = applyGridSnapOrAxisLock(
+    targetPos,
+    startPosition,
+    context.axisLock,
+    config,
+    applyAxisConstraint
+  );
+  return {
+    position: gridResult.position,
+    guides: [],
+    clearGuides: gridResult.clearGuides,
+  };
+}
+
+/**
+ * Handle wall snapping to vertices (excluding the wall's own vertices).
+ */
+export function handleWallSnapping(
+  newStart: Vector2,
+  newEnd: Vector2,
+  wallId: string | null,
+  getWalls: () => WallSegment[],
+  getVertices: () => Vector2[],
+  snapController: SnapController
+): { snappedStart: Vector2; snappedEnd: Vector2; guides: SnapGuide[] } {
+  if (!wallId) {
+    return { snappedStart: newStart, snappedEnd: newEnd, guides: [] };
+  }
+
+  const walls = getWalls();
+  const wallIndex = walls.findIndex(w => w.id === wallId);
+
+  if (wallIndex === -1) {
+    return { snappedStart: newStart, snappedEnd: newEnd, guides: [] };
+  }
+
+  const vertices = getVertices();
+  const numWalls = walls.length;
+  const excludeIndices = [wallIndex, (wallIndex + 1) % numWalls];
+
+  return snapController.snapWallToVertices(newStart, newEnd, vertices, excludeIndices);
+}

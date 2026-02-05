@@ -3,9 +3,10 @@ import type {
   DragStartContext,
   DragUpdateContext,
 } from '../../types/interaction';
-import type { SnapController, SnapGuide } from '../../controllers/SnapController';
+import type { SnapController } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
+import { handleWallSnapping } from './grabModeHelpers';
 
 export interface WallDragConfig {
   snapController: SnapController;
@@ -72,7 +73,14 @@ export class WallDragOperation extends BaseDragOperation {
 
     // Snap when holding Shift
     if (context.modifiers.shiftKey) {
-      const result = this.handleWallSnapping(newStart, newEnd, context.axisLock);
+      const result = handleWallSnapping(
+        newStart,
+        newEnd,
+        this.wallId,
+        this.config.getWalls,
+        this.config.getVertices,
+        this.config.snapController
+      );
       newStart = result.snappedStart;
       newEnd = result.snappedEnd;
       if (context.axisLock === 'none') {
@@ -100,29 +108,6 @@ export class WallDragOperation extends BaseDragOperation {
 
     this._isActive = false;
     this.cleanup();
-  }
-
-  private handleWallSnapping(
-    newStart: Vector2,
-    newEnd: Vector2,
-    _axisLock: string
-  ): { snappedStart: Vector2; snappedEnd: Vector2; guides: SnapGuide[] } {
-    if (!this.wallId) {
-      return { snappedStart: newStart, snappedEnd: newEnd, guides: [] };
-    }
-
-    const walls = this.config.getWalls();
-    const wallIndex = walls.findIndex(w => w.id === this.wallId);
-
-    if (wallIndex === -1) {
-      return { snappedStart: newStart, snappedEnd: newEnd, guides: [] };
-    }
-
-    const vertices = this.config.getVertices();
-    const numWalls = walls.length;
-    const excludeIndices = [wallIndex, (wallIndex + 1) % numWalls];
-
-    return this.config.snapController.snapWallToVertices(newStart, newEnd, vertices, excludeIndices);
   }
 
   private cleanup(): void {
