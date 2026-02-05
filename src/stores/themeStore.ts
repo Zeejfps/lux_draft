@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import { BLUEPRINT_THEME, DARK_THEME, LIGHT_THEME, type Theme, _setThemeInternal } from '../constants/themes';
+import { BLUEPRINT_THEME, DARK_THEME, LIGHT_THEME, type Theme } from '../constants/themes';
 
 export const currentTheme = writable<Theme>(BLUEPRINT_THEME);
 

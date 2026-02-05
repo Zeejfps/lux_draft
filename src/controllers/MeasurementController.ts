@@ -62,11 +62,7 @@ export class MeasurementController {
     return this._source?.type === 'vertex' ? this._source.index : null;
   }
 
-  get targetLightId(): string | null {
-    return this._target?.type === 'light' ? this._target.id : null;
-  }
-
-    /**
+  /**
    * Starts a measurement from a vertex.
    */
   startFromVertex(index: number, position: Vector2): void {

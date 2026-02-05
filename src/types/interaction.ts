@@ -20,8 +20,6 @@ export interface SelectionState {
 // Drag State
 // ============================================
 
-export type AnchorType = 'vertex' | 'light' | 'wall' | null;
-
 export interface DragContext {
   originalVertexPositions: Map<number, Vector2>;
   originalLightPositions: Map<string, Vector2>;

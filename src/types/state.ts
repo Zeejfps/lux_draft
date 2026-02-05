@@ -15,13 +15,6 @@ export type AppMode = 'drafting' | 'viewing';
 export type ViewMode = 'editor' | 'shadow' | 'heatmap';
 export type Tool = 'select' | 'draw' | 'light' | 'door';
 
-export interface AppState {
-  mode: AppMode;
-  viewMode: ViewMode;
-  activeTool: Tool;
-  selectedLightId: string | null;
-}
-
 export interface RafterConfig {
   orientation: 'horizontal' | 'vertical';
   spacing: number;
