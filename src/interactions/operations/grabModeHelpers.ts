@@ -254,10 +254,6 @@ export function applyGridSnapOrAxisLock(
   return { position: targetPos, clearGuides: true };
 }
 
-export interface SnapAndGridConfig extends GridSnapConfig {
-  getWalls: () => WallSegment[];
-}
-
 export interface ShiftSnapContext {
   selection: SelectionState | null;
   anchorVertexIndex: number | null;
@@ -310,6 +306,48 @@ export function processTargetWithSnapping(
     guides: [],
     clearGuides: gridResult.clearGuides,
   };
+}
+
+export interface WallSnapConfig {
+  getWalls: () => WallSegment[];
+  getVertices: () => Vector2[];
+  snapController: SnapController;
+}
+
+/**
+ * Apply wall snapping when shift is held, and manage snap guides.
+ * Returns the final wall start/end positions.
+ */
+export function applyWallSnappingWithGuides(
+  newStart: Vector2,
+  newEnd: Vector2,
+  wallId: string | null,
+  context: { axisLock: AxisLock; modifiers: { shiftKey: boolean } },
+  config: WallSnapConfig,
+  onSetSnapGuides: (guides: SnapGuide[]) => void
+): { start: Vector2; end: Vector2 } {
+  let finalStart = newStart;
+  let finalEnd = newEnd;
+
+  if (context.modifiers.shiftKey) {
+    const result = handleWallSnapping(
+      newStart,
+      newEnd,
+      wallId,
+      config.getWalls,
+      config.getVertices,
+      config.snapController
+    );
+    finalStart = result.snappedStart;
+    finalEnd = result.snappedEnd;
+    if (context.axisLock === 'none') {
+      onSetSnapGuides(result.guides);
+    }
+  } else if (context.axisLock === 'none') {
+    onSetSnapGuides([]);
+  }
+
+  return { start: finalStart, end: finalEnd };
 }
 
 /**

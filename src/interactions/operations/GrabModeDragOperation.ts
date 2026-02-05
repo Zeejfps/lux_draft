@@ -17,7 +17,7 @@ import {
   checkPointInRoom,
   captureOriginalPositions,
   processTargetWithSnapping,
-  handleWallSnapping,
+  applyWallSnappingWithGuides,
 } from './grabModeHelpers';
 
 /**
@@ -228,26 +228,17 @@ export class GrabModeDragOperation extends BaseDragOperation {
 
     const delta = calculateDelta(this.startPosition, constrainedPos);
 
-    let newStart = applyDelta(this.originalWallVertices.start, delta);
-    let newEnd = applyDelta(this.originalWallVertices.end, delta);
+    const baseStart = applyDelta(this.originalWallVertices.start, delta);
+    const baseEnd = applyDelta(this.originalWallVertices.end, delta);
 
-    if (context.modifiers.shiftKey) {
-      const result = handleWallSnapping(
-        newStart,
-        newEnd,
-        this.wallId,
-        this.config.getWalls,
-        this.config.getVertices,
-        this.config.snapController
-      );
-      newStart = result.snappedStart;
-      newEnd = result.snappedEnd;
-      if (context.axisLock === 'none') {
-        this.callbacks.onSetSnapGuides(result.guides);
-      }
-    } else if (context.axisLock === 'none') {
-      this.callbacks.onSetSnapGuides([]);
-    }
+    const { start: newStart, end: newEnd } = applyWallSnappingWithGuides(
+      baseStart,
+      baseEnd,
+      this.wallId,
+      context,
+      this.config,
+      this.callbacks.onSetSnapGuides
+    );
 
     this.callbacks.onMoveWall(this.wallId!, newStart, newEnd);
   }

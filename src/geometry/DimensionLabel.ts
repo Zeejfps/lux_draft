@@ -15,13 +15,6 @@ export interface LabelOptions {
   unitFormat?: UnitFormat;
 }
 
-export function getDimensionLabel(
-  wall: WallSegment,
-  options: LabelOptions = {}
-): DimensionLabelData {
-  return getSegmentDimensionLabel(wall.start, wall.end, wall.length, options);
-}
-
 /**
  * Generate dimension labels for a wall segment (start to end points with a given length).
  */

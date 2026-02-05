@@ -6,7 +6,7 @@ import type {
 import type { SnapController } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
-import { handleWallSnapping } from './grabModeHelpers';
+import { applyWallSnappingWithGuides } from './grabModeHelpers';
 
 export interface WallDragConfig {
   snapController: SnapController;
@@ -67,28 +67,18 @@ export class WallDragOperation extends BaseDragOperation {
     // Calculate delta from start position
     const delta = this.calculateDelta(this.startPosition, constrainedPos);
 
-    // Calculate new wall positions
-    let newStart = this.applyDelta(this.originalStart, delta);
-    let newEnd = this.applyDelta(this.originalEnd, delta);
+    // Calculate new wall positions and apply snapping
+    const baseStart = this.applyDelta(this.originalStart, delta);
+    const baseEnd = this.applyDelta(this.originalEnd, delta);
 
-    // Snap when holding Shift
-    if (context.modifiers.shiftKey) {
-      const result = handleWallSnapping(
-        newStart,
-        newEnd,
-        this.wallId,
-        this.config.getWalls,
-        this.config.getVertices,
-        this.config.snapController
-      );
-      newStart = result.snappedStart;
-      newEnd = result.snappedEnd;
-      if (context.axisLock === 'none') {
-        this.callbacks.onSetSnapGuides(result.guides);
-      }
-    } else if (context.axisLock === 'none') {
-      this.callbacks.onSetSnapGuides([]);
-    }
+    const { start: newStart, end: newEnd } = applyWallSnappingWithGuides(
+      baseStart,
+      baseEnd,
+      this.wallId,
+      context,
+      this.config,
+      this.callbacks.onSetSnapGuides
+    );
 
     this.callbacks.onMoveWall(this.wallId, newStart, newEnd);
   }
