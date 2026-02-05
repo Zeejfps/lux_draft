@@ -54,7 +54,6 @@ export class UnitConverter {
 
       let fractionStr = '';
       if (fraction >= 0.875) {
-        fractionStr = '';
         return wholeFeet > 0 ? `${wholeFeet}' ${wholeInches + 1}"` : `${wholeInches + 1}"`;
       } else if (fraction >= 0.625) {
         fractionStr = '3/4';

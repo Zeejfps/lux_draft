@@ -853,9 +853,6 @@
     wallBuilder.setManualLength(length);
   }
 
-  export function clearManualLength(): void {
-    wallBuilder.clearManualLength();
-  }
 </script>
 
 <div class="canvas-container" bind:this={container}></div>

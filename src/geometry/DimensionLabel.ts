@@ -133,13 +133,6 @@ export function getWallDimensionLabels(
   return labels;
 }
 
-export function getAllDimensionLabels(
-  walls: WallSegment[],
-  options: LabelOptions = {}
-): DimensionLabelData[] {
-  return walls.map((wall) => getDimensionLabel(wall, options));
-}
-
 /**
  * Get all dimension labels for walls, accounting for doors on each wall.
  */

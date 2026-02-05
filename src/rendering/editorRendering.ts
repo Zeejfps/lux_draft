@@ -101,23 +101,6 @@ export function getWallSegmentsWithDoors(wall: WallSegment, doors: Door[]): Wall
   return segments;
 }
 
-export function createWallLine(wall: WallSegment, isSelected: boolean): THREE.Line {
-  const theme = getTheme();
-  const points = [
-    new THREE.Vector3(wall.start.x, wall.start.y, 0),
-    new THREE.Vector3(wall.end.x, wall.end.y, 0),
-  ];
-
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color: isSelected ? theme.editor.wallSelected : theme.editor.wall,
-    linewidth: isSelected ? theme.editor.wallLineWidthSelected : theme.editor.wallLineWidth,
-  });
-  const line = new THREE.Line(geometry, material);
-  line.userData.wallId = wall.id;
-  return line;
-}
-
 /**
  * Create wall lines for a wall with door gaps.
  * Returns multiple line objects, one for each visible segment.

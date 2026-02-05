@@ -22,7 +22,7 @@
   import './stores/themeStore'; // Initialize theme CSS variables
   import type { Vector2 } from './types';
 
-  const iconPath = `${import.meta.env.BASE_URL}icons/lux_draft_icon.png`;
+
 
   let canvasComponent: Canvas;
   let mousePos: Vector2 = { x: 0, y: 0 };
