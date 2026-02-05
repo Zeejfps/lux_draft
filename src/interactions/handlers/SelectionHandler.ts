@@ -146,11 +146,8 @@ export class SelectionHandler extends BaseInteractionHandler {
         this.callbacks.onClearLightSelection();
       }
       this.callbacks.onClearWallSelection();
-      // Clear obstacle selection when clicking empty space (unless obstacle is selected for box select)
-      if (!context.selection.selectedObstacleId) {
-        this.callbacks.onClearObstacleSelection();
-        this.callbacks.onClearObstacleVertexSelection();
-      }
+      this.callbacks.onClearObstacleSelection();
+      this.callbacks.onClearObstacleVertexSelection();
       this.config.boxSelectionHandler.startBoxSelection(pos);
       return true;
     }
