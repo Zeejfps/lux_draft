@@ -14,6 +14,7 @@ import {
   LIGHT_HIT_TOLERANCE_FT,
   VERTEX_HIT_TOLERANCE_FT,
 } from '../../constants/editor';
+import { attemptItemSelection, checkToggleOff } from './selectionHelpers';
 
 const DOOR_HIT_TOLERANCE_FT = 0.3;
 
@@ -202,29 +203,37 @@ export class SelectionHandler extends BaseInteractionHandler {
     vertices: Vector2[],
     addToSelection: boolean
   ): { handled: boolean } {
-    const vertexIndex = findVertexAtPosition(pos, vertices, VERTEX_HIT_TOLERANCE_FT);
-    if (vertexIndex === null) return { handled: false };
-
     const selectedIndices = this.callbacks.getSelectedVertexIndices();
     const selectedLightIds = this.callbacks.getSelectedLightIds();
-    const isAlreadySelected = selectedIndices.has(vertexIndex);
+
+    const attempt = attemptItemSelection<number>(pos, {
+      findItemAtPosition: (p, tolerance) => {
+        const idx = findVertexAtPosition(p, vertices, tolerance);
+        return idx !== null ? { id: idx, position: vertices[idx] } : null;
+      },
+      isSelected: (idx) => selectedIndices.has(idx),
+      getOtherSelectedCount: () => selectedIndices.size - 1 + selectedLightIds.size,
+      hitTolerance: VERTEX_HIT_TOLERANCE_FT,
+    });
+
+    if (!attempt.found || attempt.itemId === null) return { handled: false };
+
+    const vertexIndex = attempt.itemId;
+    const isMultiSelection = attempt.wasAlreadySelected && (selectedIndices.size > 1 || selectedLightIds.size > 0);
 
     // Shift+click toggles vertex in/out of selection
     if (addToSelection) {
       this.callbacks.onSelectVertex(vertexIndex, true);
 
-      // Check if vertex was toggled off
-      const updatedSelection = this.callbacks.getSelectedVertexIndices();
-      if (!updatedSelection.has(vertexIndex)) {
+      if (checkToggleOff(vertexIndex, (idx) => this.callbacks.getSelectedVertexIndices().has(idx))) {
         this.callbacks.onClearWallSelection();
         return { handled: true };
       }
 
-      // Vertex was added, start drag
       this.startUnifiedDrag(vertexIndex, null, pos, vertices);
     }
     // Click on already-selected vertex with multiple items: start multi-drag
-    else if (isAlreadySelected && (selectedIndices.size > 1 || selectedLightIds.size > 0)) {
+    else if (isMultiSelection) {
       this.startUnifiedDrag(vertexIndex, null, pos, vertices);
     }
     // Normal single vertex selection
@@ -245,36 +254,44 @@ export class SelectionHandler extends BaseInteractionHandler {
     addToSelection: boolean,
     _context: InteractionContext
   ): { handled: boolean } {
-    const light = this.config.lightManager.getLightAt(pos, LIGHT_HIT_TOLERANCE_FT);
-    if (!light) return { handled: false };
-
     const selectedIndices = this.callbacks.getSelectedVertexIndices();
     const selectedLightIds = this.callbacks.getSelectedLightIds();
-    const isAlreadySelected = selectedLightIds.has(light.id);
+
+    const attempt = attemptItemSelection<string>(pos, {
+      findItemAtPosition: (p, tolerance) => {
+        const light = this.config.lightManager.getLightAt(p, tolerance);
+        return light ? { id: light.id, position: light.position } : null;
+      },
+      isSelected: (id) => selectedLightIds.has(id),
+      getOtherSelectedCount: () => selectedLightIds.size - 1 + selectedIndices.size,
+      hitTolerance: LIGHT_HIT_TOLERANCE_FT,
+    });
+
+    if (!attempt.found || attempt.itemId === null) return { handled: false };
+
+    const lightId = attempt.itemId;
+    const isMultiSelection = attempt.wasAlreadySelected && (selectedLightIds.size > 1 || selectedIndices.size > 0);
 
     // Shift+click toggles light in/out of selection
     if (addToSelection) {
-      this.callbacks.onSelectLight(light.id, true);
+      this.callbacks.onSelectLight(lightId, true);
 
-      // Check if light was toggled off
-      const updatedSelection = this.callbacks.getSelectedLightIds();
-      if (!updatedSelection.has(light.id)) {
+      if (checkToggleOff(lightId, (id) => this.callbacks.getSelectedLightIds().has(id))) {
         this.callbacks.onClearWallSelection();
         return { handled: true };
       }
 
-      // Light was added, start drag
-      this.startUnifiedDrag(null, light.id, pos, vertices);
+      this.startUnifiedDrag(null, lightId, pos, vertices);
     }
     // Click on already-selected light with multiple items: start multi-drag
-    else if (isAlreadySelected && (selectedLightIds.size > 1 || selectedIndices.size > 0)) {
-      this.startUnifiedDrag(null, light.id, pos, vertices);
+    else if (isMultiSelection) {
+      this.startUnifiedDrag(null, lightId, pos, vertices);
     }
     // Normal single light selection
     else {
-      this.callbacks.onSelectLight(light.id, false);
+      this.callbacks.onSelectLight(lightId, false);
       this.callbacks.onClearVertexSelection();
-      this.startUnifiedDrag(null, light.id, pos, vertices);
+      this.startUnifiedDrag(null, lightId, pos, vertices);
     }
 
     this.callbacks.onClearWallSelection();

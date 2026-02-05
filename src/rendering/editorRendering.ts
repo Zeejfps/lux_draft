@@ -2,6 +2,12 @@ import * as THREE from 'three';
 import type { Vector2, WallSegment, Door } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { VERTEX_RADIUS_SELECTED, VERTEX_RADIUS_DEFAULT, DRAWING_VERTEX_START_RADIUS, DRAWING_VERTEX_RADIUS } from '../constants/editor';
+import {
+  Z_LAYERS,
+  GEOMETRY,
+  DASH_PATTERNS,
+  PREVIEW_COLORS,
+} from '../constants/rendering';
 import { getTheme } from '../constants/themes';
 import { getWallDirection, getDoorEndpoints } from '../utils/geometry';
 
@@ -149,13 +155,13 @@ export function createVertexCircle(
   const theme = getTheme();
   const geometry = new THREE.CircleGeometry(
     isSelected ? VERTEX_RADIUS_SELECTED : VERTEX_RADIUS_DEFAULT,
-    16
+    GEOMETRY.CIRCLE_SEGMENTS
   );
   const material = new THREE.MeshBasicMaterial({
     color: isSelected ? theme.editor.vertexSelected : theme.editor.vertex,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(pos.x, pos.y, 0.05);
+  mesh.position.set(pos.x, pos.y, Z_LAYERS.VERTEX);
   mesh.userData.vertexIndex = index;
   return mesh;
 }
@@ -163,15 +169,15 @@ export function createVertexCircle(
 export function createPhantomLine(start: Vector2, end: Vector2): THREE.Line {
   const theme = getTheme();
   const points = [
-    new THREE.Vector3(start.x, start.y, 0),
-    new THREE.Vector3(end.x, end.y, 0),
+    new THREE.Vector3(start.x, start.y, Z_LAYERS.WALL),
+    new THREE.Vector3(end.x, end.y, Z_LAYERS.WALL),
   ];
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineDashedMaterial({
     color: theme.editor.phantomLine,
-    dashSize: 0.3,
-    gapSize: 0.15,
+    dashSize: DASH_PATTERNS.PHANTOM_LINE.dashSize,
+    gapSize: DASH_PATTERNS.PHANTOM_LINE.gapSize,
   });
 
   const line = new THREE.Line(geometry, material);
@@ -183,21 +189,21 @@ export function createDrawingVertex(pos: Vector2, isStart: boolean): THREE.Mesh 
   const theme = getTheme();
   const geometry = new THREE.CircleGeometry(
     isStart ? DRAWING_VERTEX_START_RADIUS : DRAWING_VERTEX_RADIUS,
-    16
+    GEOMETRY.CIRCLE_SEGMENTS
   );
   const material = new THREE.MeshBasicMaterial({
     color: isStart ? theme.editor.drawingVertexStart : theme.editor.drawingVertex,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(pos.x, pos.y, 0.1);
+  mesh.position.set(pos.x, pos.y, Z_LAYERS.DRAWING_VERTEX);
   return mesh;
 }
 
 export function createDrawingLine(start: Vector2, end: Vector2): THREE.Line {
   const theme = getTheme();
   const points = [
-    new THREE.Vector3(start.x, start.y, 0.05),
-    new THREE.Vector3(end.x, end.y, 0.05),
+    new THREE.Vector3(start.x, start.y, Z_LAYERS.DRAWING_LINE),
+    new THREE.Vector3(end.x, end.y, Z_LAYERS.DRAWING_LINE),
   ];
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineBasicMaterial({ color: theme.editor.drawingLine });
@@ -206,15 +212,15 @@ export function createDrawingLine(start: Vector2, end: Vector2): THREE.Line {
 
 export function createSnapGuideLine(guide: SnapGuide): THREE.Line {
   const points = [
-    new THREE.Vector3(guide.from.x, guide.from.y, 0.15),
-    new THREE.Vector3(guide.to.x, guide.to.y, 0.15),
+    new THREE.Vector3(guide.from.x, guide.from.y, Z_LAYERS.SNAP_GUIDE),
+    new THREE.Vector3(guide.to.x, guide.to.y, Z_LAYERS.SNAP_GUIDE),
   ];
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineDashedMaterial({
-    color: guide.axis === 'x' ? 0xff6600 : 0x0066ff,
-    dashSize: 0.2,
-    gapSize: 0.1,
+    color: guide.axis === 'x' ? PREVIEW_COLORS.SNAP_GUIDE_X : PREVIEW_COLORS.SNAP_GUIDE_Y,
+    dashSize: DASH_PATTERNS.SNAP_GUIDE.dashSize,
+    gapSize: DASH_PATTERNS.SNAP_GUIDE.gapSize,
   });
 
   const line = new THREE.Line(geometry, material);
@@ -225,18 +231,18 @@ export function createSnapGuideLine(guide: SnapGuide): THREE.Line {
 export function createSelectionBox(start: Vector2, end: Vector2): THREE.Line {
   // Create a rectangle from the two corners
   const points = [
-    new THREE.Vector3(start.x, start.y, 0.2),
-    new THREE.Vector3(end.x, start.y, 0.2),
-    new THREE.Vector3(end.x, end.y, 0.2),
-    new THREE.Vector3(start.x, end.y, 0.2),
-    new THREE.Vector3(start.x, start.y, 0.2), // Close the loop
+    new THREE.Vector3(start.x, start.y, Z_LAYERS.SELECTION_BOX),
+    new THREE.Vector3(end.x, start.y, Z_LAYERS.SELECTION_BOX),
+    new THREE.Vector3(end.x, end.y, Z_LAYERS.SELECTION_BOX),
+    new THREE.Vector3(start.x, end.y, Z_LAYERS.SELECTION_BOX),
+    new THREE.Vector3(start.x, start.y, Z_LAYERS.SELECTION_BOX), // Close the loop
   ];
 
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const material = new THREE.LineDashedMaterial({
-    color: 0x0088ff,
-    dashSize: 0.2,
-    gapSize: 0.1,
+    color: PREVIEW_COLORS.SELECTION_BOX,
+    dashSize: DASH_PATTERNS.SELECTION_BOX.dashSize,
+    gapSize: DASH_PATTERNS.SELECTION_BOX.gapSize,
   });
 
   const line = new THREE.Line(geometry, material);
@@ -310,8 +316,8 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
   };
 
   const panelPoints = [
-    new THREE.Vector3(hingePos.x, hingePos.y, 0.06),
-    new THREE.Vector3(panelEnd.x, panelEnd.y, 0.06),
+    new THREE.Vector3(hingePos.x, hingePos.y, Z_LAYERS.DOOR_PANEL),
+    new THREE.Vector3(panelEnd.x, panelEnd.y, Z_LAYERS.DOOR_PANEL),
   ];
   const panelGeometry = new THREE.BufferGeometry().setFromPoints(panelPoints);
   const panelMaterial = new THREE.LineBasicMaterial({
@@ -323,7 +329,6 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
   objects.push(panelLine);
 
   // 2. Swing arc (quarter circle from closed to open position)
-  const arcSegments = 16;
   const arcPoints: THREE.Vector3[] = [];
 
   // For 'right' swing: hinge at doorStart, arc goes from wall direction (+normalizedDir) to perpendicular
@@ -333,54 +338,54 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
   if (door.swingDirection === 'right') {
     // Arc from closed (along wall toward doorEnd) to open (perpendicular)
     const startAngle = Math.atan2(normalized.y, normalized.x);
-    for (let i = 0; i <= arcSegments; i++) {
-      const t = i / arcSegments;
+    for (let i = 0; i <= GEOMETRY.ARC_SEGMENTS; i++) {
+      const t = i / GEOMETRY.ARC_SEGMENTS;
       // Sweep direction depends on swing side
       const angle = startAngle + (Math.PI / 2) * t * sideMultiplier;
       const x = hingePos.x + Math.cos(angle) * door.width;
       const y = hingePos.y + Math.sin(angle) * door.width;
-      arcPoints.push(new THREE.Vector3(x, y, 0.05));
+      arcPoints.push(new THREE.Vector3(x, y, Z_LAYERS.DOOR_ARC));
     }
   } else {
     // Arc from closed (along wall toward doorStart, i.e., -normalizedDir) to open (perpendicular)
     const startAngle = Math.atan2(-normalized.y, -normalized.x);
-    for (let i = 0; i <= arcSegments; i++) {
-      const t = i / arcSegments;
+    for (let i = 0; i <= GEOMETRY.ARC_SEGMENTS; i++) {
+      const t = i / GEOMETRY.ARC_SEGMENTS;
       // Sweep direction depends on swing side
       const angle = startAngle - (Math.PI / 2) * t * sideMultiplier;
       const x = hingePos.x + Math.cos(angle) * door.width;
       const y = hingePos.y + Math.sin(angle) * door.width;
-      arcPoints.push(new THREE.Vector3(x, y, 0.05));
+      arcPoints.push(new THREE.Vector3(x, y, Z_LAYERS.DOOR_ARC));
     }
   }
 
   const arcGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
   const arcMaterial = new THREE.LineDashedMaterial({
     color: arcColor,
-    dashSize: 0.15,
-    gapSize: 0.1,
+    dashSize: DASH_PATTERNS.DOOR_ARC.dashSize,
+    gapSize: DASH_PATTERNS.DOOR_ARC.gapSize,
   });
   const arcLine = new THREE.Line(arcGeometry, arcMaterial);
   arcLine.computeLineDistances();
   objects.push(arcLine);
 
   // 3. Hinge indicator (small circle)
-  const hingeGeometry = new THREE.CircleGeometry(0.08, 12);
+  const hingeGeometry = new THREE.CircleGeometry(GEOMETRY.HINGE_RADIUS, GEOMETRY.HINGE_SEGMENTS);
   const hingeMaterial = new THREE.MeshBasicMaterial({ color: doorColor });
   const hingeMesh = new THREE.Mesh(hingeGeometry, hingeMaterial);
-  hingeMesh.position.set(hingePos.x, hingePos.y, 0.07);
+  hingeMesh.position.set(hingePos.x, hingePos.y, Z_LAYERS.HINGE);
   objects.push(hingeMesh);
 
   // 4. Door opening indicator (line across the door opening on the wall)
   const openingPoints = [
-    new THREE.Vector3(doorStart.x, doorStart.y, 0.06),
-    new THREE.Vector3(doorEnd.x, doorEnd.y, 0.06),
+    new THREE.Vector3(doorStart.x, doorStart.y, Z_LAYERS.DOOR_OPENING),
+    new THREE.Vector3(doorEnd.x, doorEnd.y, Z_LAYERS.DOOR_OPENING),
   ];
   const openingGeometry = new THREE.BufferGeometry().setFromPoints(openingPoints);
   const openingMaterial = new THREE.LineDashedMaterial({
     color: doorColor,
-    dashSize: 0.1,
-    gapSize: 0.1,
+    dashSize: DASH_PATTERNS.DOOR_OPENING.dashSize,
+    gapSize: DASH_PATTERNS.DOOR_OPENING.gapSize,
   });
   const openingLine = new THREE.Line(openingGeometry, openingMaterial);
   openingLine.computeLineDistances();
