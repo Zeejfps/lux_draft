@@ -17,9 +17,6 @@ export default defineConfig({
     svelte(),
     checker({
       typescript: true,
-      eslint: {
-        lintCommand: 'eslint .',
-      },
     }),
   ],
   define: {
