@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import type { RafterConfig, DisplayPreferences } from '../types';
-import { DEFAULT_RAFTER_CONFIG, DEFAULT_DISPLAY_PREFERENCES } from '../types';
+import { DEFAULT_RAFTER_CONFIG, DEFAULT_DISPLAY_PREFERENCES, migrateLightRadiusVisibility } from '../types';
 import { roomStore } from './roomStore';
 
 export const rafterConfig = writable<RafterConfig>({ ...DEFAULT_RAFTER_CONFIG });
@@ -37,9 +37,7 @@ export function initSettingsFromRoom(): void {
     // Merge with defaults to handle missing fields from old data
     const mergedPrefs = { ...DEFAULT_DISPLAY_PREFERENCES, ...state.displayPreferences };
     // Migrate legacy 'never' value to 'selected'
-    if ((mergedPrefs.lightRadiusVisibility as string) === 'never') {
-      mergedPrefs.lightRadiusVisibility = 'selected';
-    }
+    mergedPrefs.lightRadiusVisibility = migrateLightRadiusVisibility(mergedPrefs.lightRadiusVisibility);
     displayPreferences.set(mergedPrefs);
   }
   isLoadingFromSavedState = false;
