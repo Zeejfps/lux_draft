@@ -25,7 +25,10 @@ export interface IESParseResult {
  */
 export function parseIESFile(content: string): IESParseResult {
   try {
-    const lines = content.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+    const lines = content
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
 
     // Find TILT line index - this marks the start of the data section
     let tiltIndex = -1;
@@ -122,7 +125,8 @@ export function parseIESFile(content: string): IESParseResult {
       // Apply multiplier and ballast factors
       lumens *= effectiveMultiplier * ballastFactor * blpFactor;
     } else {
-      lumens = Math.max(1, numLamps) * lumensPerLamp * effectiveMultiplier * ballastFactor * blpFactor;
+      lumens =
+        Math.max(1, numLamps) * lumensPerLamp * effectiveMultiplier * ballastFactor * blpFactor;
     }
 
     // Ensure lumens is positive and reasonable
@@ -145,7 +149,10 @@ export function parseIESFile(content: string): IESParseResult {
       },
     };
   } catch (e) {
-    return { success: false, error: `Parse error: ${e instanceof Error ? e.message : 'Unknown error'}` };
+    return {
+      success: false,
+      error: `Parse error: ${e instanceof Error ? e.message : 'Unknown error'}`,
+    };
   }
 }
 
@@ -185,7 +192,7 @@ function parseDataValues(dataLines: string[]): number[] {
 
   for (const line of dataLines) {
     // Split by whitespace and/or commas
-    const parts = line.split(/[\s,]+/).filter(p => p.length > 0);
+    const parts = line.split(/[\s,]+/).filter((p) => p.length > 0);
     for (const part of parts) {
       const num = parseFloat(part);
       if (!isNaN(num)) {
@@ -216,8 +223,8 @@ function calculateLumensFromCandela(
 
   // For each zone between vertical angles
   for (let v = 0; v < verticalAngles.length - 1; v++) {
-    const theta1 = verticalAngles[v] * Math.PI / 180;
-    const theta2 = verticalAngles[v + 1] * Math.PI / 180;
+    const theta1 = (verticalAngles[v] * Math.PI) / 180;
+    const theta2 = (verticalAngles[v + 1] * Math.PI) / 180;
 
     // Solid angle of this zone (per horizontal segment)
     // For a full rotation: ΔΩ = 2π * |cos(θ1) - cos(θ2)|

@@ -88,7 +88,10 @@ export class MeasurementRenderer {
 
   private renderEndpointMarkers(from: Vector2, to: Vector2): void {
     for (const point of [from, to]) {
-      const geometry = new THREE.CircleGeometry(GEOMETRY.MEASUREMENT_MARKER_RADIUS, GEOMETRY.CIRCLE_SEGMENTS);
+      const geometry = new THREE.CircleGeometry(
+        GEOMETRY.MEASUREMENT_MARKER_RADIUS,
+        GEOMETRY.CIRCLE_SEGMENTS
+      );
       const material = new THREE.MeshBasicMaterial({ color: this.colors.main });
       const marker = new THREE.Mesh(geometry, material);
       marker.position.set(point.x, point.y, Z_LAYERS.MEASUREMENT + 0.01);

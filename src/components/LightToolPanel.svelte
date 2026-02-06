@@ -2,7 +2,11 @@
   import { createEventDispatcher } from 'svelte';
   import { activeTool, setActiveTool } from '../stores/appStore';
   import { canPlaceLights } from '../stores/roomStore';
-  import { lightDefinitions, selectedDefinitionId, setSelectedDefinition } from '../stores/lightDefinitionsStore';
+  import {
+    lightDefinitions,
+    selectedDefinitionId,
+    setSelectedDefinition,
+  } from '../stores/lightDefinitionsStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { LightDefinition } from '../types';
 
@@ -34,7 +38,7 @@
 </script>
 
 <FloatingPanel
-  visible={visible}
+  {visible}
   title="Place Light"
   defaultX={16}
   defaultY={16}
@@ -45,40 +49,35 @@
   onClose={handleClose}
 >
   <div class="panel-content">
-      <label class="definition-select">
-        <span class="label-text">Light Type</span>
-        <select
-          value={currentDefinitionId}
-          on:change={handleDefinitionChange}
-        >
-          {#each definitions as def (def.id)}
-            <option value={def.id}>{def.name}</option>
-          {/each}
-        </select>
-      </label>
+    <label class="definition-select">
+      <span class="label-text">Light Type</span>
+      <select value={currentDefinitionId} on:change={handleDefinitionChange}>
+        {#each definitions as def (def.id)}
+          <option value={def.id}>{def.name}</option>
+        {/each}
+      </select>
+    </label>
 
-      <button class="manage-button" on:click={openLightManager}>
-        Manage Light Types...
-      </button>
+    <button class="manage-button" on:click={openLightManager}> Manage Light Types... </button>
 
-      {#if definitions.find(d => d.id === currentDefinitionId)}
-        {@const def = definitions.find(d => d.id === currentDefinitionId)}
-        <div class="light-specs">
-          <div class="spec-header">Specifications</div>
-          <div class="spec-row">
-            <span>Lumens</span>
-            <span>{def?.lumen} lm</span>
-          </div>
-          <div class="spec-row">
-            <span>Beam Angle</span>
-            <span>{def?.beamAngle}°</span>
-          </div>
-          <div class="spec-row">
-            <span>Color Temp</span>
-            <span>{def?.warmth}K</span>
-          </div>
+    {#if definitions.find((d) => d.id === currentDefinitionId)}
+      {@const def = definitions.find((d) => d.id === currentDefinitionId)}
+      <div class="light-specs">
+        <div class="spec-header">Specifications</div>
+        <div class="spec-row">
+          <span>Lumens</span>
+          <span>{def?.lumen} lm</span>
         </div>
-      {/if}
+        <div class="spec-row">
+          <span>Beam Angle</span>
+          <span>{def?.beamAngle}°</span>
+        </div>
+        <div class="spec-row">
+          <span>Color Temp</span>
+          <span>{def?.warmth}K</span>
+        </div>
+      </div>
+    {/if}
 
     <p class="hint">Click inside the room to place this light</p>
   </div>

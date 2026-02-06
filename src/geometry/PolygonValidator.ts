@@ -14,9 +14,7 @@ export class PolygonValidator {
           continue;
         }
 
-        if (
-          lineSegmentsIntersect(walls[i].start, walls[i].end, walls[j].start, walls[j].end)
-        ) {
+        if (lineSegmentsIntersect(walls[i].start, walls[i].end, walls[j].start, walls[j].end)) {
           return true;
         }
       }

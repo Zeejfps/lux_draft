@@ -14,7 +14,7 @@
   $: currentSelectedWallId = $selectedWallId;
 
   $: selectedWall = currentSelectedWallId
-    ? currentRoom.walls.find(w => w.id === currentSelectedWallId) ?? null
+    ? (currentRoom.walls.find((w) => w.id === currentSelectedWallId) ?? null)
     : null;
 
   $: if (selectedWall) {
@@ -53,7 +53,7 @@
 </script>
 
 <FloatingPanel
-  visible={visible}
+  {visible}
   title="Wall Properties"
   defaultX={window.innerWidth - 530}
   defaultY={16}
@@ -92,10 +92,7 @@
           ({selectedWall.end.x.toFixed(1)}, {selectedWall.end.y.toFixed(1)})
         </span>
       </div>
-      <p class="panel-hint">
-        Type a new length and press Enter to apply.
-        Format: 10' 6" or 10.5
-      </p>
+      <p class="panel-hint">Type a new length and press Enter to apply. Format: 10' 6" or 10.5</p>
     </div>
   {/if}
 </FloatingPanel>

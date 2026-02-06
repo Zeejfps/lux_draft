@@ -1,8 +1,5 @@
 import type { Vector2 } from '../../types';
-import type {
-  DragStartContext,
-  DragUpdateContext,
-} from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { SnapController } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
@@ -47,7 +44,7 @@ export class ObstacleVertexDragOperation extends BaseDragOperation {
    * Provide all obstacle vertex positions. Originals are stored in start().
    */
   setObstacleVertices(vertices: Vector2[]): void {
-    this.allVertices = vertices.map(v => ({ ...v }));
+    this.allVertices = vertices.map((v) => ({ ...v }));
   }
 
   start(context: DragStartContext): void {
@@ -113,9 +110,10 @@ export class ObstacleVertexDragOperation extends BaseDragOperation {
     }
 
     // Calculate delta from anchor's original position
-    const anchorOriginal = this.anchorVertexIndex !== null
-      ? this.originalVertexPositions.get(this.anchorVertexIndex)
-      : null;
+    const anchorOriginal =
+      this.anchorVertexIndex !== null
+        ? this.originalVertexPositions.get(this.anchorVertexIndex)
+        : null;
 
     if (!anchorOriginal) return;
 

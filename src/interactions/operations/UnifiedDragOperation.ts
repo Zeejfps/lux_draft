@@ -1,17 +1,9 @@
 import type { Vector2 } from '../../types';
-import type {
-  DragStartContext,
-  DragUpdateContext,
-  SelectionState,
-} from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext, SelectionState } from '../../types/interaction';
 import type { DragManagerCallbacks } from '../DragManager';
 import type { BaseDragConfig } from '../types';
 import { BaseDragOperation } from '../DragOperation';
-import {
-  calculateDelta,
-  checkPointInRoom,
-  processTargetWithSnapping,
-} from './grabModeHelpers';
+import { calculateDelta, checkPointInRoom, processTargetWithSnapping } from './grabModeHelpers';
 
 /**
  * Configuration for unified drag operations.
@@ -71,7 +63,7 @@ export class UnifiedDragOperation extends BaseDragOperation {
     this.originalLightPositions.clear();
     const lights = this.config.getLights();
     for (const id of context.selection.selectedLightIds) {
-      const light = lights.find(l => l.id === id);
+      const light = lights.find((l) => l.id === id);
       if (light) {
         this.originalLightPositions.set(id, { ...light.position });
       }
@@ -79,7 +71,10 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
     // Set startPosition to the anchor's actual position (not mouse position)
     // This ensures axis lock works correctly relative to the item's original position
-    if (this.anchorVertexIndex !== null && this.originalVertexPositions.has(this.anchorVertexIndex)) {
+    if (
+      this.anchorVertexIndex !== null &&
+      this.originalVertexPositions.has(this.anchorVertexIndex)
+    ) {
       this.startPosition = { ...this.originalVertexPositions.get(this.anchorVertexIndex)! };
     } else if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
       this.startPosition = { ...this.originalLightPositions.get(this.anchorLightId)! };
@@ -153,7 +148,10 @@ export class UnifiedDragOperation extends BaseDragOperation {
   }
 
   private calculateDeltaFromAnchor(targetPos: Vector2): Vector2 {
-    if (this.anchorVertexIndex !== null && this.originalVertexPositions.has(this.anchorVertexIndex)) {
+    if (
+      this.anchorVertexIndex !== null &&
+      this.originalVertexPositions.has(this.anchorVertexIndex)
+    ) {
       return calculateDelta(this.originalVertexPositions.get(this.anchorVertexIndex)!, targetPos);
     }
     if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
@@ -204,5 +202,4 @@ export class UnifiedDragOperation extends BaseDragOperation {
     this.selection = null;
     this.startPosition = null;
   }
-
 }

@@ -1,8 +1,5 @@
 import type { Vector2 } from '../../types';
-import type {
-  DragStartContext,
-  DragUpdateContext,
-} from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { SnapController } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
@@ -60,7 +57,11 @@ export class ObstacleDragOperation extends BaseDragOperation {
 
     // Apply axis lock
     if (context.axisLock !== 'none') {
-      constrainedPos = this.applyAxisConstraint(context.position, context.axisLock, this.startPosition);
+      constrainedPos = this.applyAxisConstraint(
+        context.position,
+        context.axisLock,
+        this.startPosition
+      );
     }
 
     // Apply grid snapping
@@ -122,7 +123,10 @@ export class ObstacleDragOperation extends BaseDragOperation {
   private snapObstacleToRoomVertices(
     delta: Vector2,
     roomVertices: Vector2[]
-  ): { delta: Vector2; guides: Array<{ axis: 'x' | 'y'; value: number; from: Vector2; to: Vector2 }> } {
+  ): {
+    delta: Vector2;
+    guides: Array<{ axis: 'x' | 'y'; value: number; from: Vector2; to: Vector2 }>;
+  } {
     const threshold = 0.5;
     let bestDx: number | null = null;
     let bestDy: number | null = null;

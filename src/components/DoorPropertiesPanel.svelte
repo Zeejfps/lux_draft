@@ -16,14 +16,14 @@
   $: currentSelectedDoorId = $selectedDoorId;
   $: unitFormat = $displayPreferences.unitFormat;
   $: selectedDoor = currentSelectedDoorId
-    ? currentRoom.doors.find(d => d.id === currentSelectedDoorId) ?? null
+    ? (currentRoom.doors.find((d) => d.id === currentSelectedDoorId) ?? null)
     : null;
   $: visible = selectedDoor !== null;
 
   // Generate door width options based on unit format
   $: doorWidthOptions = Object.entries(DOOR_WIDTHS).map(([label, value]) => ({
     label: unitFormat === 'inches' ? `${Math.round(value * 12)}"` : label,
-    value
+    value,
   }));
 
   function updateDoorWidth(e: Event): void {
@@ -64,7 +64,7 @@
 </script>
 
 <FloatingPanel
-  visible={visible}
+  {visible}
   title="Door Properties"
   defaultX={window.innerWidth - 530}
   defaultY={16}
@@ -81,14 +81,18 @@
         <span>Width</span>
         <select class="panel-select" value={selectedDoor.width} on:change={updateDoorWidth}>
           {#each doorWidthOptions as { label, value } (value)}
-            <option value={value}>{label}</option>
+            <option {value}>{label}</option>
           {/each}
         </select>
       </label>
 
       <label class="select-row">
         <span>Hinge Side</span>
-        <select class="panel-select" value={selectedDoor.swingDirection} on:change={updateSwingDirection}>
+        <select
+          class="panel-select"
+          value={selectedDoor.swingDirection}
+          on:change={updateSwingDirection}
+        >
           <option value="right">Right</option>
           <option value="left">Left</option>
         </select>
@@ -96,7 +100,11 @@
 
       <label class="select-row">
         <span>Swing Side</span>
-        <select class="panel-select" value={selectedDoor.swingSide ?? 'inside'} on:change={updateSwingSide}>
+        <select
+          class="panel-select"
+          value={selectedDoor.swingSide ?? 'inside'}
+          on:change={updateSwingSide}
+        >
           <option value="inside">Inside</option>
           <option value="outside">Outside</option>
         </select>
@@ -113,9 +121,7 @@
         </div>
       </div>
 
-      <button class="panel-delete-btn" on:click={deleteSelectedDoor}>
-        Delete Door
-      </button>
+      <button class="panel-delete-btn" on:click={deleteSelectedDoor}> Delete Door </button>
     </div>
   {/if}
 </FloatingPanel>

@@ -160,34 +160,19 @@ describe('Vector Math', () => {
   describe('lineSegmentsIntersect', () => {
     it('detects intersecting segments', () => {
       expect(
-        lineSegmentsIntersect(
-          { x: 0, y: 0 },
-          { x: 10, y: 10 },
-          { x: 0, y: 10 },
-          { x: 10, y: 0 }
-        )
+        lineSegmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 })
       ).toBe(true);
     });
 
     it('returns false for non-intersecting segments', () => {
       expect(
-        lineSegmentsIntersect(
-          { x: 0, y: 0 },
-          { x: 5, y: 0 },
-          { x: 0, y: 1 },
-          { x: 5, y: 1 }
-        )
+        lineSegmentsIntersect({ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 0, y: 1 }, { x: 5, y: 1 })
       ).toBe(false);
     });
 
     it('returns false for parallel segments', () => {
       expect(
-        lineSegmentsIntersect(
-          { x: 0, y: 0 },
-          { x: 10, y: 0 },
-          { x: 0, y: 5 },
-          { x: 10, y: 5 }
-        )
+        lineSegmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 5 }, { x: 10, y: 5 })
       ).toBe(false);
     });
   });

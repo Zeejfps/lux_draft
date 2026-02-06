@@ -17,7 +17,10 @@ export class LightManager {
    * @param position - The position to place the light
    * @param definitionIdOrProperties - Either a definition ID string, or legacy properties object
    */
-  addLight(position: Vector2, definitionIdOrProperties?: string | Partial<LightProperties>): LightFixture {
+  addLight(
+    position: Vector2,
+    definitionIdOrProperties?: string | Partial<LightProperties>
+  ): LightFixture {
     let definitionId: string | undefined;
     let properties: LightProperties;
 
@@ -63,7 +66,7 @@ export class LightManager {
     return light;
   }
 
-    getLight(id: string): LightFixture | null {
+  getLight(id: string): LightFixture | null {
     return this.lights.get(id) ?? null;
   }
 

@@ -7,7 +7,7 @@ import { VERTEX_RADIUS_SELECTED, VERTEX_RADIUS_DEFAULT } from '../constants/edit
 import { getSegmentDimensionLabel } from '../geometry/DimensionLabel';
 import { createDimensionLabel } from './editorRendering';
 
-const OBSTACLE_COLOR = 0xd97706;          // Amber
+const OBSTACLE_COLOR = 0xd97706; // Amber
 const OBSTACLE_SELECTED_COLOR = 0xf59e0b; // Brighter amber
 const OBSTACLE_VERTEX_COLOR = 0xd97706;
 const OBSTACLE_VERTEX_SELECTED_COLOR = 0xfbbf24;
@@ -55,7 +55,7 @@ export class ObstacleRenderer {
   private renderObstacle(obstacle: Obstacle, isSelected: boolean): void {
     if (obstacle.walls.length < 3) return;
 
-    const vertices = obstacle.walls.map(w => w.start);
+    const vertices = obstacle.walls.map((w) => w.start);
     const color = isSelected ? OBSTACLE_SELECTED_COLOR : OBSTACLE_COLOR;
 
     // Render filled polygon
@@ -73,7 +73,11 @@ export class ObstacleRenderer {
     this.renderLabel(vertices, obstacle.height, obstacle.label);
   }
 
-  private renderFill(vertices: { x: number; y: number }[], color: number, isSelected: boolean): void {
+  private renderFill(
+    vertices: { x: number; y: number }[],
+    color: number,
+    isSelected: boolean
+  ): void {
     if (vertices.length < 3) return;
 
     const shape = new THREE.Shape();
@@ -169,12 +173,10 @@ export class ObstacleRenderer {
     for (const wall of obstacle.walls) {
       if (wall.length < 0.1) continue;
 
-      const labelData = getSegmentDimensionLabel(
-        wall.start,
-        wall.end,
-        wall.length,
-        { offset: 0.35, unitFormat: this.currentUnitFormat }
-      );
+      const labelData = getSegmentDimensionLabel(wall.start, wall.end, wall.length, {
+        offset: 0.35,
+        unitFormat: this.currentUnitFormat,
+      });
 
       const sprite = createDimensionLabel(labelData.text);
       sprite.position.set(labelData.position.x, labelData.position.y, Z_LAYERS.DIMENSION_LABEL);

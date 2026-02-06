@@ -2,11 +2,7 @@ import * as THREE from 'three';
 import type { Vector2 } from '../types';
 import { clearGroup, disposeObject3D } from '../utils/three';
 import { Z_LAYERS, GEOMETRY, PREVIEW_COLORS, OPACITY } from '../constants/rendering';
-import {
-  createPhantomLine,
-  createDrawingVertex,
-  createDrawingLine,
-} from './editorRendering';
+import { createPhantomLine, createDrawingVertex, createDrawingLine } from './editorRendering';
 
 /**
  * Handles rendering of drawing previews including phantom lines,
@@ -51,7 +47,10 @@ export class DrawingPreviewRenderer {
     }
 
     if (pos) {
-      const geometry = new THREE.CircleGeometry(GEOMETRY.PREVIEW_VERTEX_RADIUS, GEOMETRY.CIRCLE_SEGMENTS);
+      const geometry = new THREE.CircleGeometry(
+        GEOMETRY.PREVIEW_VERTEX_RADIUS,
+        GEOMETRY.CIRCLE_SEGMENTS
+      );
       const material = new THREE.MeshBasicMaterial({
         color: PREVIEW_COLORS.PREVIEW_VERTEX,
         opacity: OPACITY.PREVIEW_VERTEX,

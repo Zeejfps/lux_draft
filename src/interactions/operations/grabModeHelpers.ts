@@ -58,7 +58,7 @@ export function findAnchorPosition(
   // Check lights
   if (selection.selectedLightIds.size > 0) {
     const anchorId = Array.from(selection.selectedLightIds)[0];
-    const light = lights.find(l => l.id === anchorId);
+    const light = lights.find((l) => l.id === anchorId);
     if (light) {
       return {
         anchorPos: { ...light.position },
@@ -129,7 +129,7 @@ export function applyDelta(pos: Vector2, delta: Vector2): Vector2 {
  */
 export function checkPointInRoom(point: Vector2, walls: WallSegment[]): boolean {
   if (walls.length < 3) return false;
-  const vertices = walls.map(w => w.start);
+  const vertices = walls.map((w) => w.start);
   return isPointInPolygon(point, vertices);
 }
 
@@ -160,7 +160,7 @@ export function captureOriginalPositions(
 
   const lightPositions = new Map<string, Vector2>();
   for (const id of selection.selectedLightIds) {
-    const light = lights.find(l => l.id === id);
+    const light = lights.find((l) => l.id === id);
     if (light) {
       lightPositions.set(id, { ...light.position });
     }
@@ -202,16 +202,20 @@ export function handleShiftSnapping(
   }
 
   // Only snap for single vertex selection
-  if (selection.selectedVertexIndices.size === 1 &&
-      selection.selectedLightIds.size === 0 &&
-      anchorVertexIndex !== null) {
+  if (
+    selection.selectedVertexIndices.size === 1 &&
+    selection.selectedLightIds.size === 0 &&
+    anchorVertexIndex !== null
+  ) {
     return snapController.snapToVertices(targetPos, getVertices(), anchorVertexIndex);
   }
 
   // Only snap for single light selection
-  if (selection.selectedLightIds.size === 1 &&
-      selection.selectedVertexIndices.size === 0 &&
-      anchorLightId !== null) {
+  if (
+    selection.selectedLightIds.size === 1 &&
+    selection.selectedVertexIndices.size === 0 &&
+    anchorLightId !== null
+  ) {
     return snapController.snapToLights(targetPos, getLights(), anchorLightId);
   }
 
@@ -366,7 +370,7 @@ export function handleWallSnapping(
   }
 
   const walls = getWalls();
-  const wallIndex = walls.findIndex(w => w.id === wallId);
+  const wallIndex = walls.findIndex((w) => w.id === wallId);
 
   if (wallIndex === -1) {
     return { snappedStart: newStart, snappedEnd: newEnd, guides: [] };

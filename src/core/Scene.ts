@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import type { BoundingBox } from '../types';
-import { DEFAULT_FRUSTUM_SIZE, GRID_SIZE, MIN_ZOOM, MAX_ZOOM, FIT_BOUNDS_PADDING, PAN_SCALE_FACTOR } from '../constants/editor';
+import {
+  DEFAULT_FRUSTUM_SIZE,
+  GRID_SIZE,
+  MIN_ZOOM,
+  MAX_ZOOM,
+  FIT_BOUNDS_PADDING,
+  PAN_SCALE_FACTOR,
+} from '../constants/editor';
 import { getTheme } from '../constants/themes';
 
 export class Scene {
@@ -72,7 +79,12 @@ export class Scene {
 
   private addGrid(): void {
     const theme = getTheme();
-    const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE, theme.canvas.gridMajor, theme.canvas.gridMinor);
+    const gridHelper = new THREE.GridHelper(
+      GRID_SIZE,
+      GRID_SIZE,
+      theme.canvas.gridMajor,
+      theme.canvas.gridMinor
+    );
     gridHelper.rotation.x = Math.PI / 2;
     gridHelper.position.z = -0.1;
     this.scene.add(gridHelper);
@@ -94,7 +106,7 @@ export class Scene {
     this.handleResize();
   }
 
-    fitToBounds(bounds: BoundingBox, padding: number = FIT_BOUNDS_PADDING): void {
+  fitToBounds(bounds: BoundingBox, padding: number = FIT_BOUNDS_PADDING): void {
     const width = bounds.maxX - bounds.minX;
     const height = bounds.maxY - bounds.minY;
     const centerX = (bounds.minX + bounds.maxX) / 2;
@@ -113,8 +125,10 @@ export class Scene {
     const x = ((screenX - rect.left) / rect.width) * 2 - 1;
     const y = -((screenY - rect.top) / rect.height) * 2 + 1;
 
-    const worldX = x * ((this.camera.right - this.camera.left) / 2) + (this.camera.right + this.camera.left) / 2;
-    const worldY = y * ((this.camera.top - this.camera.bottom) / 2) + (this.camera.top + this.camera.bottom) / 2;
+    const worldX =
+      x * ((this.camera.right - this.camera.left) / 2) + (this.camera.right + this.camera.left) / 2;
+    const worldY =
+      y * ((this.camera.top - this.camera.bottom) / 2) + (this.camera.top + this.camera.bottom) / 2;
 
     return new THREE.Vector2(worldX, worldY);
   }
@@ -131,5 +145,4 @@ export class Scene {
   get domElement(): HTMLCanvasElement {
     return this.renderer.domElement;
   }
-
 }

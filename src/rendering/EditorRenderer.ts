@@ -1,5 +1,13 @@
 import * as THREE from 'three';
-import type { Vector2, WallSegment, LightFixture, UnitFormat, LightRadiusVisibility, Door, Obstacle } from '../types';
+import type {
+  Vector2,
+  WallSegment,
+  LightFixture,
+  UnitFormat,
+  LightRadiusVisibility,
+  Door,
+  Obstacle,
+} from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { distancePointToSegment } from '../utils/math';
 import { WALL_HIT_TOLERANCE_FT } from '../constants/editor';
@@ -63,7 +71,11 @@ export class EditorRenderer {
   // Wall Hit Testing
   // ============================================
 
-  getWallAtPosition(pos: Vector2, walls: WallSegment[], tolerance: number = WALL_HIT_TOLERANCE_FT): WallSegment | null {
+  getWallAtPosition(
+    pos: Vector2,
+    walls: WallSegment[],
+    tolerance: number = WALL_HIT_TOLERANCE_FT
+  ): WallSegment | null {
     for (const wall of walls) {
       const dist = distancePointToSegment(pos, wall.start, wall.end);
       if (dist <= tolerance) {

@@ -29,30 +29,14 @@ describe('LightCalculator', () => {
 
   describe('calculateSingleLight', () => {
     it('applies inverse square falloff', () => {
-      const luxClose = calculator.calculateSingleLight(
-        { x: 5, y: 6 },
-        defaultLight,
-        8
-      );
-      const luxFar = calculator.calculateSingleLight(
-        { x: 5, y: 10 },
-        defaultLight,
-        8
-      );
+      const luxClose = calculator.calculateSingleLight({ x: 5, y: 6 }, defaultLight, 8);
+      const luxFar = calculator.calculateSingleLight({ x: 5, y: 10 }, defaultLight, 8);
       expect(luxClose).toBeGreaterThan(luxFar);
     });
 
     it('attenuates outside beam angle', () => {
-      const luxInBeam = calculator.calculateSingleLight(
-        { x: 5, y: 7 },
-        defaultLight,
-        8
-      );
-      const luxOutBeam = calculator.calculateSingleLight(
-        { x: 5, y: 15 },
-        defaultLight,
-        8
-      );
+      const luxInBeam = calculator.calculateSingleLight({ x: 5, y: 7 }, defaultLight, 8);
+      const luxOutBeam = calculator.calculateSingleLight({ x: 5, y: 15 }, defaultLight, 8);
       expect(luxInBeam).toBeGreaterThan(luxOutBeam * 2);
     });
 
@@ -62,16 +46,8 @@ describe('LightCalculator', () => {
         properties: { ...defaultLight.properties, lumen: 1600 },
       };
 
-      const luxDefault = calculator.calculateSingleLight(
-        { x: 5, y: 5 },
-        defaultLight,
-        8
-      );
-      const luxBright = calculator.calculateSingleLight(
-        { x: 5, y: 5 },
-        brightLight,
-        8
-      );
+      const luxDefault = calculator.calculateSingleLight({ x: 5, y: 5 }, defaultLight, 8);
+      const luxBright = calculator.calculateSingleLight({ x: 5, y: 5 }, brightLight, 8);
 
       expect(luxBright).toBeCloseTo(luxDefault * 2, 1);
     });
@@ -82,31 +58,15 @@ describe('LightCalculator', () => {
         properties: { ...defaultLight.properties, beamAngle: 120 },
       };
 
-      const luxNarrow = calculator.calculateSingleLight(
-        { x: 5, y: 10 },
-        defaultLight,
-        8
-      );
-      const luxWide = calculator.calculateSingleLight(
-        { x: 5, y: 10 },
-        wideLight,
-        8
-      );
+      const luxNarrow = calculator.calculateSingleLight({ x: 5, y: 10 }, defaultLight, 8);
+      const luxWide = calculator.calculateSingleLight({ x: 5, y: 10 }, wideLight, 8);
 
       expect(luxWide).toBeGreaterThan(luxNarrow);
     });
 
     it('ceiling height affects intensity', () => {
-      const luxLow = calculator.calculateSingleLight(
-        { x: 5, y: 5 },
-        defaultLight,
-        8
-      );
-      const luxHigh = calculator.calculateSingleLight(
-        { x: 5, y: 5 },
-        defaultLight,
-        16
-      );
+      const luxLow = calculator.calculateSingleLight({ x: 5, y: 5 }, defaultLight, 8);
+      const luxHigh = calculator.calculateSingleLight({ x: 5, y: 5 }, defaultLight, 16);
 
       expect(luxLow).toBeGreaterThan(luxHigh);
     });

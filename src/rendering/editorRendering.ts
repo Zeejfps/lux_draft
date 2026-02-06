@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import type { Vector2, WallSegment, Door } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
-import { VERTEX_RADIUS_SELECTED, VERTEX_RADIUS_DEFAULT, DRAWING_VERTEX_START_RADIUS, DRAWING_VERTEX_RADIUS } from '../constants/editor';
 import {
-  Z_LAYERS,
-  GEOMETRY,
-  DASH_PATTERNS,
-  PREVIEW_COLORS,
-} from '../constants/rendering';
+  VERTEX_RADIUS_SELECTED,
+  VERTEX_RADIUS_DEFAULT,
+  DRAWING_VERTEX_START_RADIUS,
+  DRAWING_VERTEX_RADIUS,
+} from '../constants/editor';
+import { Z_LAYERS, GEOMETRY, DASH_PATTERNS, PREVIEW_COLORS } from '../constants/rendering';
 import { getTheme } from '../constants/themes';
 import { getWallDirection, getDoorEndpoints } from '../utils/geometry';
 import { createTextSprite } from '../utils/three';
@@ -40,18 +40,20 @@ export function getWallSegmentsWithDoors(wall: WallSegment, doors: Door[]): Wall
 
   // Get doors on this wall, sorted by position
   const doorsOnWall = doors
-    .filter(d => d.wallId === wall.id)
+    .filter((d) => d.wallId === wall.id)
     .sort((a, b) => a.position - b.position);
 
   if (doorsOnWall.length === 0) {
     // No doors - return the full wall as a single segment
-    return [{
-      start: wall.start,
-      end: wall.end,
-      length: wallLength,
-      startDistance: 0,
-      endDistance: wallLength,
-    }];
+    return [
+      {
+        start: wall.start,
+        end: wall.end,
+        length: wallLength,
+        startDistance: 0,
+        endDistance: wallLength,
+      },
+    ];
   }
 
   const segments: WallSegmentPart[] = [];
@@ -62,7 +64,8 @@ export function getWallSegmentsWithDoors(wall: WallSegment, doors: Door[]): Wall
     const doorEnd = door.position + door.width / 2;
 
     // Add segment from current position to door start (if there's space)
-    if (doorStart > currentStart + 0.01) { // Small epsilon to avoid tiny segments
+    if (doorStart > currentStart + 0.01) {
+      // Small epsilon to avoid tiny segments
       const segmentStart = {
         x: wall.start.x + normalized.x * currentStart,
         y: wall.start.y + normalized.y * currentStart,
@@ -114,7 +117,7 @@ export function createWallLinesWithDoors(
   const theme = getTheme();
   const segments = getWallSegmentsWithDoors(wall, doors);
 
-  return segments.map(segment => {
+  return segments.map((segment) => {
     const points = [
       new THREE.Vector3(segment.start.x, segment.start.y, 0),
       new THREE.Vector3(segment.end.x, segment.end.y, 0),
@@ -131,11 +134,7 @@ export function createWallLinesWithDoors(
   });
 }
 
-export function createVertexCircle(
-  pos: Vector2,
-  index: number,
-  isSelected: boolean
-): THREE.Mesh {
+export function createVertexCircle(pos: Vector2, index: number, isSelected: boolean): THREE.Mesh {
   const theme = getTheme();
   const geometry = new THREE.CircleGeometry(
     isSelected ? VERTEX_RADIUS_SELECTED : VERTEX_RADIUS_DEFAULT,
@@ -250,7 +249,11 @@ export function createDimensionLabel(text: string): THREE.Sprite {
  * - Swing arc (quarter circle)
  * - Hinge indicator (small circle)
  */
-export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: boolean): THREE.Object3D[] {
+export function createDoorGraphics(
+  door: Door,
+  wall: WallSegment,
+  isSelected: boolean
+): THREE.Object3D[] {
   const theme = getTheme();
   const objects: THREE.Object3D[] = [];
 
@@ -266,7 +269,7 @@ export function createDoorGraphics(door: Door, wall: WallSegment, isSelected: bo
   const sideMultiplier = door.swingSide === 'outside' ? -1 : 1;
   const perpDir = {
     x: -normalized.y * sideMultiplier,
-    y: normalized.x * sideMultiplier
+    y: normalized.x * sideMultiplier,
   };
 
   const doorColor = isSelected ? theme.editor.doorSelected : theme.editor.door;

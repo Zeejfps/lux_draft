@@ -25,7 +25,7 @@ export class DoorRenderer {
     clearGroup(this.doorsGroup);
 
     for (const door of doors) {
-      const wall = walls.find(w => w.id === door.wallId);
+      const wall = walls.find((w) => w.id === door.wallId);
       if (!wall) continue;
 
       const isSelected = door.id === selectedDoorId;

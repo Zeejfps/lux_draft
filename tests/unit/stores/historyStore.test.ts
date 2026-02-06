@@ -24,7 +24,7 @@ describe('historyStore', () => {
     });
 
     it('records state changes', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
 
       expect(get(canUndo)).toBe(true);
       expect(get(canRedo)).toBe(false);
@@ -33,7 +33,7 @@ describe('historyStore', () => {
     it('can undo a state change', () => {
       const initialHeight = get(roomStore).ceilingHeight;
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
       expect(get(roomStore).ceilingHeight).toBe(12);
 
       const result = historyStore.undo();
@@ -42,7 +42,7 @@ describe('historyStore', () => {
     });
 
     it('can redo after undo', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 15 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 15 }));
 
       historyStore.undo();
       expect(get(canRedo)).toBe(true);
@@ -53,13 +53,13 @@ describe('historyStore', () => {
     });
 
     it('clears redo history on new action after undo', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       historyStore.undo();
       expect(get(canRedo)).toBe(true);
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 20 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 20 }));
 
       expect(get(canRedo)).toBe(false);
     });
@@ -75,8 +75,8 @@ describe('historyStore', () => {
     });
 
     it('can clear history', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       expect(get(canUndo)).toBe(true);
 
@@ -91,9 +91,9 @@ describe('historyStore', () => {
     it('handles multiple undos', () => {
       const initialHeight = get(roomStore).ceilingHeight;
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 14 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 14 }));
 
       historyStore.undo();
       expect(get(roomStore).ceilingHeight).toBe(12);
@@ -108,9 +108,9 @@ describe('historyStore', () => {
     });
 
     it('handles multiple redos', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 14 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 14 }));
 
       // Undo all
       historyStore.undo();
@@ -131,8 +131,8 @@ describe('historyStore', () => {
     });
 
     it('handles alternating undo/redo', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       historyStore.undo();
       expect(get(roomStore).ceilingHeight).toBe(10);
@@ -155,7 +155,7 @@ describe('historyStore', () => {
         { id: '2', start: { x: 10, y: 0 }, end: { x: 10, y: 10 }, length: 10 },
       ];
 
-      roomStore.update(state => ({ ...state, walls, isClosed: false }));
+      roomStore.update((state) => ({ ...state, walls, isClosed: false }));
       expect(get(roomStore).walls.length).toBe(2);
 
       historyStore.undo();
@@ -172,7 +172,7 @@ describe('historyStore', () => {
         properties: { lumen: 800, beamAngle: 60, warmth: 2700 },
       };
 
-      roomStore.update(state => ({ ...state, lights: [light] }));
+      roomStore.update((state) => ({ ...state, lights: [light] }));
       expect(get(roomStore).lights.length).toBe(1);
 
       historyStore.undo();
@@ -183,7 +183,7 @@ describe('historyStore', () => {
     });
 
     it('handles multiple property changes in one update', () => {
-      roomStore.update(state => ({
+      roomStore.update((state) => ({
         ...state,
         ceilingHeight: 10,
         isClosed: true,
@@ -201,11 +201,11 @@ describe('historyStore', () => {
 
   describe('duplicate state detection', () => {
     it('does not record duplicate states', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
       expect(get(canUndo)).toBe(true);
 
       // Update to the same value - should not create new history entry
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
 
       // Should still only need one undo
       historyStore.undo();
@@ -220,10 +220,10 @@ describe('historyStore', () => {
         properties: { lumen: 800, beamAngle: 60, warmth: 2700 },
       };
 
-      roomStore.update(state => ({ ...state, lights: [light] }));
+      roomStore.update((state) => ({ ...state, lights: [light] }));
 
       // Set to identical state
-      roomStore.update(state => ({
+      roomStore.update((state) => ({
         ...state,
         lights: [{ ...light }],
       }));
@@ -239,9 +239,9 @@ describe('historyStore', () => {
     it('does not record changes while paused', () => {
       historyStore.pauseRecording();
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 14 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 14 }));
 
       expect(get(canUndo)).toBe(false);
 
@@ -256,7 +256,7 @@ describe('historyStore', () => {
     });
 
     it('does not record if no changes made during pause', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
       historyStore.clear();
 
       historyStore.pauseRecording();
@@ -271,8 +271,8 @@ describe('historyStore', () => {
 
       historyStore.pauseRecording();
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: initialHeight }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: initialHeight }));
 
       historyStore.resumeRecording();
 
@@ -285,7 +285,7 @@ describe('historyStore', () => {
       historyStore.pauseRecording();
       historyStore.pauseRecording();
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
 
       historyStore.resumeRecording();
 
@@ -297,7 +297,7 @@ describe('historyStore', () => {
     it('handles multiple resume calls (idempotent)', () => {
       historyStore.pauseRecording();
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
 
       historyStore.resumeRecording();
       historyStore.resumeRecording();
@@ -310,13 +310,13 @@ describe('historyStore', () => {
 
     it('clears pause state when clear() is called', () => {
       historyStore.pauseRecording();
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
 
       // Clear while paused
       historyStore.clear();
 
       // Recording should resume working normally
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       expect(get(canUndo)).toBe(true);
       historyStore.undo();
@@ -325,11 +325,11 @@ describe('historyStore', () => {
 
     it('records changes after pause/resume cycle', () => {
       historyStore.pauseRecording();
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
       historyStore.resumeRecording();
 
       // Make another change after resume
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       expect(get(canUndo)).toBe(true);
       historyStore.undo();
@@ -341,8 +341,8 @@ describe('historyStore', () => {
 
     it('clears future on resume with changes', () => {
       // Create some history
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       // Undo to create future
       historyStore.undo();
@@ -350,7 +350,7 @@ describe('historyStore', () => {
 
       // Pause and make changes
       historyStore.pauseRecording();
-      roomStore.update(state => ({ ...state, ceilingHeight: 15 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 15 }));
       historyStore.resumeRecording();
 
       // Future should be cleared
@@ -362,7 +362,7 @@ describe('historyStore', () => {
     it('limits history to MAX_HISTORY entries', () => {
       // Make 60 changes (more than MAX_HISTORY of 50)
       for (let i = 1; i <= 60; i++) {
-        roomStore.update(state => ({ ...state, ceilingHeight: i }));
+        roomStore.update((state) => ({ ...state, ceilingHeight: i }));
       }
 
       // Count how many undos we can do
@@ -378,7 +378,7 @@ describe('historyStore', () => {
     it('preserves most recent states when limit exceeded', () => {
       // Make 55 changes
       for (let i = 1; i <= 55; i++) {
-        roomStore.update(state => ({ ...state, ceilingHeight: i }));
+        roomStore.update((state) => ({ ...state, ceilingHeight: i }));
       }
 
       // Current state should be 55
@@ -400,7 +400,7 @@ describe('historyStore', () => {
     it('canUndo() returns correct value', () => {
       expect(historyStore.canUndo()).toBe(false);
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
       expect(historyStore.canUndo()).toBe(true);
 
       historyStore.undo();
@@ -410,7 +410,7 @@ describe('historyStore', () => {
     it('canRedo() returns correct value', () => {
       expect(historyStore.canRedo()).toBe(false);
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
       expect(historyStore.canRedo()).toBe(false);
 
       historyStore.undo();
@@ -421,7 +421,7 @@ describe('historyStore', () => {
     });
 
     it('derived stores stay in sync with functions', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
 
       expect(get(canUndo)).toBe(historyStore.canUndo());
       expect(get(canRedo)).toBe(historyStore.canRedo());
@@ -435,7 +435,7 @@ describe('historyStore', () => {
 
   describe('edge cases', () => {
     it('handles undo immediately after clear', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
       historyStore.clear();
 
       const result = historyStore.undo();
@@ -446,7 +446,7 @@ describe('historyStore', () => {
       // Simulate rapid changes like during typing
       // Start from i=1 to avoid duplicate with initial state (ceilingHeight=8)
       for (let i = 1; i <= 10; i++) {
-        roomStore.update(state => ({ ...state, ceilingHeight: 8 + i * 0.1 }));
+        roomStore.update((state) => ({ ...state, ceilingHeight: 8 + i * 0.1 }));
       }
 
       expect(get(canUndo)).toBe(true);
@@ -462,8 +462,8 @@ describe('historyStore', () => {
     it('maintains state integrity after undo/redo cycle', () => {
       const originalState = get(roomStore);
 
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       historyStore.undo();
       historyStore.undo();
@@ -492,12 +492,12 @@ describe('historyStore', () => {
         properties: { lumen: 800, beamAngle: 60, warmth: 2700 },
       };
 
-      roomStore.update(state => ({ ...state, lights: [light] }));
+      roomStore.update((state) => ({ ...state, lights: [light] }));
 
       // Change nested property
-      roomStore.update(state => ({
+      roomStore.update((state) => ({
         ...state,
-        lights: state.lights.map(l => ({
+        lights: state.lights.map((l) => ({
           ...l,
           position: { ...l.position, x: 10 },
         })),
@@ -521,7 +521,7 @@ describe('historyStore', () => {
         position: { x: 5, y: 5 },
         properties: { lumen: 800, beamAngle: 60, warmth: 2700 },
       };
-      roomStore.update(state => ({ ...state, lights: [light] }));
+      roomStore.update((state) => ({ ...state, lights: [light] }));
       historyStore.clear();
 
       // Start drag - pause recording
@@ -529,9 +529,9 @@ describe('historyStore', () => {
 
       // Simulate many intermediate positions during drag
       for (let i = 0; i < 50; i++) {
-        roomStore.update(state => ({
+        roomStore.update((state) => ({
           ...state,
-          lights: state.lights.map(l => ({
+          lights: state.lights.map((l) => ({
             ...l,
             position: { x: 5 + i * 0.1, y: 5 + i * 0.1 },
           })),
@@ -553,13 +553,13 @@ describe('historyStore', () => {
 
     it('simulates drawing walls with undo', () => {
       // Draw first wall
-      roomStore.update(state => ({
+      roomStore.update((state) => ({
         ...state,
         walls: [{ id: '1', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, length: 10 }],
       }));
 
       // Draw second wall
-      roomStore.update(state => ({
+      roomStore.update((state) => ({
         ...state,
         walls: [
           ...state.walls,
@@ -568,7 +568,7 @@ describe('historyStore', () => {
       }));
 
       // Draw third wall
-      roomStore.update(state => ({
+      roomStore.update((state) => ({
         ...state,
         walls: [
           ...state.walls,
@@ -593,14 +593,14 @@ describe('historyStore', () => {
     });
 
     it('handles clear followed by new changes', () => {
-      roomStore.update(state => ({ ...state, ceilingHeight: 10 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 12 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 10 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 12 }));
 
       historyStore.clear();
 
       // Make new changes
-      roomStore.update(state => ({ ...state, ceilingHeight: 14 }));
-      roomStore.update(state => ({ ...state, ceilingHeight: 16 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 14 }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: 16 }));
 
       // Should have history for new changes only
       historyStore.undo();

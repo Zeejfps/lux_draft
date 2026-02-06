@@ -11,7 +11,7 @@
   $: currentRoom = $roomStore;
   $: currentSelectedObstacleId = $selectedObstacleId;
   $: selectedObstacle = currentSelectedObstacleId
-    ? (currentRoom.obstacles ?? []).find(o => o.id === currentSelectedObstacleId) ?? null
+    ? ((currentRoom.obstacles ?? []).find((o) => o.id === currentSelectedObstacleId) ?? null)
     : null;
   $: visible = selectedObstacle !== null;
 
@@ -41,7 +41,7 @@
 </script>
 
 <FloatingPanel
-  visible={visible}
+  {visible}
   title="Obstacle Properties"
   defaultX={window.innerWidth - 530}
   defaultY={16}
@@ -89,9 +89,7 @@
         </div>
       </div>
 
-      <button class="panel-delete-btn" on:click={deleteSelectedObstacle}>
-        Delete Obstacle
-      </button>
+      <button class="panel-delete-btn" on:click={deleteSelectedObstacle}> Delete Obstacle </button>
     </div>
   {/if}
 </FloatingPanel>

@@ -64,10 +64,7 @@ export function attemptItemSelection<TId>(
  * Checks if a toggle-off occurred after a shift-click selection.
  * Used internally by handleSelectionAction.
  */
-function checkToggleOff<TId>(
-  itemId: TId,
-  isSelectedNow: (id: TId) => boolean
-): boolean {
+function checkToggleOff<TId>(itemId: TId, isSelectedNow: (id: TId) => boolean): boolean {
   return !isSelectedNow(itemId);
 }
 

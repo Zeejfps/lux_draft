@@ -29,7 +29,7 @@
   function applyCeilingHeight(): void {
     const newHeight = parseImperial(ceilingHeightInput);
     if (newHeight !== null && newHeight > 0 && newHeight <= 50) {
-      roomStore.update(state => ({ ...state, ceilingHeight: newHeight }));
+      roomStore.update((state) => ({ ...state, ceilingHeight: newHeight }));
     } else {
       // Reset to current value if invalid
       ceilingHeightInput = formatImperial(currentRoom.ceilingHeight);
@@ -85,7 +85,7 @@
     <div class="property-row">
       <span>Units</span>
       <button class="unit-toggle" on:click={toggleUnitFormat} title="Toggle Units (U)">
-        {unitFormat === 'feet-inches' ? "ft' in\"" : 'in"'}
+        {unitFormat === 'feet-inches' ? 'ft\' in"' : 'in"'}
       </button>
     </div>
   </div>

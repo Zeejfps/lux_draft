@@ -173,7 +173,7 @@ export class LightIcon {
     }
   }
 
-    dispose(): void {
+  dispose(): void {
     this.iconMesh.geometry.dispose();
     (this.iconMesh.material as THREE.Material).dispose();
     this.beamPreview.geometry.dispose();

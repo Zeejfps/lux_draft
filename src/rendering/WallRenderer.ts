@@ -56,7 +56,11 @@ export class WallRenderer {
     }));
   }
 
-  private renderWallLines(walls: WallSegment[], selectedWallId: string | null, doors: Door[]): void {
+  private renderWallLines(
+    walls: WallSegment[],
+    selectedWallId: string | null,
+    doors: Door[]
+  ): void {
     for (const wall of walls) {
       const isSelected = wall.id === selectedWallId;
       const lines = createWallLinesWithDoors(wall, doors, isSelected);
@@ -72,11 +76,7 @@ export class WallRenderer {
   ): void {
     for (const vertex of vertexList) {
       const isSelected = selectedVertexIndices.has(vertex.index);
-      const mesh = createVertexCircle(
-        { x: vertex.x, y: vertex.y },
-        vertex.index,
-        isSelected
-      );
+      const mesh = createVertexCircle({ x: vertex.x, y: vertex.y }, vertex.index, isSelected);
       this.wallsGroup.add(mesh);
       this.vertexMeshes.push(mesh);
     }

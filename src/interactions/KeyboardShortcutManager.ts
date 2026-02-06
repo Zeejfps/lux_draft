@@ -24,7 +24,7 @@ export class KeyboardShortcutManager {
     }
   }
 
-    /**
+  /**
    * Handle a key down event.
    * Returns true if a binding was matched and executed.
    */
@@ -71,7 +71,7 @@ export class KeyboardShortcutManager {
     return ctrlMatch && shiftMatch && altMatch;
   }
 
-    /**
+  /**
    * Clear all bindings.
    */
   clear(): void {

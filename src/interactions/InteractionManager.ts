@@ -16,7 +16,7 @@ export class InteractionManager {
     this.handlers.sort((a, b) => b.priority - a.priority);
   }
 
-    /**
+  /**
    * Handle a click event.
    */
   handleClick(event: InputEvent, context: InteractionContext): boolean {
@@ -80,5 +80,4 @@ export class InteractionManager {
     }
     return false;
   }
-
 }

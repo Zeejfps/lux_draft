@@ -15,9 +15,10 @@
 
   $: {
     const vertices = getVertices(currentRoom);
-    selectedVertex = currentSelectedVertexIndex !== null && currentSelectedVertexIndex < vertices.length
-      ? vertices[currentSelectedVertexIndex]
-      : null;
+    selectedVertex =
+      currentSelectedVertexIndex !== null && currentSelectedVertexIndex < vertices.length
+        ? vertices[currentSelectedVertexIndex]
+        : null;
   }
 
   $: if (selectedVertex && selectedVertex.x != null && selectedVertex.y != null) {
@@ -72,7 +73,7 @@
 </script>
 
 <FloatingPanel
-  visible={visible}
+  {visible}
   title="Vertex Properties"
   defaultX={window.innerWidth - 530}
   defaultY={16}
@@ -114,13 +115,11 @@
         </div>
       </label>
       <p class="panel-hint">
-        Drag the vertex or type new coordinates and press Enter.
-        Double-click a wall to insert a new vertex.
+        Drag the vertex or type new coordinates and press Enter. Double-click a wall to insert a new
+        vertex.
       </p>
       {#if currentRoom.walls.length > 3}
-        <button class="panel-delete-btn" on:click={deleteSelectedVertex}>
-          Delete Vertex
-        </button>
+        <button class="panel-delete-btn" on:click={deleteSelectedVertex}> Delete Vertex </button>
       {:else}
         <p class="panel-hint warning">Cannot delete: minimum 3 vertices required.</p>
       {/if}

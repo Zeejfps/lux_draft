@@ -1,110 +1,110 @@
 <script lang="ts">
-    import {createEventDispatcher, onDestroy, onMount} from 'svelte';
-    import {get} from 'svelte/store';
-    import {SvelteSet} from 'svelte/reactivity';
-    import {Scene} from '../core/Scene';
-    import {type InputEvent, InputManager} from '../core/InputManager';
-    import {EditorRenderer} from '../rendering/EditorRenderer';
-    import {HeatmapRenderer} from '../rendering/HeatmapRenderer';
-    import {ShadowRenderer} from '../rendering/ShadowRenderer';
-    import {RafterOverlay} from '../rendering/RafterOverlay';
-    import {DeadZoneRenderer} from '../rendering/DeadZoneRenderer';
-    import {SpacingWarningRenderer} from '../rendering/SpacingWarningRenderer';
-    import {WallBuilder} from '../geometry/WallBuilder';
-    import {PolygonValidator} from '../geometry/PolygonValidator';
-    import {LightManager} from '../lighting/LightManager';
-    import {MeasurementController, SnapController} from '../controllers';
-    import {
-        canPlaceLights,
-        canPlaceDoors,
-        deleteVertex,
-        getVertices,
-        getDoorsByWallId,
-        insertVertexOnWall,
-        moveWall,
-        roomBounds,
-        roomStore,
-        updateVertexPosition,
-        updateObstacleVertexPosition,
-        updateDoor,
-        addDoor,
-        removeDoor,
-        addObstacle,
-        removeObstacle,
-        moveObstacle
-    } from '../stores/roomStore';
-    import {
-        clearLightSelection,
-        clearVertexSelection,
-        clearDoorSelection,
-        clearObstacleSelection,
-        clearObstacleVertexSelection,
-        isDrawingEnabled,
-        isLightPlacementEnabled,
-        isDoorPlacementEnabled,
-        isObstacleDrawingEnabled,
-        selectedLightId,
-        selectedLightIds,
-        selectedVertexIndex,
-        selectedVertexIndices,
-        selectedWallId,
-        selectedDoorId,
-        selectedObstacleId,
-        selectedObstacleVertexIndices,
-        selectLight,
-        selectVertex,
-        selectObstacle,
-        selectObstacleVertex,
-        shouldFitCamera,
-        selectDoor,
-        viewMode
-    } from '../stores/appStore';
-    import {historyStore} from '../stores/historyStore';
-    import {getDoorPlacementSettings} from '../stores/doorStore';
-    import {displayPreferences, rafterConfig, toggleUnitFormat} from '../stores/settingsStore';
-    import {deadZoneConfig} from '../stores/deadZoneStore';
-    import {spacingConfig, spacingWarnings} from '../stores/spacingStore';
-    import {toggleLightingStats} from '../stores/lightingStatsStore';
-    import {selectedDefinitionId} from '../stores/lightDefinitionsStore';
-    import {isMeasuring} from '../stores/measurementStore';
-    import type {
-        BoundingBox,
-        BoxSelectionState,
-        DeadZoneConfig,
-        DisplayPreferences,
-        InteractionContext,
-        RafterConfig,
-        RoomState,
-        SpacingConfig,
-        SpacingWarning,
-        Vector2,
-        ViewMode
-    } from '../types';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { SvelteSet } from 'svelte/reactivity';
+  import { Scene } from '../core/Scene';
+  import { type InputEvent, InputManager } from '../core/InputManager';
+  import { EditorRenderer } from '../rendering/EditorRenderer';
+  import { HeatmapRenderer } from '../rendering/HeatmapRenderer';
+  import { ShadowRenderer } from '../rendering/ShadowRenderer';
+  import { RafterOverlay } from '../rendering/RafterOverlay';
+  import { DeadZoneRenderer } from '../rendering/DeadZoneRenderer';
+  import { SpacingWarningRenderer } from '../rendering/SpacingWarningRenderer';
+  import { WallBuilder } from '../geometry/WallBuilder';
+  import { PolygonValidator } from '../geometry/PolygonValidator';
+  import { LightManager } from '../lighting/LightManager';
+  import { MeasurementController, SnapController } from '../controllers';
+  import {
+    canPlaceLights,
+    canPlaceDoors,
+    deleteVertex,
+    getVertices,
+    getDoorsByWallId,
+    insertVertexOnWall,
+    moveWall,
+    roomBounds,
+    roomStore,
+    updateVertexPosition,
+    updateObstacleVertexPosition,
+    updateDoor,
+    addDoor,
+    removeDoor,
+    addObstacle,
+    removeObstacle,
+    moveObstacle,
+  } from '../stores/roomStore';
+  import {
+    clearLightSelection,
+    clearVertexSelection,
+    clearDoorSelection,
+    clearObstacleSelection,
+    clearObstacleVertexSelection,
+    isDrawingEnabled,
+    isLightPlacementEnabled,
+    isDoorPlacementEnabled,
+    isObstacleDrawingEnabled,
+    selectedLightId,
+    selectedLightIds,
+    selectedVertexIndex,
+    selectedVertexIndices,
+    selectedWallId,
+    selectedDoorId,
+    selectedObstacleId,
+    selectedObstacleVertexIndices,
+    selectLight,
+    selectVertex,
+    selectObstacle,
+    selectObstacleVertex,
+    shouldFitCamera,
+    selectDoor,
+    viewMode,
+  } from '../stores/appStore';
+  import { historyStore } from '../stores/historyStore';
+  import { getDoorPlacementSettings } from '../stores/doorStore';
+  import { displayPreferences, rafterConfig, toggleUnitFormat } from '../stores/settingsStore';
+  import { deadZoneConfig } from '../stores/deadZoneStore';
+  import { spacingConfig, spacingWarnings } from '../stores/spacingStore';
+  import { toggleLightingStats } from '../stores/lightingStatsStore';
+  import { selectedDefinitionId } from '../stores/lightDefinitionsStore';
+  import { isMeasuring } from '../stores/measurementStore';
+  import type {
+    BoundingBox,
+    BoxSelectionState,
+    DeadZoneConfig,
+    DisplayPreferences,
+    InteractionContext,
+    RafterConfig,
+    RoomState,
+    SpacingConfig,
+    SpacingWarning,
+    Vector2,
+    ViewMode,
+  } from '../types';
 
-    // Interaction system imports
-    import {
-        BoxSelectionHandler,
-        createDefaultKeyboardShortcuts,
-        DoorDragOperation,
-        DragManager,
-        DrawingHandler,
-        DoorPlacementHandler,
-        EMPTY_MODIFIERS,
-        GrabModeDragOperation,
-        GrabModeHandler,
-        InteractionManager,
-        KeyboardShortcutManager,
-        LightPlacementHandler,
-        MeasurementHandler,
-        ObstacleDrawingHandler,
-        ObstacleDragOperation,
-        ObstacleVertexDragOperation,
-        SelectionHandler,
-        UnifiedDragOperation,
-        WallDragOperation,
-    } from '../interactions';
+  // Interaction system imports
+  import {
+    BoxSelectionHandler,
+    createDefaultKeyboardShortcuts,
+    DoorDragOperation,
+    DragManager,
+    DrawingHandler,
+    DoorPlacementHandler,
+    EMPTY_MODIFIERS,
+    GrabModeDragOperation,
+    GrabModeHandler,
+    InteractionManager,
+    KeyboardShortcutManager,
+    LightPlacementHandler,
+    MeasurementHandler,
+    ObstacleDrawingHandler,
+    ObstacleDragOperation,
+    ObstacleVertexDragOperation,
+    SelectionHandler,
+    UnifiedDragOperation,
+    WallDragOperation,
+  } from '../interactions';
 
-    // ============================================
+  // ============================================
   // Component State
   // ============================================
 
@@ -143,7 +143,13 @@
   const dispatch = createEventDispatcher<{
     mouseMove: { worldPos: Vector2 };
     snapChange: { snapType: string };
-    measurement: { from: Vector2; to: Vector2; deltaX: number; deltaY: number; distance: number } | null;
+    measurement: {
+      from: Vector2;
+      to: Vector2;
+      deltaX: number;
+      deltaY: number;
+      distance: number;
+    } | null;
   }>();
 
   // ============================================
@@ -235,10 +241,27 @@
   }
 
   $: if (editorRenderer && currentRoomState) {
-    editorRenderer.updateWalls(currentRoomState.walls, currentSelectedWallId, currentSelectedVertexIndices, currentRoomState.doors ?? []);
-    editorRenderer.updateLights(currentRoomState.lights, currentRoomState.ceilingHeight, currentSelectedLightIds);
-    editorRenderer.updateDoors(currentRoomState.doors ?? [], currentRoomState.walls, currentSelectedDoorId);
-    editorRenderer.updateObstacles(currentRoomState.obstacles ?? [], currentSelectedObstacleId, currentSelectedObstacleVertexIndices);
+    editorRenderer.updateWalls(
+      currentRoomState.walls,
+      currentSelectedWallId,
+      currentSelectedVertexIndices,
+      currentRoomState.doors ?? []
+    );
+    editorRenderer.updateLights(
+      currentRoomState.lights,
+      currentRoomState.ceilingHeight,
+      currentSelectedLightIds
+    );
+    editorRenderer.updateDoors(
+      currentRoomState.doors ?? [],
+      currentRoomState.walls,
+      currentSelectedDoorId
+    );
+    editorRenderer.updateObstacles(
+      currentRoomState.obstacles ?? [],
+      currentSelectedObstacleId,
+      currentSelectedObstacleVertexIndices
+    );
     lightManager?.setLights(currentRoomState.lights);
   }
 
@@ -250,7 +273,14 @@
   }
 
   $: if (shadowRenderer && currentRoomState && currentBounds) {
-    shadowRenderer.updateShadows(currentRoomState.lights, currentRoomState.walls, currentBounds, currentRoomState.doors ?? [], currentRoomState.obstacles ?? [], currentRoomState.ceilingHeight);
+    shadowRenderer.updateShadows(
+      currentRoomState.lights,
+      currentRoomState.walls,
+      currentBounds,
+      currentRoomState.doors ?? [],
+      currentRoomState.obstacles ?? [],
+      currentRoomState.ceilingHeight
+    );
   }
 
   $: if (rafterOverlay && currentRafterConfig && currentBounds) {
@@ -411,7 +441,7 @@
 
     // Update source position if it's a light
     if (source?.type === 'light') {
-      const light = currentRoomState.lights.find(l => l.id === source.id);
+      const light = currentRoomState.lights.find((l) => l.id === source.id);
       if (light) {
         measurementController.updateSourcePosition(light.position, currentRoomState.walls);
       }
@@ -427,7 +457,7 @@
 
     // Update target position if it's a light
     if (target?.type === 'light') {
-      const light = currentRoomState.lights.find(l => l.id === target.id);
+      const light = currentRoomState.lights.find((l) => l.id === target.id);
       if (light) {
         measurementController.updateTargetPosition(light.position);
       }
@@ -435,7 +465,10 @@
 
     // Refresh the display
     if (measurementController.fromPosition && measurementController.toPosition) {
-      editorRenderer?.setMeasurementLine(measurementController.fromPosition, measurementController.toPosition);
+      editorRenderer?.setMeasurementLine(
+        measurementController.fromPosition,
+        measurementController.toPosition
+      );
       dispatch('measurement', measurementController.getMeasurementData());
     }
   }
@@ -449,14 +482,17 @@
     // Start from vertex
     if (currentSelectedVertexIndex !== null) {
       const vertices = getVertices(currentRoomState);
-      measurementHandler.startFromVertex(currentSelectedVertexIndex, vertices[currentSelectedVertexIndex]);
+      measurementHandler.startFromVertex(
+        currentSelectedVertexIndex,
+        vertices[currentSelectedVertexIndex]
+      );
       isMeasuring.set(true);
       return;
     }
 
     // Start from light
     if (currentSelectedLightId) {
-      const light = currentRoomState.lights.find(l => l.id === currentSelectedLightId);
+      const light = currentRoomState.lights.find((l) => l.id === currentSelectedLightId);
       if (light) {
         measurementHandler.startFromLight(currentSelectedLightId, light.position);
         isMeasuring.set(true);
@@ -506,7 +542,7 @@
   function handleSelectAllObstacleVertices(): void {
     if (!currentSelectedObstacleId) return;
     const obstacles = currentRoomState.obstacles ?? [];
-    const obstacle = obstacles.find(o => o.id === currentSelectedObstacleId);
+    const obstacle = obstacles.find((o) => o.id === currentSelectedObstacleId);
     if (!obstacle) return;
 
     const allIndices = new SvelteSet<number>();
@@ -535,9 +571,9 @@
       for (const id of currentSelectedLightIds) {
         lightManager.removeLight(id);
       }
-      roomStore.update(state => ({
+      roomStore.update((state) => ({
         ...state,
-        lights: state.lights.filter(l => !currentSelectedLightIds.has(l.id)),
+        lights: state.lights.filter((l) => !currentSelectedLightIds.has(l.id)),
       }));
       clearLightSelection();
     }
@@ -577,9 +613,9 @@
     dragManager = new DragManager({
       onUpdateVertexPosition: (idx, pos) => updateVertexPosition(idx, pos),
       onUpdateLightPositions: (updates) => {
-        roomStore.update(state => ({
+        roomStore.update((state) => ({
           ...state,
-          lights: state.lights.map(light => {
+          lights: state.lights.map((light) => {
             const newPos = updates.get(light.id);
             return newPos ? { ...light, position: newPos } : light;
           }),
@@ -587,7 +623,8 @@
       },
       onMoveWall: (wallId, newStart, newEnd) => moveWall(wallId, newStart, newEnd),
       onUpdateDoorPosition: (doorId, position) => updateDoor(doorId, { position }),
-      onUpdateObstacleVertexPosition: (obstacleId, vertexIndex, position) => updateObstacleVertexPosition(obstacleId, vertexIndex, position),
+      onUpdateObstacleVertexPosition: (obstacleId, vertexIndex, position) =>
+        updateObstacleVertexPosition(obstacleId, vertexIndex, position),
       onMoveObstacle: (obstacleId, vertexPositions) => moveObstacle(obstacleId, vertexPositions),
       onSetSnapGuides: (guides) => editorRenderer?.setSnapGuides(guides),
       onPauseHistory: () => historyStore.pauseRecording(),
@@ -599,18 +636,20 @@
 
     // Initialize keyboard shortcut manager
     keyboardShortcutManager = new KeyboardShortcutManager();
-    keyboardShortcutManager.registerAll(createDefaultKeyboardShortcuts({
-      setViewMode: (mode) => viewMode.set(mode),
-      toggleRafters: () => rafterConfig.update(c => ({ ...c, visible: !c.visible })),
-      toggleUnitFormat: () => toggleUnitFormat(),
-      toggleMeasurement: () => handleMeasurementToggle(),
-      toggleLightingStats: () => toggleLightingStats(),
-      undo: () => historyStore.undo(),
-      redo: () => historyStore.redo(),
-      handleEscape: () => handleEscape(),
-      handleDelete: () => handleDelete(),
-      selectAllObstacleVertices: () => handleSelectAllObstacleVertices(),
-    }));
+    keyboardShortcutManager.registerAll(
+      createDefaultKeyboardShortcuts({
+        setViewMode: (mode) => viewMode.set(mode),
+        toggleRafters: () => rafterConfig.update((c) => ({ ...c, visible: !c.visible })),
+        toggleUnitFormat: () => toggleUnitFormat(),
+        toggleMeasurement: () => handleMeasurementToggle(),
+        toggleLightingStats: () => toggleLightingStats(),
+        undo: () => historyStore.undo(),
+        redo: () => historyStore.redo(),
+        handleEscape: () => handleEscape(),
+        handleDelete: () => handleDelete(),
+        selectAllObstacleVertices: () => handleSelectAllObstacleVertices(),
+      })
+    );
 
     // Initialize handlers
     drawingHandler = new DrawingHandler(
@@ -625,7 +664,7 @@
         onUpdateDrawingVertices: (vertices) => editorRenderer.updateDrawingVertices(vertices),
         onSetPhantomLine: (from, to) => editorRenderer.setPhantomLine(from, to),
         onSetPreviewVertex: (pos) => editorRenderer.setPreviewVertex(pos),
-        onCloseRoom: (walls) => roomStore.update(state => ({ ...state, walls, isClosed: true })),
+        onCloseRoom: (walls) => roomStore.update((state) => ({ ...state, walls, isClosed: true })),
         onSnapChange: (snapType) => dispatch('snapChange', { snapType }),
       }
     );
@@ -666,7 +705,8 @@
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
       },
       {
-        onLightPlaced: (light) => roomStore.update(state => ({ ...state, lights: [...state.lights, light] })),
+        onLightPlaced: (light) =>
+          roomStore.update((state) => ({ ...state, lights: [...state.lights, light] })),
         onSetPreviewLight: (pos, isValid) => editorRenderer.setPreviewLight(pos, isValid),
       }
     );
@@ -675,7 +715,8 @@
       {
         getWalls: () => currentRoomState.walls,
         getDoors: () => currentRoomState.doors ?? [],
-        getWallAtPosition: (pos, walls, tolerance) => editorRenderer.getWallAtPosition(pos, walls, tolerance),
+        getWallAtPosition: (pos, walls, tolerance) =>
+          editorRenderer.getWallAtPosition(pos, walls, tolerance),
         getSelectedDoorWidth: () => getDoorPlacementSettings().width,
         getSelectedDoorSwingDirection: () => getDoorPlacementSettings().swingDirection,
         getSelectedDoorSwingSide: () => getDoorPlacementSettings().swingSide,
@@ -696,7 +737,9 @@
     boxSelectionHandler = new BoxSelectionHandler(
       {
         getBoxSelectionState: () => boxSelectionState,
-        setBoxSelectionState: (state) => { boxSelectionState = state; },
+        setBoxSelectionState: (state) => {
+          boxSelectionState = state;
+        },
       },
       {
         onBoxSelectionStart: (_start) => {},
@@ -706,7 +749,7 @@
           if (obstacleVertices.length > 0) {
             const first = obstacleVertices[0];
             if (addToSelection) {
-              selectedObstacleVertexIndices.update(existing => {
+              selectedObstacleVertexIndices.update((existing) => {
                 const newSet = new SvelteSet(existing);
                 for (const idx of first.vertexIndices) newSet.add(idx);
                 return newSet;
@@ -723,7 +766,7 @@
             // No obstacle selected — normal room vertex/light selection
             if (vertexIndices.length > 0) {
               if (addToSelection) {
-                selectedVertexIndices.update(existing => {
+                selectedVertexIndices.update((existing) => {
                   const newSet = new SvelteSet(existing);
                   for (const idx of vertexIndices) newSet.add(idx);
                   return newSet;
@@ -734,7 +777,7 @@
             }
             if (lightIds.length > 0) {
               if (addToSelection) {
-                selectedLightIds.update(existing => {
+                selectedLightIds.update((existing) => {
                   const newSet = new SvelteSet(existing);
                   for (const id of lightIds) newSet.add(id);
                   return newSet;
@@ -784,40 +827,44 @@
             selection: buildInteractionContext().selection,
           });
         },
-        getWallAtPosition: (pos, walls, tolerance) => editorRenderer.getWallAtPosition(pos, walls, tolerance),
+        getWallAtPosition: (pos, walls, tolerance) =>
+          editorRenderer.getWallAtPosition(pos, walls, tolerance),
       }
     );
 
     grabModeHandler = new GrabModeHandler(
       {
         dragManager,
-        createGrabOperation: () => new GrabModeDragOperation(
-          {
-            snapController,
-            getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
-            getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
-            getVertices: () => getVertices(currentRoomState),
-            getLights: () => currentRoomState.lights,
-            getWalls: () => currentRoomState.walls,
-            getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
-            getDoors: () => currentRoomState.doors ?? [],
-            getDoorById: (id) => (currentRoomState.doors ?? []).find(d => d.id === id),
-            getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
-            isRoomClosed: () => currentRoomState.isClosed,
-            getCurrentMousePos: () => currentMousePos,
-          },
-          dragManager.getCallbacks()
-        ),
+        createGrabOperation: () =>
+          new GrabModeDragOperation(
+            {
+              snapController,
+              getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
+              getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
+              getVertices: () => getVertices(currentRoomState),
+              getLights: () => currentRoomState.lights,
+              getWalls: () => currentRoomState.walls,
+              getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
+              getDoors: () => currentRoomState.doors ?? [],
+              getDoorById: (id) => (currentRoomState.doors ?? []).find((d) => d.id === id),
+              getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
+              isRoomClosed: () => currentRoomState.isClosed,
+              getCurrentMousePos: () => currentMousePos,
+            },
+            dragManager.getCallbacks()
+          ),
         getGrabModeState: () => ({ isActive: isGrabMode, offset: null, originalPositions: null }),
-        setGrabModeActive: (active) => { isGrabMode = active; },
+        setGrabModeActive: (active) => {
+          isGrabMode = active;
+        },
         getSelection: () => buildInteractionContext().selection,
         getCurrentMousePos: () => currentMousePos,
         getVertices: () => getVertices(currentRoomState),
         getLights: () => currentRoomState.lights,
         getWalls: () => currentRoomState.walls,
         getDoors: () => currentRoomState.doors ?? [],
-        getDoorById: (id) => (currentRoomState.doors ?? []).find(d => d.id === id),
-        getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
+        getDoorById: (id) => (currentRoomState.doors ?? []).find((d) => d.id === id),
+        getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
       },
       {
         onGrabModeStart: () => {},
@@ -845,7 +892,8 @@
         onSelectWall: (id) => selectedWallId.set(id),
         onSelectDoor: (id) => selectDoor(id),
         onSelectObstacle: (id) => selectObstacle(id),
-        onSelectObstacleVertex: (obstacleId, vertexIndex, addToSelection) => selectObstacleVertex(obstacleId, vertexIndex, addToSelection),
+        onSelectObstacleVertex: (obstacleId, vertexIndex, addToSelection) =>
+          selectObstacleVertex(obstacleId, vertexIndex, addToSelection),
         onClearSelection: () => {
           clearLightSelection();
           selectedWallId.set(null);
@@ -864,7 +912,8 @@
         getSelectedVertexIndices: () => get(selectedVertexIndices),
         getSelectedLightIds: () => get(selectedLightIds),
         getSelectedObstacleVertexIndices: () => get(selectedObstacleVertexIndices),
-        getWallAtPosition: (pos, walls, tolerance) => editorRenderer.getWallAtPosition(pos, walls, tolerance),
+        getWallAtPosition: (pos, walls, tolerance) =>
+          editorRenderer.getWallAtPosition(pos, walls, tolerance),
         getDoors: () => currentRoomState.doors ?? [],
         getObstacles: () => currentRoomState.obstacles ?? [],
       }
@@ -928,7 +977,7 @@
         snapController,
         getVertices: () => getVertices(currentRoomState),
         getWalls: () => currentRoomState.walls,
-        getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
+        getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
       },
       dragManager.getCallbacks()
     );
@@ -961,8 +1010,8 @@
   function createDoorDragOperation(): DoorDragOperation {
     return new DoorDragOperation(
       {
-        getWallById: (id) => currentRoomState.walls.find(w => w.id === id),
-        getDoorById: (id) => (currentRoomState.doors ?? []).find(d => d.id === id),
+        getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
+        getDoorById: (id) => (currentRoomState.doors ?? []).find((d) => d.id === id),
         getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
       },
       dragManager.getCallbacks()
@@ -990,7 +1039,6 @@
   export function setManualLength(length: number): void {
     wallBuilder.setManualLength(length);
   }
-
 </script>
 
 <div class="canvas-container" bind:this={container}></div>

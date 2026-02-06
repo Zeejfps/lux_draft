@@ -6,7 +6,7 @@
     setDoorWidth,
     setDoorSwingDirection,
     setDoorSwingSide,
-    DOOR_WIDTHS
+    DOOR_WIDTHS,
   } from '../stores/doorStore';
   import { displayPreferences } from '../stores/settingsStore';
   import FloatingPanel from './FloatingPanel.svelte';
@@ -27,7 +27,7 @@
   // Generate door width options based on unit format
   $: doorWidthOptions = Object.entries(DOOR_WIDTHS).map(([label, value]) => ({
     label: unitFormat === 'inches' ? `${Math.round(value * 12)}"` : label,
-    value
+    value,
   }));
 
   function handleWidthChange(e: Event): void {
@@ -51,7 +51,7 @@
 </script>
 
 <FloatingPanel
-  visible={visible}
+  {visible}
   title="Place Door"
   defaultX={16}
   defaultY={16}
@@ -66,7 +66,7 @@
       <span class="label-text">Door Width</span>
       <select value={settings.width} on:change={handleWidthChange}>
         {#each doorWidthOptions as { label, value } (value)}
-          <option value={value}>{label}</option>
+          <option {value}>{label}</option>
         {/each}
       </select>
     </label>

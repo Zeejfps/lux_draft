@@ -296,4 +296,3 @@ const activeTheme: Theme = BLUEPRINT_THEME;
 export function getTheme(): Theme {
   return activeTheme;
 }
-

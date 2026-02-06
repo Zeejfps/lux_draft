@@ -27,4 +27,3 @@ export function toggleSpacingWarnings(): void {
     enabled: !config.enabled,
   }));
 }
-

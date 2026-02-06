@@ -43,23 +43,11 @@ describe('Light Placement Integration', () => {
     const light = lightManager.addLight({ x: 10, y: 7.5 });
     const ceilingHeight = 8;
 
-    const luxBelow = lightCalculator.calculateLux(
-      { x: 10, y: 7.5 },
-      [light],
-      ceilingHeight
-    );
+    const luxBelow = lightCalculator.calculateLux({ x: 10, y: 7.5 }, [light], ceilingHeight);
 
-    const luxNear = lightCalculator.calculateLux(
-      { x: 12, y: 7.5 },
-      [light],
-      ceilingHeight
-    );
+    const luxNear = lightCalculator.calculateLux({ x: 12, y: 7.5 }, [light], ceilingHeight);
 
-    const luxFar = lightCalculator.calculateLux(
-      { x: 18, y: 7.5 },
-      [light],
-      ceilingHeight
-    );
+    const luxFar = lightCalculator.calculateLux({ x: 18, y: 7.5 }, [light], ceilingHeight);
 
     expect(luxBelow).toBeGreaterThan(luxNear);
     expect(luxNear).toBeGreaterThan(luxFar);
@@ -108,11 +96,7 @@ describe('Light Placement Integration', () => {
     const testPoint = { x: 7.5, y: 7.5 };
 
     const light1 = lightManager.addLight({ x: 5, y: 7.5 }, { beamAngle: 90 });
-    const luxSingle = lightCalculator.calculateLux(
-      testPoint,
-      [light1],
-      ceilingHeight
-    );
+    const luxSingle = lightCalculator.calculateLux(testPoint, [light1], ceilingHeight);
 
     lightManager.addLight({ x: 10, y: 7.5 }, { beamAngle: 90 });
     const luxDouble = lightCalculator.calculateLux(
@@ -132,16 +116,8 @@ describe('Light Placement Integration', () => {
     // Test at a point that's within the wide beam but at the edge of narrow beam
     const edgePoint = { x: 13, y: 7.5 };
 
-    const luxNarrow = lightCalculator.calculateSingleLight(
-      edgePoint,
-      narrow,
-      ceilingHeight
-    );
-    const luxWide = lightCalculator.calculateSingleLight(
-      edgePoint,
-      wide,
-      ceilingHeight
-    );
+    const luxNarrow = lightCalculator.calculateSingleLight(edgePoint, narrow, ceilingHeight);
+    const luxWide = lightCalculator.calculateSingleLight(edgePoint, wide, ceilingHeight);
 
     expect(luxWide).toBeGreaterThan(luxNarrow);
   });

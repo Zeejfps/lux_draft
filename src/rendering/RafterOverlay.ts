@@ -26,7 +26,7 @@ export class RafterOverlay {
     if (!this.config.visible) return;
 
     const material = new THREE.MeshBasicMaterial({
-      color: 0xDEB887, // Lighter brown (burlywood)
+      color: 0xdeb887, // Lighter brown (burlywood)
       transparent: true,
       opacity: 0.6,
     });
@@ -34,7 +34,9 @@ export class RafterOverlay {
     const rafterWidth = 1.5 / 12; // 1.5 inches in feet
 
     if (this.config.orientation === 'horizontal') {
-      const startY = Math.ceil((bounds.minY - this.config.offsetY) / this.config.spacing) * this.config.spacing + this.config.offsetY;
+      const startY =
+        Math.ceil((bounds.minY - this.config.offsetY) / this.config.spacing) * this.config.spacing +
+        this.config.offsetY;
       const length = bounds.maxX - bounds.minX;
 
       for (let y = startY; y <= bounds.maxY; y += this.config.spacing) {
@@ -44,7 +46,9 @@ export class RafterOverlay {
         this.rafterGroup.add(mesh);
       }
     } else {
-      const startX = Math.ceil((bounds.minX - this.config.offsetX) / this.config.spacing) * this.config.spacing + this.config.offsetX;
+      const startX =
+        Math.ceil((bounds.minX - this.config.offsetX) / this.config.spacing) * this.config.spacing +
+        this.config.offsetX;
       const length = bounds.maxY - bounds.minY;
 
       for (let x = startX; x <= bounds.maxX; x += this.config.spacing) {

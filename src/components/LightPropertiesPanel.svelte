@@ -13,14 +13,14 @@
   $: currentRoom = $roomStore;
   $: currentSelectedLightIds = $selectedLightIds;
   $: definitions = $lightDefinitions;
-  $: selectedLights = currentRoom.lights.filter(l => currentSelectedLightIds.has(l.id));
+  $: selectedLights = currentRoom.lights.filter((l) => currentSelectedLightIds.has(l.id));
   $: visible = selectedLights.length > 0;
 
   // Check if all selected lights share the same definition
   $: commonDefinitionId = (() => {
     if (selectedLights.length === 0) return null;
     const firstDefId = selectedLights[0].definitionId;
-    const allSame = selectedLights.every(l => l.definitionId === firstDefId);
+    const allSame = selectedLights.every((l) => l.definitionId === firstDefId);
     return allSame ? firstDefId : null;
   })();
 
@@ -29,9 +29,9 @@
     const definition = getDefinitionById(newDefinitionId);
     if (!definition) return;
 
-    roomStore.update(state => ({
+    roomStore.update((state) => ({
       ...state,
-      lights: state.lights.map(light => {
+      lights: state.lights.map((light) => {
         if (currentSelectedLightIds.has(light.id)) {
           return {
             ...light,
@@ -40,20 +40,20 @@
               lumen: definition.lumen,
               beamAngle: definition.beamAngle,
               warmth: definition.warmth,
-            }
+            },
           };
         }
         return light;
-      })
+      }),
     }));
   }
 
   function deleteSelectedLights(): void {
     if (currentSelectedLightIds.size === 0) return;
 
-    roomStore.update(state => ({
+    roomStore.update((state) => ({
       ...state,
-      lights: state.lights.filter(l => !currentSelectedLightIds.has(l.id))
+      lights: state.lights.filter((l) => !currentSelectedLightIds.has(l.id)),
     }));
     clearLightSelection();
   }
@@ -64,7 +64,7 @@
 </script>
 
 <FloatingPanel
-  visible={visible}
+  {visible}
   title={selectedLights.length > 1 ? `${selectedLights.length} Lights` : 'Light Properties'}
   defaultX={window.innerWidth - 530}
   defaultY={16}
@@ -80,7 +80,11 @@
       <p class="multi-select-hint">Shift+click to add/remove lights from selection</p>
       <label class="definition-select">
         <span>{commonDefinitionId ? 'Type' : 'Change All To'}</span>
-        <select class="panel-select" value={commonDefinitionId || ''} on:change={updateLightDefinition}>
+        <select
+          class="panel-select"
+          value={commonDefinitionId || ''}
+          on:change={updateLightDefinition}
+        >
           {#if !commonDefinitionId}
             <option value="" disabled>Mixed types...</option>
           {/if}
@@ -111,7 +115,9 @@
       <div class="light-summary">
         <div class="summary-row">
           <span>Total Lumens</span>
-          <span>{selectedLights.reduce((sum, l) => sum + l.properties.lumen, 0).toLocaleString()} lm</span>
+          <span
+            >{selectedLights.reduce((sum, l) => sum + l.properties.lumen, 0).toLocaleString()} lm</span
+          >
         </div>
       </div>
       <button class="panel-delete-btn" on:click={deleteSelectedLights}>
@@ -154,9 +160,7 @@
           ({light.position.x.toFixed(1)}, {light.position.y.toFixed(1)})
         </span>
       </div>
-      <button class="panel-delete-btn" on:click={deleteSelectedLights}>
-        Delete Light
-      </button>
+      <button class="panel-delete-btn" on:click={deleteSelectedLights}> Delete Light </button>
     </div>
   {/if}
 </FloatingPanel>

@@ -63,10 +63,7 @@ export function isPointInPolygon(point: Vector2, vertices: Vector2[]): boolean {
     const xj = vertices[j].x;
     const yj = vertices[j].y;
 
-    if (
-      yi > point.y !== yj > point.y &&
-      point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi
-    ) {
+    if (yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi) {
       inside = !inside;
     }
   }

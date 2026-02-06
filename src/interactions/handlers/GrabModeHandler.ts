@@ -91,11 +91,13 @@ export class GrabModeHandler extends BaseInteractionHandler {
       }
 
       // Axis lock handling
-      if (handleAxisLockKey(event, {
-        dragManager: this.config.dragManager,
-        getGuideOrigin: () => this.originalSelectionOrigin ?? undefined,
-        triggerImmediateUpdate: () => this.triggerImmediateUpdate(),
-      })) {
+      if (
+        handleAxisLockKey(event, {
+          dragManager: this.config.dragManager,
+          getGuideOrigin: () => this.originalSelectionOrigin ?? undefined,
+          triggerImmediateUpdate: () => this.triggerImmediateUpdate(),
+        })
+      ) {
         return true;
       }
     }

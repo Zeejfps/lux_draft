@@ -73,7 +73,12 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
 
     // Calculate door position using the service
     const existingDoors = this.config.getDoors();
-    const result = doorPositioningService.calculateDoorPosition(pos, wall, doorWidth, existingDoors);
+    const result = doorPositioningService.calculateDoorPosition(
+      pos,
+      wall,
+      doorWidth,
+      existingDoors
+    );
 
     if (!result.canPlace) {
       return true; // Consumed the event but couldn't place
@@ -120,7 +125,12 @@ export class DoorPlacementHandler extends BaseInteractionHandler {
 
     // Calculate door position using the service
     const existingDoors = this.config.getDoors();
-    const result = doorPositioningService.calculateDoorPosition(pos, wall, doorWidth, existingDoors);
+    const result = doorPositioningService.calculateDoorPosition(
+      pos,
+      wall,
+      doorWidth,
+      existingDoors
+    );
 
     // Create preview door (always show, but indicate if it can be placed)
     const previewDoor: Door = {

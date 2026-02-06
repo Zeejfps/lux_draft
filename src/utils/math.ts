@@ -64,12 +64,7 @@ export function radToDeg(radians: number): number {
   return radians * (180 / Math.PI);
 }
 
-export function lineSegmentsIntersect(
-  a1: Vector2,
-  a2: Vector2,
-  b1: Vector2,
-  b2: Vector2
-): boolean {
+export function lineSegmentsIntersect(a1: Vector2, a2: Vector2, b1: Vector2, b2: Vector2): boolean {
   const d1 = vectorSubtract(a2, a1);
   const d2 = vectorSubtract(b2, b1);
   const d3 = vectorSubtract(b1, a1);
@@ -121,11 +116,7 @@ export function projectPointOntoSegment(
 
   if (lengthSq === 0) return { ...segStart };
 
-  const t = clamp(
-    ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lengthSq,
-    0,
-    1
-  );
+  const t = clamp(((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lengthSq, 0, 1);
 
   return {
     x: segStart.x + t * dx,
@@ -148,11 +139,7 @@ export function projectPointOntoSegmentForInsertion(
 
   if (lengthSq === 0) return { ...segStart };
 
-  const t = clamp(
-    ((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lengthSq,
-    0.1,
-    0.9
-  );
+  const t = clamp(((point.x - segStart.x) * dx + (point.y - segStart.y) * dy) / lengthSq, 0.1, 0.9);
 
   return {
     x: segStart.x + t * dx,
@@ -163,11 +150,7 @@ export function projectPointOntoSegmentForInsertion(
 /**
  * Calculates the distance from a point to a line segment.
  */
-export function distancePointToSegment(
-  point: Vector2,
-  segStart: Vector2,
-  segEnd: Vector2
-): number {
+export function distancePointToSegment(point: Vector2, segStart: Vector2, segEnd: Vector2): number {
   const projected = projectPointOntoSegment(point, segStart, segEnd);
   return distancePointToPoint(point, projected);
 }

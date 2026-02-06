@@ -8,11 +8,11 @@ describe('Imperial Formatting', () => {
     });
 
     it('formats feet and inches', () => {
-      expect(formatImperial(10.5)).toBe("10' 6\"");
+      expect(formatImperial(10.5)).toBe('10\' 6"');
     });
 
     it('formats fractional inches', () => {
-      expect(formatImperial(10.25)).toBe("10' 3\"");
+      expect(formatImperial(10.25)).toBe('10\' 3"');
     });
 
     it('handles decimal mode', () => {
@@ -24,7 +24,7 @@ describe('Imperial Formatting', () => {
     });
 
     it('handles small values', () => {
-      expect(formatImperial(0.5)).toBe("0' 6\"");
+      expect(formatImperial(0.5)).toBe('0\' 6"');
     });
   });
 
@@ -38,7 +38,7 @@ describe('Imperial Formatting', () => {
     });
 
     it('parses feet and inches', () => {
-      expect(parseImperial("10' 6\"")).toBeCloseTo(10.5);
+      expect(parseImperial('10\' 6"')).toBeCloseTo(10.5);
     });
 
     it('parses feet and inches without quotes', () => {

@@ -46,4 +46,3 @@ export function togglePropertiesPanel(): void {
     visible: !config.visible,
   }));
 }
-

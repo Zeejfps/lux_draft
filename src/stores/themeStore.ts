@@ -56,7 +56,7 @@ function updateCSSVariables(theme: Theme): void {
 }
 
 // Derived store for theme name (useful for displaying current theme)
-derived(currentTheme, $theme => $theme.name);
+derived(currentTheme, ($theme) => $theme.name);
 
 // Initialize CSS variables on module load
 updateCSSVariables(BLUEPRINT_THEME);

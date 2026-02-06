@@ -1,7 +1,10 @@
 import type { InputEvent } from '../../core/InputManager';
 import type { Vector2, WallSegment } from '../../types';
 import type { InteractionContext } from '../../types/interaction';
-import type { MeasurementController, MeasurementData } from '../../controllers/MeasurementController';
+import type {
+  MeasurementController,
+  MeasurementData,
+} from '../../controllers/MeasurementController';
 import type { LightManager } from '../../lighting/LightManager';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { findVertexAtPosition } from '../../utils/math';
@@ -113,7 +116,7 @@ export class MeasurementHandler extends BaseInteractionHandler {
     this.callbacks.onMeasurementUpdate(data);
   }
 
-    private handleClickFromLight(
+  private handleClickFromLight(
     event: InputEvent,
     _context: InteractionContext,
     vertices: Vector2[],
@@ -173,21 +176,30 @@ export class MeasurementHandler extends BaseInteractionHandler {
     );
 
     // Check if clicking on the source vertex to drag it
-    if (clickedVertexIndex !== null && clickedVertexIndex === measurementController.sourceVertexIndex) {
+    if (
+      clickedVertexIndex !== null &&
+      clickedVertexIndex === measurementController.sourceVertexIndex
+    ) {
       this.callbacks.onSelectVertex(clickedVertexIndex, false);
       this.callbacks.onStartDrag(clickedVertexIndex, null, event.worldPos);
       return true;
     }
 
     // Check if clicking on another vertex to measure to it
-    if (clickedVertexIndex !== null && clickedVertexIndex !== measurementController.sourceVertexIndex) {
+    if (
+      clickedVertexIndex !== null &&
+      clickedVertexIndex !== measurementController.sourceVertexIndex
+    ) {
       measurementController.setTargetVertex(clickedVertexIndex, vertices[clickedVertexIndex]);
       this.updateDisplay();
       return true;
     }
 
     // Check for light click
-    const clickedLight = this.config.lightManager.getLightAt(event.worldPos, LIGHT_HIT_TOLERANCE_FT);
+    const clickedLight = this.config.lightManager.getLightAt(
+      event.worldPos,
+      LIGHT_HIT_TOLERANCE_FT
+    );
     if (clickedLight) {
       measurementController.setTargetLight(clickedLight.id, clickedLight.position);
       this.updateDisplay();
@@ -195,7 +207,11 @@ export class MeasurementHandler extends BaseInteractionHandler {
     }
 
     // Check for wall click
-    const wall = this.callbacks.getWallAtPosition(event.worldPos, context.roomState.walls, WALL_CLICK_TOLERANCE_FT);
+    const wall = this.callbacks.getWallAtPosition(
+      event.worldPos,
+      context.roomState.walls,
+      WALL_CLICK_TOLERANCE_FT
+    );
     if (wall) {
       measurementController.setTargetWall(wall.id, wall);
       this.updateDisplay();

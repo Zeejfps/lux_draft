@@ -17,15 +17,13 @@ export function requestCameraFit(): void {
 }
 
 // Derived store for backward compatibility - returns first selected vertex or null
-export const selectedVertexIndex = derived(
-  selectedVertexIndices,
-  ($indices) => $indices.size > 0 ? Array.from($indices)[0] : null
+export const selectedVertexIndex = derived(selectedVertexIndices, ($indices) =>
+  $indices.size > 0 ? Array.from($indices)[0] : null
 );
 
 // Derived store for backward compatibility - returns first selected light or null
-export const selectedLightId = derived(
-  selectedLightIds,
-  ($ids) => $ids.size > 0 ? Array.from($ids)[0] : null
+export const selectedLightId = derived(selectedLightIds, ($ids) =>
+  $ids.size > 0 ? Array.from($ids)[0] : null
 );
 
 export const isDrawingEnabled = derived(
@@ -82,7 +80,7 @@ export function clearSelection(): void {
 
 // Light selection helpers
 export function selectLight(id: string, addToSelection: boolean = false): void {
-  selectedLightIds.update(ids => selectionService.selectItem(ids, id, addToSelection));
+  selectedLightIds.update((ids) => selectionService.selectItem(ids, id, addToSelection));
   selectedWallId.set(null);
   selectedVertexIndices.set(new Set());
 }
@@ -93,7 +91,9 @@ export function clearLightSelection(): void {
 
 // Vertex selection helpers
 export function selectVertex(index: number, addToSelection: boolean = false): void {
-  selectedVertexIndices.update(indices => selectionService.selectItem(indices, index, addToSelection));
+  selectedVertexIndices.update((indices) =>
+    selectionService.selectItem(indices, index, addToSelection)
+  );
   selectedWallId.set(null);
   selectedLightIds.set(new Set());
 }
@@ -135,9 +135,13 @@ export function clearObstacleSelection(): void {
 }
 
 // Obstacle vertex selection helpers
-export function selectObstacleVertex(obstacleId: string, vertexIndex: number, addToSelection: boolean = false): void {
+export function selectObstacleVertex(
+  obstacleId: string,
+  vertexIndex: number,
+  addToSelection: boolean = false
+): void {
   selectedObstacleId.set(obstacleId);
-  selectedObstacleVertexIndices.update(indices =>
+  selectedObstacleVertexIndices.update((indices) =>
     selectionService.selectItem(indices, vertexIndex, addToSelection)
   );
   selectedWallId.set(null);

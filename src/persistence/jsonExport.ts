@@ -35,14 +35,12 @@ function createExportData(state: RoomState): ExportData {
   // Find which custom definitions are actually used by lights in this room
   const usedDefinitionIds = new Set(
     state.lights
-      .map(light => light.definitionId)
+      .map((light) => light.definitionId)
       .filter((id): id is string => id !== undefined && id.startsWith('custom-'))
   );
 
   // Only include custom definitions that are used
-  const usedCustomDefinitions = allDefinitions.filter(
-    def => usedDefinitionIds.has(def.id)
-  );
+  const usedCustomDefinitions = allDefinitions.filter((def) => usedDefinitionIds.has(def.id));
 
   return {
     version: 2,

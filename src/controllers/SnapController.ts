@@ -31,7 +31,7 @@ export class SnapController {
     this.snapThreshold = snapThreshold;
   }
 
-    /**
+  /**
    * Snaps a position to align with other vertices.
    * @param pos - The position to snap
    * @param vertices - All vertices to check alignment against
@@ -228,7 +228,13 @@ export class SnapController {
    */
   snapToGrid(pos: Vector2, gridSize: number): Vector2 {
     // Validate inputs to prevent NaN
-    if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number' || !gridSize || gridSize <= 0) {
+    if (
+      !pos ||
+      typeof pos.x !== 'number' ||
+      typeof pos.y !== 'number' ||
+      !gridSize ||
+      gridSize <= 0
+    ) {
       return pos;
     }
     return {

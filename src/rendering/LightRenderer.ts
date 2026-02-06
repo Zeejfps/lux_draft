@@ -84,7 +84,10 @@ export class LightRenderer {
       this.previewLightGroup.add(outerRing);
 
       // Center dot
-      const dotGeometry = new THREE.CircleGeometry(GEOMETRY.LIGHT_PREVIEW_CENTER_RADIUS, GEOMETRY.CIRCLE_SEGMENTS);
+      const dotGeometry = new THREE.CircleGeometry(
+        GEOMETRY.LIGHT_PREVIEW_CENTER_RADIUS,
+        GEOMETRY.CIRCLE_SEGMENTS
+      );
       const dotMaterial = new THREE.MeshBasicMaterial({
         color: color,
         opacity: OPACITY.PREVIEW_LIGHT_CENTER,

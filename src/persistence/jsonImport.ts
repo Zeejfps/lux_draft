@@ -1,4 +1,15 @@
-import type { RoomState, WallSegment, LightFixture, RafterConfig, DisplayPreferences, LightDefinition, Door, DoorSwingDirection, DoorSwingSide, Obstacle } from '../types';
+import type {
+  RoomState,
+  WallSegment,
+  LightFixture,
+  RafterConfig,
+  DisplayPreferences,
+  LightDefinition,
+  Door,
+  DoorSwingDirection,
+  DoorSwingSide,
+  Obstacle,
+} from '../types';
 import { mergeLightDefinitions } from '../stores/lightDefinitionsStore';
 import type { ExportData } from './jsonExport';
 
@@ -50,7 +61,7 @@ export function validateRoomState(data: unknown): RoomState {
       validateDoor(door);
     }
     // Apply migration: add swingSide if missing
-    doors = (obj.doors as Door[]).map(door => ({
+    doors = (obj.doors as Door[]).map((door) => ({
       ...door,
       swingSide: door.swingSide ?? 'inside',
     }));
@@ -256,15 +267,17 @@ function validateDisplayPreferences(data: unknown): DisplayPreferences {
   }
 
   // gridSnapEnabled and gridSize are optional for backwards compatibility
-  const gridSnapEnabled = typeof prefs.gridSnapEnabled === 'boolean' ? prefs.gridSnapEnabled : false;
+  const gridSnapEnabled =
+    typeof prefs.gridSnapEnabled === 'boolean' ? prefs.gridSnapEnabled : false;
   const gridSize = typeof prefs.gridSize === 'number' && prefs.gridSize > 0 ? prefs.gridSize : 0.5;
 
   // lightRadiusVisibility is optional for backwards compatibility
   const validVisibilityValues = ['selected', 'always'];
   const rawVisibility = prefs.lightRadiusVisibility as string | undefined;
-  const lightRadiusVisibility = rawVisibility && validVisibilityValues.includes(rawVisibility)
-    ? (rawVisibility as 'selected' | 'always')
-    : 'selected';
+  const lightRadiusVisibility =
+    rawVisibility && validVisibilityValues.includes(rawVisibility)
+      ? (rawVisibility as 'selected' | 'always')
+      : 'selected';
 
   return {
     useFractions: prefs.useFractions,
@@ -355,8 +368,13 @@ function validateLightDefinition(data: unknown): data is LightDefinition {
   return (
     typeof def.id === 'string' &&
     typeof def.name === 'string' &&
-    typeof def.lumen === 'number' && def.lumen >= 0 &&
-    typeof def.beamAngle === 'number' && def.beamAngle > 0 && def.beamAngle <= 180 &&
-    typeof def.warmth === 'number' && def.warmth >= 1000 && def.warmth <= 10000
+    typeof def.lumen === 'number' &&
+    def.lumen >= 0 &&
+    typeof def.beamAngle === 'number' &&
+    def.beamAngle > 0 &&
+    def.beamAngle <= 180 &&
+    typeof def.warmth === 'number' &&
+    def.warmth >= 1000 &&
+    def.warmth <= 10000
   );
 }

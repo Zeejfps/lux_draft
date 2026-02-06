@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { roomStore, insertVertexOnWall, deleteVertex, getVertices } from '../../../src/stores/roomStore';
+import {
+  roomStore,
+  insertVertexOnWall,
+  deleteVertex,
+  getVertices,
+} from '../../../src/stores/roomStore';
 
 describe('roomStore vertex operations', () => {
   beforeEach(() => {
@@ -57,7 +62,7 @@ describe('roomStore vertex operations', () => {
     });
 
     it('does not insert when room is not closed', () => {
-      roomStore.update(state => ({ ...state, isClosed: false }));
+      roomStore.update((state) => ({ ...state, isClosed: false }));
 
       const initialWallCount = get(roomStore).walls.length;
       insertVertexOnWall('wall-1', { x: 5, y: 0 });
@@ -119,7 +124,7 @@ describe('roomStore vertex operations', () => {
     });
 
     it('does not delete when room is not closed', () => {
-      roomStore.update(state => ({ ...state, isClosed: false }));
+      roomStore.update((state) => ({ ...state, isClosed: false }));
 
       const result = deleteVertex(0);
       expect(result).toBe(false);

@@ -13,7 +13,12 @@ export class ShadowRenderer {
     this.scene = scene;
   }
 
-  computeVisibilityPolygon(lightPos: Vector2, walls: WallSegment[], bounds: BoundingBox, doors: Door[] = []): Vector2[] {
+  computeVisibilityPolygon(
+    lightPos: Vector2,
+    walls: WallSegment[],
+    bounds: BoundingBox,
+    doors: Door[] = []
+  ): Vector2[] {
     const rays: { angle: number; point: Vector2 }[] = [];
 
     const boundaryPoints: Vector2[] = [
@@ -32,7 +37,7 @@ export class ShadowRenderer {
     // Add door segment endpoints
     const doorSegments: { start: Vector2; end: Vector2 }[] = [];
     for (const door of doors) {
-      const wall = walls.find(w => w.id === door.wallId);
+      const wall = walls.find((w) => w.id === door.wallId);
       if (wall) {
         const segment = getDoorEndpoints(door, wall);
         doorSegments.push(segment);
@@ -86,9 +91,11 @@ export class ShadowRenderer {
 
     const polygon: Vector2[] = [];
     for (const ray of rays) {
-      if (polygon.length === 0 ||
-          Math.abs(polygon[polygon.length - 1].x - ray.point.x) > 0.001 ||
-          Math.abs(polygon[polygon.length - 1].y - ray.point.y) > 0.001) {
+      if (
+        polygon.length === 0 ||
+        Math.abs(polygon[polygon.length - 1].x - ray.point.x) > 0.001 ||
+        Math.abs(polygon[polygon.length - 1].y - ray.point.y) > 0.001
+      ) {
         polygon.push(ray.point);
       }
     }
@@ -96,7 +103,14 @@ export class ShadowRenderer {
     return polygon;
   }
 
-  updateShadows(lights: LightFixture[], walls: WallSegment[], bounds: BoundingBox, doors: Door[] = [], obstacles: Obstacle[] = [], ceilingHeight: number = 8): void {
+  updateShadows(
+    lights: LightFixture[],
+    walls: WallSegment[],
+    bounds: BoundingBox,
+    doors: Door[] = [],
+    obstacles: Obstacle[] = [],
+    ceilingHeight: number = 8
+  ): void {
     disposeMeshArray(this.shadowMeshes, this.scene);
 
     const darkGeometry = new THREE.PlaneGeometry(
@@ -109,11 +123,7 @@ export class ShadowRenderer {
       opacity: 0.8,
     });
     const darkMesh = new THREE.Mesh(darkGeometry, darkMaterial);
-    darkMesh.position.set(
-      (bounds.minX + bounds.maxX) / 2,
-      (bounds.minY + bounds.maxY) / 2,
-      -0.04
-    );
+    darkMesh.position.set((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, -0.04);
     darkMesh.visible = this.isVisible;
     this.scene.add(darkMesh);
     this.shadowMeshes.push(darkMesh);
@@ -134,7 +144,12 @@ export class ShadowRenderer {
     const allBlockingWalls = [...walls, ...fullHeightObstacleWalls];
 
     for (const light of lights) {
-      const polygon = this.computeVisibilityPolygon(light.position, allBlockingWalls, bounds, doors);
+      const polygon = this.computeVisibilityPolygon(
+        light.position,
+        allBlockingWalls,
+        bounds,
+        doors
+      );
 
       if (polygon.length >= 3) {
         const shape = new THREE.Shape();
@@ -169,7 +184,11 @@ export class ShadowRenderer {
    * Renders a shadow trapezoid for a partial-height obstacle.
    * Shadow extends D = h * d / (H - h) feet beyond each obstacle edge.
    */
-  private renderPartialShadow(light: LightFixture, obstacle: Obstacle, ceilingHeight: number): void {
+  private renderPartialShadow(
+    light: LightFixture,
+    obstacle: Obstacle,
+    ceilingHeight: number
+  ): void {
     const h = obstacle.height;
     const H = ceilingHeight;
     if (h >= H || h <= 0) return;

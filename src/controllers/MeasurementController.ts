@@ -9,9 +9,7 @@ export interface MeasurementData {
   distance: number;
 }
 
-export type MeasurementSource =
-  | { type: 'vertex'; index: number }
-  | { type: 'light'; id: string };
+export type MeasurementSource = { type: 'vertex'; index: number } | { type: 'light'; id: string };
 
 export type MeasurementTarget =
   | { type: 'vertex'; index: number }
@@ -107,11 +105,7 @@ export class MeasurementController {
     if (!this._fromPosition) return;
 
     this._target = { type: 'wall', id: wallId };
-    this._toPosition = projectPointOntoSegment(
-      this._fromPosition,
-      wall.start,
-      wall.end
-    );
+    this._toPosition = projectPointOntoSegment(this._fromPosition, wall.start, wall.end);
   }
 
   /**
@@ -123,13 +117,9 @@ export class MeasurementController {
     // If measuring to a wall, recalculate projection
     const target = this._target;
     if (target?.type === 'wall' && walls) {
-      const wall = walls.find(w => w.id === target.id);
+      const wall = walls.find((w) => w.id === target.id);
       if (wall) {
-        this._toPosition = projectPointOntoSegment(
-          this._fromPosition,
-          wall.start,
-          wall.end
-        );
+        this._toPosition = projectPointOntoSegment(this._fromPosition, wall.start, wall.end);
       }
     }
   }
@@ -171,5 +161,4 @@ export class MeasurementController {
       distance,
     };
   }
-
 }

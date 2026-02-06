@@ -85,10 +85,7 @@ export class HeatmapRenderer extends BaseLightingRenderer {
     // Extract vertices from wall segments (each wall's start point)
     for (let i = 0; i < MAX_POLYGON_VERTICES; i++) {
       if (i < count) {
-        this.material.uniforms.uPolygonVertices.value[i].set(
-          walls[i].start.x,
-          walls[i].start.y
-        );
+        this.material.uniforms.uPolygonVertices.value[i].set(walls[i].start.x, walls[i].start.y);
       } else {
         this.material.uniforms.uPolygonVertices.value[i].set(0, 0);
       }

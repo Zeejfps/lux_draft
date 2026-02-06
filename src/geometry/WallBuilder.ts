@@ -1,7 +1,13 @@
 import type { Vector2, WallSegment, SnapResult } from '../types';
 import { SnapEngine } from './SnapEngine';
 import { generateId } from '../utils/id';
-import { distancePointToPoint, vectorSubtract, vectorNormalize, vectorScale, vectorAdd } from '../utils/math';
+import {
+  distancePointToPoint,
+  vectorSubtract,
+  vectorNormalize,
+  vectorScale,
+  vectorAdd,
+} from '../utils/math';
 import { MIN_WALL_LENGTH_FT, MIN_SEGMENT_LENGTH_FT } from '../constants/editor';
 
 export class WallBuilder {
@@ -55,7 +61,12 @@ export class WallBuilder {
     const prevDir = this.getPreviousSegmentDirection();
     const startVertex = this.vertices.length >= 3 ? this.vertices[0] : null;
 
-    this.currentSnapResult = this.snapEngine.snapToConstraint(prevDir, mousePos, startVertex, anchor);
+    this.currentSnapResult = this.snapEngine.snapToConstraint(
+      prevDir,
+      mousePos,
+      startVertex,
+      anchor
+    );
     let snappedPos = this.currentSnapResult.snappedPos;
 
     if (this.manualLength !== null && this.currentSnapResult.snapType !== 'closure') {

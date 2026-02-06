@@ -62,8 +62,6 @@ export const DEFAULT_ROOM_STATE: RoomState = {
   isClosed: false,
 };
 
-
-
 export const DEFAULT_RAFTER_CONFIG: RafterConfig = {
   orientation: 'horizontal',
   spacing: 1.333,

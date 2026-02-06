@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { lightingStatsConfig, lightingMetrics, setRoomType, toggleLightingStats } from '../stores/lightingStatsStore';
+  import {
+    lightingStatsConfig,
+    lightingMetrics,
+    setRoomType,
+    toggleLightingStats,
+  } from '../stores/lightingStatsStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { LightingMetrics, LightingStatsConfig, RoomType } from '../types';
   import { ROOM_LIGHTING_STANDARDS } from '../types';
@@ -12,12 +17,18 @@
 
   function getGradeColor(grade: string): string {
     switch (grade) {
-      case 'A': return 'var(--status-success)';
-      case 'B': return '#84cc16'; // lime-500 - between success and warning
-      case 'C': return 'var(--status-warning)';
-      case 'D': return '#f97316'; // orange-500 - between warning and error
-      case 'F': return 'var(--status-error)';
-      default: return 'var(--text-muted)';
+      case 'A':
+        return 'var(--status-success)';
+      case 'B':
+        return '#84cc16'; // lime-500 - between success and warning
+      case 'C':
+        return 'var(--status-warning)';
+      case 'D':
+        return '#f97316'; // orange-500 - between warning and error
+      case 'F':
+        return 'var(--status-error)';
+      default:
+        return 'var(--text-muted)';
     }
   }
 
@@ -60,68 +71,71 @@
   onClose={toggleLightingStats}
 >
   <div class="room-type-selector">
-      <label>
-        <span>Room Type</span>
-        <select value={config.roomType} on:change={handleRoomTypeChange}>
-          {#each roomTypes as rt (rt.value)}
-            <option value={rt.value}>{rt.label}</option>
-          {/each}
-        </select>
-      </label>
+    <label>
+      <span>Room Type</span>
+      <select value={config.roomType} on:change={handleRoomTypeChange}>
+        {#each roomTypes as rt (rt.value)}
+          <option value={rt.value}>{rt.label}</option>
+        {/each}
+      </select>
+    </label>
+  </div>
+
+  {#if metrics}
+    <div class="grade-section">
+      <span class="grade-label">Grade</span>
+      <span class="grade-value" style="color: {getGradeColor(metrics.coverageGrade)}">
+        {metrics.coverageGrade}
+      </span>
     </div>
 
-    {#if metrics}
-      <div class="grade-section">
-        <span class="grade-label">Grade</span>
-        <span class="grade-value" style="color: {getGradeColor(metrics.coverageGrade)}">
-          {metrics.coverageGrade}
-        </span>
+    <div class="metrics-section primary">
+      <div class="metric-row highlight">
+        <span class="metric-label">Total Lumens</span>
+        <span class="metric-value">{formatNumber(metrics.totalLumens)}</span>
       </div>
-
-      <div class="metrics-section primary">
-        <div class="metric-row highlight">
-          <span class="metric-label">Total Lumens</span>
-          <span class="metric-value">{formatNumber(metrics.totalLumens)}</span>
-        </div>
-        <div class="metric-row highlight">
-          <span class="metric-label">Room Area</span>
-          <span class="metric-value">{formatNumber(metrics.roomArea)} ft²</span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Lumens/ft²</span>
-          <span class="metric-value">{metrics.lumensPerSqFt.toFixed(1)}</span>
-        </div>
-        <div class="metric-row recommended">
-          <span class="metric-label">Recommended</span>
-          <span class="metric-value">{formatNumber(metrics.recommendedLumens)} lm</span>
-        </div>
+      <div class="metric-row highlight">
+        <span class="metric-label">Room Area</span>
+        <span class="metric-value">{formatNumber(metrics.roomArea)} ft²</span>
       </div>
-
-      {#if metrics.additionalLightsNeeded > 0}
-        <div class="recommendation">
-          Add <strong>{metrics.additionalLightsNeeded}</strong> more light{metrics.additionalLightsNeeded > 1 ? 's' : ''} for ideal brightness
-        </div>
-      {:else}
-        <div class="recommendation good">
-          Brightness is sufficient for a {ROOM_LIGHTING_STANDARDS[metrics.roomType].label.toLowerCase()}
-        </div>
-      {/if}
-
-      <div class="metrics-section secondary">
-        <div class="section-title">Distribution</div>
-        <div class="metric-row">
-          <span class="metric-label">Uniformity</span>
-          <span class="metric-value">{formatPercent(metrics.uniformityRatio)}</span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Min/Max Lux</span>
-          <span class="metric-value">{formatLux(metrics.minLux)} - {formatLux(metrics.maxLux)}</span>
-        </div>
+      <div class="metric-row">
+        <span class="metric-label">Lumens/ft²</span>
+        <span class="metric-value">{metrics.lumensPerSqFt.toFixed(1)}</span>
       </div>
+      <div class="metric-row recommended">
+        <span class="metric-label">Recommended</span>
+        <span class="metric-value">{formatNumber(metrics.recommendedLumens)} lm</span>
+      </div>
+    </div>
+
+    {#if metrics.additionalLightsNeeded > 0}
+      <div class="recommendation">
+        Add <strong>{metrics.additionalLightsNeeded}</strong> more light{metrics.additionalLightsNeeded >
+        1
+          ? 's'
+          : ''} for ideal brightness
+      </div>
+    {:else}
+      <div class="recommendation good">
+        Brightness is sufficient for a {ROOM_LIGHTING_STANDARDS[
+          metrics.roomType
+        ].label.toLowerCase()}
+      </div>
+    {/if}
+
+    <div class="metrics-section secondary">
+      <div class="section-title">Distribution</div>
+      <div class="metric-row">
+        <span class="metric-label">Uniformity</span>
+        <span class="metric-value">{formatPercent(metrics.uniformityRatio)}</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">Min/Max Lux</span>
+        <span class="metric-value">{formatLux(metrics.minLux)} - {formatLux(metrics.maxLux)}</span>
+      </div>
+    </div>
   {:else}
-    <div class="no-data">
-      Draw a closed room and add lights to see analysis
-    </div>
+    <div class="no-data">Draw a closed room and add lights to see analysis</div>
   {/if}
 </FloatingPanel>
 

@@ -37,10 +37,7 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
   private config: BoxSelectionHandlerConfig;
   private callbacks: BoxSelectionHandlerCallbacks;
 
-  constructor(
-    config: BoxSelectionHandlerConfig,
-    callbacks: BoxSelectionHandlerCallbacks
-  ) {
+  constructor(config: BoxSelectionHandlerConfig, callbacks: BoxSelectionHandlerCallbacks) {
     super();
     this.config = config;
     this.callbacks = callbacks;
@@ -48,7 +45,10 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
 
   canHandle(_event: InputEvent, context: InteractionContext): boolean {
     const state = this.config.getBoxSelectionState();
-    return state.isSelecting || (context.roomState.isClosed && !context.isDrawingEnabled && !context.isPlacingLights);
+    return (
+      state.isSelecting ||
+      (context.roomState.isClosed && !context.isDrawingEnabled && !context.isPlacingLights)
+    );
   }
 
   handleMouseMove(event: InputEvent, _context: InteractionContext): boolean {
@@ -82,7 +82,7 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
     // Find obstacle vertices in box (only for the currently selected obstacle)
     const selectedObstacleId = context.selection.selectedObstacleId;
     const selectedObstacle = selectedObstacleId
-      ? (context.roomState.obstacles ?? []).find(o => o.id === selectedObstacleId)
+      ? (context.roomState.obstacles ?? []).find((o) => o.id === selectedObstacleId)
       : null;
     const obstacleVerticesInBox = selectedObstacle
       ? this.findObstacleVerticesInBox(
@@ -93,7 +93,12 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
       : [];
 
     // Complete selection
-    this.callbacks.onBoxSelectionComplete(indicesInBox, lightIdsInBox, obstacleVerticesInBox, addToSelection);
+    this.callbacks.onBoxSelectionComplete(
+      indicesInBox,
+      lightIdsInBox,
+      obstacleVerticesInBox,
+      addToSelection
+    );
 
     // Reset state
     this.config.setBoxSelectionState({
@@ -113,7 +118,7 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
     const results: ObstacleVertexBoxSelection[] = [];
 
     for (const obstacle of obstacles) {
-      const obstacleVertices = obstacle.walls.map(w => w.start);
+      const obstacleVertices = obstacle.walls.map((w) => w.start);
       const indicesInBox = findVerticesInBox(obstacleVertices, boxStart, boxEnd);
       if (indicesInBox.length > 0) {
         results.push({

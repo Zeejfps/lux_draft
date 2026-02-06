@@ -54,18 +54,10 @@
 </script>
 
 <div class="file-menu">
-  <button on:click={handleNew} title="New Project">
-    New
-  </button>
-  <button on:click={handleSave} title="Save to Browser">
-    Save
-  </button>
-  <button on:click={handleExport} title="Export as JSON">
-    Export
-  </button>
-  <button on:click={handleImportClick} title="Import JSON">
-    Import
-  </button>
+  <button on:click={handleNew} title="New Project"> New </button>
+  <button on:click={handleSave} title="Save to Browser"> Save </button>
+  <button on:click={handleExport} title="Export as JSON"> Export </button>
+  <button on:click={handleImportClick} title="Import JSON"> Import </button>
   <input
     type="file"
     accept=".json"

@@ -49,8 +49,16 @@ describe('Render Modes Integration', () => {
 
     it('handles multiple overlapping lights', () => {
       const lights: LightFixture[] = [
-        { id: '1', position: { x: 5, y: 10 }, properties: { lumen: 800, beamAngle: 120, warmth: 2700 } },
-        { id: '2', position: { x: 15, y: 10 }, properties: { lumen: 800, beamAngle: 120, warmth: 2700 } },
+        {
+          id: '1',
+          position: { x: 5, y: 10 },
+          properties: { lumen: 800, beamAngle: 120, warmth: 2700 },
+        },
+        {
+          id: '2',
+          position: { x: 15, y: 10 },
+          properties: { lumen: 800, beamAngle: 120, warmth: 2700 },
+        },
       ];
 
       // Point equidistant from both lights should have more total light

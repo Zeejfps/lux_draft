@@ -11,12 +11,14 @@ While built for personal use, it may be useful for anyone planning lighting layo
 ## Features
 
 ### Room Design
+
 - **Interactive Drawing Tools** - Create room layouts with walls, rafters, and architectural features
 - **Snap-to-Grid System** - Precise positioning with intelligent snapping
 - **Measurement Tools** - Real-time distance and dimension measurements
 - **Undo/Redo History** - Full editing history with keyboard shortcuts
 
 ### Lighting Analysis
+
 - **IES Photometric Support** - Import and parse industry-standard IES files
 - **Real-time Calculations** - Accurate illuminance (lux) calculations using photometric principles
 - **Visual Heatmaps** - Color-coded illumination visualization across the floor plan
@@ -25,6 +27,7 @@ While built for personal use, it may be useful for anyone planning lighting layo
 - **Light Statistics** - Comprehensive metrics including average lux, uniformity ratios, and coverage
 
 ### Professional Tools
+
 - **Custom Light Definitions** - Create and manage fixture libraries with lumen output and beam angles
 - **Property Panel** - Edit fixture properties, positions, and photometric data
 - **Multiple View Modes** - Switch between design and analysis views
@@ -42,6 +45,7 @@ While built for personal use, it may be useful for anyone planning lighting layo
 ## Getting Started
 
 ### Prerequisites
+
 - Node.js (v18 or higher recommended)
 - npm or yarn package manager
 - Git LFS (Large File Storage) - required for image assets
@@ -93,16 +97,16 @@ npm run test:run
 
 ### Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| `D` | Switch to Draw mode |
-| `V` | Switch to Select mode |
-| `L` | Switch to Light placement mode / Set manual length (in draw mode) |
-| `M` | Toggle measurement tool |
-| `S` | Toggle grid snap |
-| `Esc` | Cancel current operation / Clear measurement |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
+| Key                       | Action                                                            |
+| ------------------------- | ----------------------------------------------------------------- |
+| `D`                       | Switch to Draw mode                                               |
+| `V`                       | Switch to Select mode                                             |
+| `L`                       | Switch to Light placement mode / Set manual length (in draw mode) |
+| `M`                       | Toggle measurement tool                                           |
+| `S`                       | Toggle grid snap                                                  |
+| `Esc`                     | Cancel current operation / Clear measurement                      |
+| `Ctrl+Z`                  | Undo                                                              |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo                                                              |
 
 ### Drawing a Room
 

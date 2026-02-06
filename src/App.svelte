@@ -23,8 +23,6 @@
   import './stores/themeStore'; // Initialize theme CSS variables
   import type { Vector2 } from './types';
 
-
-
   let canvasComponent: Canvas;
   let mousePos: Vector2 = { x: 0, y: 0 };
   let snapType: string = '';
@@ -41,7 +39,9 @@
     snapType = e.detail.snapType;
   }
 
-  function handleMeasurement(e: CustomEvent<{ deltaX: number; deltaY: number; distance: number } | null>): void {
+  function handleMeasurement(
+    e: CustomEvent<{ deltaX: number; deltaY: number; distance: number } | null>
+  ): void {
     measurement = e.detail;
   }
 
@@ -76,7 +76,12 @@
     switch (e.key.toLowerCase()) {
       case 'escape':
         // Switch to selection tool if currently using a drawing tool
-        if ($activeTool === 'draw' || $activeTool === 'light' || $activeTool === 'door' || $activeTool === 'obstacle') {
+        if (
+          $activeTool === 'draw' ||
+          $activeTool === 'light' ||
+          $activeTool === 'door' ||
+          $activeTool === 'obstacle'
+        ) {
           setActiveTool('select');
         }
         break;
@@ -97,7 +102,7 @@
         setActiveTool('obstacle');
         break;
       case 's':
-        displayPreferences.update(p => ({ ...p, gridSnapEnabled: !p.gridSnapEnabled }));
+        displayPreferences.update((p) => ({ ...p, gridSnapEnabled: !p.gridSnapEnabled }));
         break;
       case 'p':
         togglePropertiesPanel();
@@ -129,7 +134,10 @@
 </script>
 
 <div class="app">
-  <Toolbar on:toggleMeasurement={handleToggleMeasurement} on:openLightManager={handleOpenLightManager} />
+  <Toolbar
+    on:toggleMeasurement={handleToggleMeasurement}
+    on:openLightManager={handleOpenLightManager}
+  />
 
   <main class="main">
     <div class="canvas-area">
@@ -151,7 +159,9 @@
             <span class="measurement-value">{Math.abs(measurement.deltaY).toFixed(2)} ft</span>
           </div>
           <div class="measurement-row">
-            <span class="measurement-label" style="color: var(--measurement-distance);">Distance:</span>
+            <span class="measurement-label" style="color: var(--measurement-distance);"
+              >Distance:</span
+            >
             <span class="measurement-value">{measurement.distance.toFixed(2)} ft</span>
           </div>
           <div class="measurement-hint">Press M or Esc to clear</div>
@@ -178,10 +188,7 @@
     on:cancel={handleLengthCancel}
   />
 
-  <LightDefinitionManager
-    visible={showLightManager}
-    on:close={handleCloseLightManager}
-  />
+  <LightDefinitionManager visible={showLightManager} on:close={handleCloseLightManager} />
 </div>
 
 <style>
@@ -204,7 +211,6 @@
     height: 100vh;
     background: var(--input-bg);
   }
-
 
   .main {
     display: flex;

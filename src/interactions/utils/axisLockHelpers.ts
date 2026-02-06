@@ -23,10 +23,7 @@ function getAxisFromKey(event: InputEvent): AxisLock | null {
  * Handle axis lock key press.
  * Returns true if the event was handled.
  */
-export function handleAxisLockKey(
-  event: InputEvent,
-  config: AxisLockHandlerConfig
-): boolean {
+export function handleAxisLockKey(event: InputEvent, config: AxisLockHandlerConfig): boolean {
   if (event.ctrlKey || event.altKey) return false;
 
   const axis = getAxisFromKey(event);

@@ -11,7 +11,7 @@ function loadCustomDefinitions(): LightDefinition[] {
     if (!data) return [];
     const parsed = JSON.parse(data) as LightDefinition[];
     // Filter out any that might have invalid data
-    return parsed.filter(d => d.id && d.name && typeof d.lumen === 'number');
+    return parsed.filter((d) => d.id && d.name && typeof d.lumen === 'number');
   } catch (e) {
     console.error('Failed to load custom light definitions:', e);
     return [];
@@ -21,7 +21,7 @@ function loadCustomDefinitions(): LightDefinition[] {
 function saveCustomDefinitions(definitions: LightDefinition[]): void {
   try {
     // Only save custom definitions (those with custom- prefix)
-    const customDefs = definitions.filter(d => d.id.startsWith('custom-'));
+    const customDefs = definitions.filter((d) => d.id.startsWith('custom-'));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(customDefs));
   } catch (e) {
     console.error('Failed to save custom light definitions:', e);
@@ -35,21 +35,18 @@ const initialDefinitions = [...DEFAULT_LIGHT_DEFINITIONS, ...customDefs];
 export const lightDefinitions = writable<LightDefinition[]>(initialDefinitions);
 
 // Save to localStorage whenever definitions change
-lightDefinitions.subscribe(defs => {
+lightDefinitions.subscribe((defs) => {
   saveCustomDefinitions(defs);
 });
 
 export const selectedDefinitionId = writable<string>(DEFAULT_LIGHT_DEFINITIONS[0].id);
 
-derived(
-  [lightDefinitions, selectedDefinitionId],
-  ([$definitions, $selectedId]) => {
-    return $definitions.find(d => d.id === $selectedId) ?? $definitions[0];
-  }
-);
+derived([lightDefinitions, selectedDefinitionId], ([$definitions, $selectedId]) => {
+  return $definitions.find((d) => d.id === $selectedId) ?? $definitions[0];
+});
 
 export function getDefinitionById(id: string): LightDefinition | undefined {
-  return get(lightDefinitions).find(d => d.id === id);
+  return get(lightDefinitions).find((d) => d.id === id);
 }
 
 export function addLightDefinition(definition: Omit<LightDefinition, 'id'>): LightDefinition {
@@ -57,14 +54,15 @@ export function addLightDefinition(definition: Omit<LightDefinition, 'id'>): Lig
     ...definition,
     id: `custom-${Date.now()}`,
   };
-  lightDefinitions.update(defs => [...defs, newDef]);
+  lightDefinitions.update((defs) => [...defs, newDef]);
   return newDef;
 }
 
-export function addLightDefinitionFromIES(iesData: IESData, warmth: number = 3000): LightDefinition {
-  const name = iesData.manufacturer
-    ? `${iesData.manufacturer} - ${iesData.name}`
-    : iesData.name;
+export function addLightDefinitionFromIES(
+  iesData: IESData,
+  warmth: number = 3000
+): LightDefinition {
+  const name = iesData.manufacturer ? `${iesData.manufacturer} - ${iesData.name}` : iesData.name;
 
   // Create a descriptive name with key specs
   const displayName = `${name} (${iesData.lumens}lm, ${iesData.beamAngle}°)`;
@@ -77,10 +75,11 @@ export function addLightDefinitionFromIES(iesData: IESData, warmth: number = 300
   });
 }
 
-export function updateLightDefinition(id: string, updates: Partial<Omit<LightDefinition, 'id'>>): void {
-  lightDefinitions.update(defs =>
-    defs.map(d => d.id === id ? { ...d, ...updates } : d)
-  );
+export function updateLightDefinition(
+  id: string,
+  updates: Partial<Omit<LightDefinition, 'id'>>
+): void {
+  lightDefinitions.update((defs) => defs.map((d) => (d.id === id ? { ...d, ...updates } : d)));
 }
 
 export function deleteLightDefinition(id: string): void {
@@ -91,7 +90,7 @@ export function deleteLightDefinition(id: string): void {
   // Don't allow deleting built-in definitions
   if (!id.startsWith('custom-')) return;
 
-  lightDefinitions.update(defs => defs.filter(d => d.id !== id));
+  lightDefinitions.update((defs) => defs.filter((d) => d.id !== id));
 
   // If the deleted definition was selected, select the first one
   if (get(selectedDefinitionId) === id) {
@@ -104,9 +103,9 @@ export function setSelectedDefinition(id: string): void {
 }
 
 export function mergeLightDefinitions(definitions: LightDefinition[]): void {
-  lightDefinitions.update(existingDefs => {
-    const existingIds = new Set(existingDefs.map(d => d.id));
-    const newDefs = definitions.filter(d => !existingIds.has(d.id));
+  lightDefinitions.update((existingDefs) => {
+    const existingIds = new Set(existingDefs.map((d) => d.id));
+    const newDefs = definitions.filter((d) => !existingIds.has(d.id));
     return [...existingDefs, ...newDefs];
   });
 }

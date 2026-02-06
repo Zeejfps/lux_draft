@@ -1,6 +1,10 @@
 import { writable, get } from 'svelte/store';
 import type { RafterConfig, DisplayPreferences } from '../types';
-import { DEFAULT_RAFTER_CONFIG, DEFAULT_DISPLAY_PREFERENCES, migrateLightRadiusVisibility } from '../types';
+import {
+  DEFAULT_RAFTER_CONFIG,
+  DEFAULT_DISPLAY_PREFERENCES,
+  migrateLightRadiusVisibility,
+} from '../types';
 import { roomStore } from './roomStore';
 
 export const rafterConfig = writable<RafterConfig>({ ...DEFAULT_RAFTER_CONFIG });
@@ -15,13 +19,13 @@ let isLoadingFromSavedState = false;
 // Sync settings to roomStore when they change (but not during initial load)
 rafterConfig.subscribe((config) => {
   if (!isLoadingFromSavedState) {
-    roomStore.update(state => ({ ...state, rafterConfig: config }));
+    roomStore.update((state) => ({ ...state, rafterConfig: config }));
   }
 });
 
 displayPreferences.subscribe((prefs) => {
   if (!isLoadingFromSavedState) {
-    roomStore.update(state => ({ ...state, displayPreferences: prefs }));
+    roomStore.update((state) => ({ ...state, displayPreferences: prefs }));
   }
 });
 
@@ -37,7 +41,9 @@ export function initSettingsFromRoom(): void {
     // Merge with defaults to handle missing fields from old data
     const mergedPrefs = { ...DEFAULT_DISPLAY_PREFERENCES, ...state.displayPreferences };
     // Migrate legacy 'never' value to 'selected'
-    mergedPrefs.lightRadiusVisibility = migrateLightRadiusVisibility(mergedPrefs.lightRadiusVisibility);
+    mergedPrefs.lightRadiusVisibility = migrateLightRadiusVisibility(
+      mergedPrefs.lightRadiusVisibility
+    );
     displayPreferences.set(mergedPrefs);
   }
   isLoadingFromSavedState = false;
@@ -61,4 +67,3 @@ export function toggleUnitFormat(): void {
     unitFormat: prefs.unitFormat === 'feet-inches' ? 'inches' : 'feet-inches',
   }));
 }
-

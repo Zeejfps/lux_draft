@@ -1,5 +1,11 @@
 import type { Vector2, WallSegment, Door, UnitFormat } from '../types';
-import { vectorAdd, vectorScale, vectorSubtract, vectorNormalize, vectorPerpendicular } from '../utils/math';
+import {
+  vectorAdd,
+  vectorScale,
+  vectorSubtract,
+  vectorNormalize,
+  vectorPerpendicular,
+} from '../utils/math';
 import { formatImperial } from '../utils/format';
 import { getWallSegmentsWithDoors } from '../rendering/editorRendering';
 
@@ -56,8 +62,8 @@ export function getWallDimensionLabels(
 
   // Filter out segments too short to label (< 0.1 units)
   return segments
-    .filter(seg => seg.length > 0.1)
-    .map(seg => getSegmentDimensionLabel(seg.start, seg.end, seg.length, options));
+    .filter((seg) => seg.length > 0.1)
+    .map((seg) => getSegmentDimensionLabel(seg.start, seg.end, seg.length, options));
 }
 
 /**

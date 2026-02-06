@@ -6,7 +6,7 @@
     updateLightDefinition,
     deleteLightDefinition,
     addLightDefinitionFromIES,
-    setSelectedDefinition
+    setSelectedDefinition,
   } from '../stores/lightDefinitionsStore';
   import { readIESFile } from '../lighting/IESParser';
   import type { LightDefinition } from '../types';
@@ -163,14 +163,27 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if visible}
-  <div class="modal-overlay" on:click={close} on:keydown={(e) => e.key === 'Enter' && close()} role="button" tabindex="0">
-    <div class="modal" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
+  <div
+    class="modal-overlay"
+    on:click={close}
+    on:keydown={(e) => e.key === 'Enter' && close()}
+    role="button"
+    tabindex="0"
+  >
+    <div
+      class="modal"
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+    >
       <div class="modal-header">
         <h2>Light Types</h2>
         <button class="close-button" on:click={close} title="Close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         </button>
       </div>
@@ -186,23 +199,13 @@
 
             <label class="form-field">
               <span>Name</span>
-              <input
-                type="text"
-                bind:value={formName}
-                placeholder="e.g., My Custom Light"
-              />
+              <input type="text" bind:value={formName} placeholder="e.g., My Custom Light" />
             </label>
 
             <label class="form-field">
               <span>Lumens</span>
               <div class="input-with-unit">
-                <input
-                  type="number"
-                  bind:value={formLumen}
-                  min="1"
-                  max="100000"
-                  step="50"
-                />
+                <input type="number" bind:value={formLumen} min="1" max="100000" step="50" />
                 <span class="unit">lm</span>
               </div>
             </label>
@@ -210,13 +213,7 @@
             <label class="form-field">
               <span>Beam Angle</span>
               <div class="input-with-unit">
-                <input
-                  type="number"
-                  bind:value={formBeamAngle}
-                  min="1"
-                  max="180"
-                  step="5"
-                />
+                <input type="number" bind:value={formBeamAngle} min="1" max="180" step="5" />
                 <span class="unit">°</span>
               </div>
             </label>
@@ -224,13 +221,7 @@
             <label class="form-field">
               <span>Color Temperature</span>
               <div class="input-with-unit">
-                <input
-                  type="number"
-                  bind:value={formWarmth}
-                  min="1000"
-                  max="10000"
-                  step="100"
-                />
+                <input type="number" bind:value={formWarmth} min="1000" max="10000" step="100" />
                 <span class="unit">K</span>
               </div>
             </label>
@@ -246,16 +237,16 @@
           <div class="actions-bar">
             <button class="btn btn-primary" on:click={startCreate}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
               New Light Type
             </button>
             <button class="btn btn-secondary" on:click={triggerIESImport}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
               Import IES
             </button>
@@ -278,7 +269,7 @@
           <div class="definitions-list">
             <div class="list-section">
               <h4>Built-in Types</h4>
-              {#each definitions.filter(d => isBuiltIn(d)) as def (def.id)}
+              {#each definitions.filter((d) => isBuiltIn(d)) as def (def.id)}
                 <div class="definition-item">
                   <div class="definition-info">
                     <span class="definition-name">{def.name}</span>
@@ -290,10 +281,10 @@
               {/each}
             </div>
 
-            {#if definitions.some(d => !isBuiltIn(d))}
+            {#if definitions.some((d) => !isBuiltIn(d))}
               <div class="list-section">
                 <h4>Custom Types</h4>
-                {#each definitions.filter(d => !isBuiltIn(d)) as def (def.id)}
+                {#each definitions.filter((d) => !isBuiltIn(d)) as def (def.id)}
                   <div class="definition-item custom">
                     <div class="definition-info">
                       <span class="definition-name">{def.name}</span>
@@ -302,14 +293,10 @@
                       </span>
                     </div>
                     <div class="definition-actions">
-                      <button
-                        class="icon-btn"
-                        on:click={() => startEdit(def)}
-                        title="Edit"
-                      >
+                      <button class="icon-btn" on:click={() => startEdit(def)} title="Edit">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                         </svg>
                       </button>
                       <button
@@ -318,8 +305,10 @@
                         title="Delete"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <polyline points="3 6 5 6 21 6"/>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                          <polyline points="3 6 5 6 21 6" />
+                          <path
+                            d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                          />
                         </svg>
                       </button>
                     </div>

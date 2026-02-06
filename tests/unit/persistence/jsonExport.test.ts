@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { getJSONString } from '../../../src/persistence/jsonExport';
-import { validateRoomState, ValidationError, importFromString } from '../../../src/persistence/jsonImport';
+import {
+  validateRoomState,
+  ValidationError,
+  importFromString,
+} from '../../../src/persistence/jsonImport';
 import type { RoomState } from '../../../src/types';
 
 describe('JSON Export/Import', () => {
@@ -51,9 +55,7 @@ describe('JSON Export/Import', () => {
     it('validates complete room state', () => {
       const data = {
         ceilingHeight: 8,
-        walls: [
-          { id: '1', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, length: 10 },
-        ],
+        walls: [{ id: '1', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, length: 10 }],
         lights: [
           {
             id: '1',

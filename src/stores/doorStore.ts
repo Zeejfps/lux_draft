@@ -17,15 +17,15 @@ const DEFAULT_SETTINGS: DoorPlacementSettings = {
 export const doorPlacementSettings = writable<DoorPlacementSettings>({ ...DEFAULT_SETTINGS });
 
 export function setDoorWidth(width: number): void {
-  doorPlacementSettings.update(s => ({ ...s, width }));
+  doorPlacementSettings.update((s) => ({ ...s, width }));
 }
 
 export function setDoorSwingDirection(direction: DoorSwingDirection): void {
-  doorPlacementSettings.update(s => ({ ...s, swingDirection: direction }));
+  doorPlacementSettings.update((s) => ({ ...s, swingDirection: direction }));
 }
 
 export function setDoorSwingSide(side: DoorSwingSide): void {
-  doorPlacementSettings.update(s => ({ ...s, swingSide: side }));
+  doorPlacementSettings.update((s) => ({ ...s, swingSide: side }));
 }
 
 export function getDoorPlacementSettings(): DoorPlacementSettings {

@@ -1,8 +1,5 @@
 import type { Vector2, WallSegment } from '../../types';
-import type {
-  DragStartContext,
-  DragUpdateContext,
-} from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { SnapController } from '../../controllers/SnapController';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
@@ -54,14 +51,24 @@ export class WallDragOperation extends BaseDragOperation {
   }
 
   update(context: DragUpdateContext): void {
-    if (!this._isActive || !this.wallId || !this.startPosition ||
-        !this.originalStart || !this.originalEnd) return;
+    if (
+      !this._isActive ||
+      !this.wallId ||
+      !this.startPosition ||
+      !this.originalStart ||
+      !this.originalEnd
+    )
+      return;
 
     let constrainedPos = context.position;
 
     // Apply axis lock
     if (context.axisLock !== 'none') {
-      constrainedPos = this.applyAxisConstraint(context.position, context.axisLock, this.startPosition);
+      constrainedPos = this.applyAxisConstraint(
+        context.position,
+        context.axisLock,
+        this.startPosition
+      );
     }
 
     // Calculate delta from start position

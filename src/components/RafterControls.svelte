@@ -21,7 +21,7 @@
   function handleOffsetChange(axis: 'offsetX' | 'offsetY', e: Event): void {
     const inches = parseFloat((e.target as HTMLInputElement).value);
     if (!isNaN(inches)) {
-      rafterConfig.update(c => ({ ...c, [axis]: inches / 12 }));
+      rafterConfig.update((c) => ({ ...c, [axis]: inches / 12 }));
     }
   }
 </script>
@@ -122,7 +122,7 @@
     gap: 4px;
   }
 
-  input[type="number"] {
+  input[type='number'] {
     width: 60px;
     padding: 4px 8px;
     border: 1px solid var(--input-border);

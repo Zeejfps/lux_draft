@@ -1,7 +1,20 @@
-import type { LightFixture, WallSegment, BoundingBox, LightingMetrics, RoomType, Obstacle } from '../types';
+import type {
+  LightFixture,
+  WallSegment,
+  BoundingBox,
+  LightingMetrics,
+  RoomType,
+  Obstacle,
+} from '../types';
 import { ROOM_LIGHTING_STANDARDS } from '../types';
 import { LightCalculator } from './LightCalculator';
-import { isPointInRoom, isPointInPolygon, calculateRoomArea, calculatePolygonArea, getDistanceToNearestWall } from '../utils/geometry';
+import {
+  isPointInRoom,
+  isPointInPolygon,
+  calculateRoomArea,
+  calculatePolygonArea,
+  getDistanceToNearestWall,
+} from '../utils/geometry';
 import {
   WALL_MARGIN_FT,
   MIN_LUX_PERCENTILE,
@@ -34,12 +47,26 @@ export class LightingStatsCalculator {
       return null;
     }
 
-    const key = this.generateCacheKey(lights, walls, ceilingHeight, gridSpacing, roomType, obstacles);
+    const key = this.generateCacheKey(
+      lights,
+      walls,
+      ceilingHeight,
+      gridSpacing,
+      roomType,
+      obstacles
+    );
     if (key === this.cacheKey && this.cachedMetrics) {
       return this.cachedMetrics;
     }
 
-    const samples = this.sampleLuxValues(lights, walls, bounds, ceilingHeight, gridSpacing, obstacles);
+    const samples = this.sampleLuxValues(
+      lights,
+      walls,
+      bounds,
+      ceilingHeight,
+      gridSpacing,
+      obstacles
+    );
     if (samples.length === 0) {
       return null;
     }
@@ -62,7 +89,7 @@ export class LightingStatsCalculator {
     // Calculate room-based metrics (subtract obstacle footprint areas)
     let roomArea = calculateRoomArea(walls);
     for (const obstacle of obstacles) {
-      const obstacleVertices = obstacle.walls.map(w => w.start);
+      const obstacleVertices = obstacle.walls.map((w) => w.start);
       roomArea -= calculatePolygonArea(obstacleVertices);
     }
     roomArea = Math.max(roomArea, 0);
@@ -76,7 +103,8 @@ export class LightingStatsCalculator {
     // Calculate additional lights needed (assuming average lumen per light)
     const avgLumenPerLight = totalLumens / lights.length;
     const lumensNeeded = Math.max(0, recommendedLumens - totalLumens);
-    const additionalLightsNeeded = avgLumenPerLight > 0 ? Math.ceil(lumensNeeded / avgLumenPerLight) : 0;
+    const additionalLightsNeeded =
+      avgLumenPerLight > 0 ? Math.ceil(lumensNeeded / avgLumenPerLight) : 0;
 
     // Calculate grade based on lumens per sq ft relative to room type standards
     const coverageGrade = this.calculateGrade(uniformityRatio, lumensPerSqFt, roomType);
@@ -115,9 +143,11 @@ export class LightingStatsCalculator {
     for (let x = bounds.minX; x <= bounds.maxX; x += gridSpacing) {
       for (let y = bounds.minY; y <= bounds.maxY; y += gridSpacing) {
         const point = { x, y };
-        if (isPointInRoom(point, walls) &&
-            getDistanceToNearestWall(point, walls) >= WALL_MARGIN_FT &&
-            !this.isPointInAnyObstacle(point, obstacles)) {
+        if (
+          isPointInRoom(point, walls) &&
+          getDistanceToNearestWall(point, walls) >= WALL_MARGIN_FT &&
+          !this.isPointInAnyObstacle(point, obstacles)
+        ) {
           const lux = this.lightCalculator.calculateLux(point, lights, ceilingHeight);
           samples.push(lux);
         }
@@ -129,7 +159,7 @@ export class LightingStatsCalculator {
 
   private isPointInAnyObstacle(point: { x: number; y: number }, obstacles: Obstacle[]): boolean {
     for (const obstacle of obstacles) {
-      const vertices = obstacle.walls.map(w => w.start);
+      const vertices = obstacle.walls.map((w) => w.start);
       if (isPointInPolygon(point, vertices)) {
         return true;
       }
@@ -137,19 +167,25 @@ export class LightingStatsCalculator {
     return false;
   }
 
-  private calculateGrade(uniformity: number, lumensPerSqFt: number, roomType: RoomType): 'A' | 'B' | 'C' | 'D' | 'F' {
+  private calculateGrade(
+    uniformity: number,
+    lumensPerSqFt: number,
+    roomType: RoomType
+  ): 'A' | 'B' | 'C' | 'D' | 'F' {
     const standards = ROOM_LIGHTING_STANDARDS[roomType];
 
     // Brightness score based on lumens per sq ft relative to room type standards
     let brightnessScore: number;
     if (lumensPerSqFt < standards.min * 0.5) {
-      brightnessScore = lumensPerSqFt / (standards.min * 0.5) * 0.25; // Very dim
+      brightnessScore = (lumensPerSqFt / (standards.min * 0.5)) * 0.25; // Very dim
     } else if (lumensPerSqFt < standards.min) {
-      brightnessScore = 0.25 + (lumensPerSqFt - standards.min * 0.5) / (standards.min * 0.5) * 0.25; // Below minimum
+      brightnessScore =
+        0.25 + ((lumensPerSqFt - standards.min * 0.5) / (standards.min * 0.5)) * 0.25; // Below minimum
     } else if (lumensPerSqFt < standards.ideal) {
-      brightnessScore = 0.5 + (lumensPerSqFt - standards.min) / (standards.ideal - standards.min) * 0.4; // Good range
+      brightnessScore =
+        0.5 + ((lumensPerSqFt - standards.min) / (standards.ideal - standards.min)) * 0.4; // Good range
     } else if (lumensPerSqFt < standards.ideal * 1.5) {
-      brightnessScore = 0.9 + (lumensPerSqFt - standards.ideal) / (standards.ideal * 0.5) * 0.1; // Ideal to bright
+      brightnessScore = 0.9 + ((lumensPerSqFt - standards.ideal) / (standards.ideal * 0.5)) * 0.1; // Ideal to bright
     } else {
       brightnessScore = 1.0; // Very bright (no penalty for over-lighting)
     }
@@ -175,19 +211,22 @@ export class LightingStatsCalculator {
     roomType: RoomType,
     obstacles: Obstacle[] = []
   ): string {
-    const lightsKey = lights.map(l =>
-      `${l.id}:${l.position.x.toFixed(2)},${l.position.y.toFixed(2)}:${l.properties.lumen}:${l.properties.beamAngle}`
-    ).join('|');
+    const lightsKey = lights
+      .map(
+        (l) =>
+          `${l.id}:${l.position.x.toFixed(2)},${l.position.y.toFixed(2)}:${l.properties.lumen}:${l.properties.beamAngle}`
+      )
+      .join('|');
 
-    const wallsKey = walls.map(w =>
-      `${w.start.x.toFixed(2)},${w.start.y.toFixed(2)}-${w.end.x.toFixed(2)},${w.end.y.toFixed(2)}`
-    ).join('|');
+    const wallsKey = walls
+      .map(
+        (w) =>
+          `${w.start.x.toFixed(2)},${w.start.y.toFixed(2)}-${w.end.x.toFixed(2)},${w.end.y.toFixed(2)}`
+      )
+      .join('|');
 
-    const obstaclesKey = obstacles.map(o =>
-      `${o.id}:${o.height}:${o.walls.length}`
-    ).join('|');
+    const obstaclesKey = obstacles.map((o) => `${o.id}:${o.height}:${o.walls.length}`).join('|');
 
     return `${lightsKey}::${wallsKey}::${ceilingHeight}::${gridSpacing}::${roomType}::${obstaclesKey}`;
   }
-
 }

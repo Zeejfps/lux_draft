@@ -2,10 +2,7 @@ import * as THREE from 'three';
 import type { Vector2 } from '../types';
 import type { SnapGuide } from '../controllers/SnapController';
 import { clearGroup, disposeObject3D } from '../utils/three';
-import {
-  createSnapGuideLine,
-  createSelectionBox,
-} from './editorRendering';
+import { createSnapGuideLine, createSelectionBox } from './editorRendering';
 
 /**
  * Handles rendering of overlays like snap guides and selection box.

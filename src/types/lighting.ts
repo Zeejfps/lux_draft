@@ -28,7 +28,13 @@ export const DEFAULT_LIGHT_PROPERTIES: LightProperties = {
 };
 
 export const DEFAULT_LIGHT_DEFINITIONS: LightDefinition[] = [
-  { id: 'led-standard', name: 'LED Standard (800lm, 60°)', lumen: 800, beamAngle: 60, warmth: 2700 },
+  {
+    id: 'led-standard',
+    name: 'LED Standard (800lm, 60°)',
+    lumen: 800,
+    beamAngle: 60,
+    warmth: 2700,
+  },
   { id: 'led-bright', name: 'LED Bright (1100lm, 60°)', lumen: 1100, beamAngle: 60, warmth: 3000 },
   { id: 'led-flood', name: 'LED Flood (925lm, 114°)', lumen: 925, beamAngle: 114, warmth: 3000 },
   { id: 'led-spot', name: 'LED Spot (600lm, 40°)', lumen: 600, beamAngle: 40, warmth: 2700 },
@@ -55,7 +61,10 @@ export interface LightingMetrics {
 }
 
 // Lumens per square foot recommendations by room type
-export const ROOM_LIGHTING_STANDARDS: Record<RoomType, { min: number; ideal: number; label: string }> = {
+export const ROOM_LIGHTING_STANDARDS: Record<
+  RoomType,
+  { min: number; ideal: number; label: string }
+> = {
   living: { min: 10, ideal: 20, label: 'Living Room' },
   kitchen: { min: 30, ideal: 50, label: 'Kitchen' },
   bedroom: { min: 10, ideal: 20, label: 'Bedroom' },

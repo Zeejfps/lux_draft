@@ -6,12 +6,6 @@ export {
   getSelectionOriginFromRoomState,
 } from './interactionUtils';
 
-export {
-  applyGridSnap,
-  type GridSnapConfig,
-} from './snapHelpers';
+export { applyGridSnap, type GridSnapConfig } from './snapHelpers';
 
-export {
-  handleAxisLockKey,
-  type AxisLockHandlerConfig,
-} from './axisLockHelpers';
+export { handleAxisLockKey, type AxisLockHandlerConfig } from './axisLockHelpers';

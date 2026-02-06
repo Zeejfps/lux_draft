@@ -22,11 +22,7 @@
       "purpose": "any"
     }
   ],
-  "categories": [
-    "productivity",
-    "utilities",
-    "design"
-  ],
+  "categories": ["productivity", "utilities", "design"],
   "keywords": [
     "lighting design",
     "lux calculator",

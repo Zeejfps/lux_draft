@@ -81,9 +81,7 @@ export class DoorPositioningService {
     minGap: number = DOOR_MIN_GAP
   ): boolean {
     const halfWidth = doorWidth / 2;
-    const doorsOnWall = existingDoors.filter(
-      d => d.wallId === wallId && d.id !== excludeDoorId
-    );
+    const doorsOnWall = existingDoors.filter((d) => d.wallId === wallId && d.id !== excludeDoorId);
 
     for (const door of doorsOnWall) {
       const doorHalfWidth = door.width / 2;
@@ -182,9 +180,7 @@ export class DoorPositioningService {
     const clampedToWall = Math.abs(clampedPosition - rawPosition) > 0.001;
 
     // Get doors on this wall excluding the one being dragged
-    const otherDoors = existingDoors.filter(
-      d => d.wallId === wall.id && d.id !== excludeDoorId
-    );
+    const otherDoors = existingDoors.filter((d) => d.wallId === wall.id && d.id !== excludeDoorId);
 
     // Avoid overlap with other doors
     const halfWidth = doorWidth / 2;
@@ -194,7 +190,13 @@ export class DoorPositioningService {
     const adjustedForOverlap = Math.abs(finalPosition - clampedPosition) > 0.001;
 
     // Check if door can actually be placed
-    const canPlace = this.canPlaceDoor(wall, finalPosition, doorWidth, existingDoors, excludeDoorId);
+    const canPlace = this.canPlaceDoor(
+      wall,
+      finalPosition,
+      doorWidth,
+      existingDoors,
+      excludeDoorId
+    );
 
     return {
       position: finalPosition,
@@ -259,9 +261,7 @@ export class DoorPositioningService {
     newPosition = Math.max(minPosition, Math.min(maxPosition, newPosition));
 
     // Avoid overlap with other doors
-    const otherDoors = existingDoors.filter(
-      d => d.wallId === wall.id && d.id !== excludeDoorId
-    );
+    const otherDoors = existingDoors.filter((d) => d.wallId === wall.id && d.id !== excludeDoorId);
     newPosition = this.avoidOverlap(newPosition, doorWidth, otherDoors, minPosition, maxPosition);
 
     return newPosition;

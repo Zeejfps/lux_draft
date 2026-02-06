@@ -1,7 +1,13 @@
 import { writable, derived } from 'svelte/store';
 import type { RoomState, WallSegment, Vector2, Door, Obstacle } from '../types';
 import { DEFAULT_ROOM_STATE } from '../types';
-import { vectorSubtract, vectorNormalize, vectorAdd, vectorScale, distancePointToPoint } from '../utils/math';
+import {
+  vectorSubtract,
+  vectorNormalize,
+  vectorAdd,
+  vectorScale,
+  distancePointToPoint,
+} from '../utils/math';
 import { geometryService } from '../services/GeometryService';
 
 export const roomStore = writable<RoomState>({ ...DEFAULT_ROOM_STATE });
@@ -43,8 +49,8 @@ export function resetRoom(): void {
 export function updateWallLength(wallId: string, newLength: number): void {
   if (newLength <= 0) return;
 
-  roomStore.update(state => {
-    const wallIndex = state.walls.findIndex(w => w.id === wallId);
+  roomStore.update((state) => {
+    const wallIndex = state.walls.findIndex((w) => w.id === wallId);
     if (wallIndex === -1) return state;
 
     const wall = state.walls[wallIndex];
@@ -84,7 +90,11 @@ export function updateWallLength(wallId: string, newLength: number): void {
  * Update a vertex in a closed wall loop: sets wall[vertexIndex].start and wall[prevIndex].end,
  * recalculating lengths for both affected walls. Mutates the provided walls array in place.
  */
-function updateVertexInWalls(walls: WallSegment[], vertexIndex: number, newPosition: Vector2): void {
+function updateVertexInWalls(
+  walls: WallSegment[],
+  vertexIndex: number,
+  newPosition: Vector2
+): void {
   const numWalls = walls.length;
 
   const currentWall = walls[vertexIndex];
@@ -105,11 +115,11 @@ function updateVertexInWalls(walls: WallSegment[], vertexIndex: number, newPosit
 
 export function getVertices(state: RoomState): Vector2[] {
   if (state.walls.length === 0) return [];
-  return state.walls.map(w => w.start);
+  return state.walls.map((w) => w.start);
 }
 
 export function updateVertexPosition(vertexIndex: number, newPosition: Vector2): void {
-  roomStore.update(state => {
+  roomStore.update((state) => {
     if (!state.isClosed || state.walls.length === 0) return state;
 
     const numWalls = state.walls.length;
@@ -124,7 +134,7 @@ export function updateVertexPosition(vertexIndex: number, newPosition: Vector2):
 export function insertVertexOnWall(wallId: string, position: Vector2): number | null {
   let insertedIndex: number | null = null;
 
-  roomStore.update(state => {
+  roomStore.update((state) => {
     const result = geometryService.insertVertexOnWall(state, wallId, position);
     insertedIndex = result.insertedIndex;
     return result.state;
@@ -134,10 +144,10 @@ export function insertVertexOnWall(wallId: string, position: Vector2): number | 
 }
 
 export function moveWall(wallId: string, newStart: Vector2, newEnd: Vector2): void {
-  roomStore.update(state => {
+  roomStore.update((state) => {
     if (!state.isClosed || state.walls.length === 0) return state;
 
-    const wallIndex = state.walls.findIndex(w => w.id === wallId);
+    const wallIndex = state.walls.findIndex((w) => w.id === wallId);
     if (wallIndex === -1) return state;
 
     const numWalls = state.walls.length;
@@ -179,7 +189,7 @@ export function moveWall(wallId: string, newStart: Vector2, newEnd: Vector2): vo
 export function deleteVertex(vertexIndex: number): boolean {
   let success = false;
 
-  roomStore.update(state => {
+  roomStore.update((state) => {
     // Get the wall that will be deleted (needed for door cleanup)
     const deletedWallId = state.walls[vertexIndex]?.id;
 
@@ -190,7 +200,7 @@ export function deleteVertex(vertexIndex: number): boolean {
 
     // Remove doors on the deleted wall
     const newDoors = deletedWallId
-      ? result.state.doors.filter(d => d.wallId !== deletedWallId)
+      ? result.state.doors.filter((d) => d.wallId !== deletedWallId)
       : result.state.doors;
 
     return { ...result.state, doors: newDoors };
@@ -204,30 +214,28 @@ export function deleteVertex(vertexIndex: number): boolean {
 // ============================================
 
 export function addDoor(door: Door): void {
-  roomStore.update(state => ({
+  roomStore.update((state) => ({
     ...state,
     doors: [...state.doors, door],
   }));
 }
 
 export function updateDoor(doorId: string, updates: Partial<Omit<Door, 'id'>>): void {
-  roomStore.update(state => ({
+  roomStore.update((state) => ({
     ...state,
-    doors: state.doors.map(door =>
-      door.id === doorId ? { ...door, ...updates } : door
-    ),
+    doors: state.doors.map((door) => (door.id === doorId ? { ...door, ...updates } : door)),
   }));
 }
 
 export function removeDoor(doorId: string): void {
-  roomStore.update(state => ({
+  roomStore.update((state) => ({
     ...state,
-    doors: state.doors.filter(d => d.id !== doorId),
+    doors: state.doors.filter((d) => d.id !== doorId),
   }));
 }
 
 export function getDoorsByWallId(state: RoomState, wallId: string): Door[] {
-  return state.doors.filter(d => d.wallId === wallId);
+  return state.doors.filter((d) => d.wallId === wallId);
 }
 
 // ============================================
@@ -235,32 +243,34 @@ export function getDoorsByWallId(state: RoomState, wallId: string): Door[] {
 // ============================================
 
 export function addObstacle(obstacle: Obstacle): void {
-  roomStore.update(state => ({
+  roomStore.update((state) => ({
     ...state,
     obstacles: [...(state.obstacles ?? []), obstacle],
   }));
 }
 
 export function updateObstacle(id: string, updates: Partial<Omit<Obstacle, 'id'>>): void {
-  roomStore.update(state => ({
+  roomStore.update((state) => ({
     ...state,
-    obstacles: (state.obstacles ?? []).map(obs =>
-      obs.id === id ? { ...obs, ...updates } : obs
-    ),
+    obstacles: (state.obstacles ?? []).map((obs) => (obs.id === id ? { ...obs, ...updates } : obs)),
   }));
 }
 
 export function removeObstacle(id: string): void {
-  roomStore.update(state => ({
+  roomStore.update((state) => ({
     ...state,
-    obstacles: (state.obstacles ?? []).filter(obs => obs.id !== id),
+    obstacles: (state.obstacles ?? []).filter((obs) => obs.id !== id),
   }));
 }
 
-export function updateObstacleVertexPosition(obstacleId: string, vertexIndex: number, newPosition: Vector2): void {
-  roomStore.update(state => {
+export function updateObstacleVertexPosition(
+  obstacleId: string,
+  vertexIndex: number,
+  newPosition: Vector2
+): void {
+  roomStore.update((state) => {
     const obstacles = state.obstacles ?? [];
-    const obstacleIndex = obstacles.findIndex(o => o.id === obstacleId);
+    const obstacleIndex = obstacles.findIndex((o) => o.id === obstacleId);
     if (obstacleIndex === -1) return state;
 
     const obstacle = obstacles[obstacleIndex];
@@ -278,9 +288,9 @@ export function updateObstacleVertexPosition(obstacleId: string, vertexIndex: nu
 }
 
 export function moveObstacle(obstacleId: string, vertexPositions: Map<number, Vector2>): void {
-  roomStore.update(state => {
+  roomStore.update((state) => {
     const obstacles = state.obstacles ?? [];
-    const obstacleIndex = obstacles.findIndex(o => o.id === obstacleId);
+    const obstacleIndex = obstacles.findIndex((o) => o.id === obstacleId);
     if (obstacleIndex === -1) return state;
 
     const obstacle = obstacles[obstacleIndex];
@@ -319,4 +329,3 @@ export function moveObstacle(obstacleId: string, vertexPositions: Map<number, Ve
     return { ...state, obstacles: newObstacles };
   });
 }
-

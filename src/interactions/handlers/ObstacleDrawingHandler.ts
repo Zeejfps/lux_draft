@@ -54,7 +54,7 @@ export class ObstacleDrawingHandler extends BaseInteractionHandler {
   private handleClosureAttempt(walls: WallSegment[] | null, roomWalls: WallSegment[]): void {
     if (walls && this.config.polygonValidator.isValid(walls)) {
       // Validate all vertices are inside the room
-      const allInside = walls.every(w => isPointInRoom(w.start, roomWalls));
+      const allInside = walls.every((w) => isPointInRoom(w.start, roomWalls));
       if (allInside) {
         this.resetDrawingState();
         this.callbacks.onCloseObstacle(walls);
@@ -153,7 +153,11 @@ export class ObstacleDrawingHandler extends BaseInteractionHandler {
     return false;
   }
 
-  private tryClosureWithGridSnap(gridPos: Vector2, gridSize: number, roomWalls: WallSegment[]): boolean {
+  private tryClosureWithGridSnap(
+    gridPos: Vector2,
+    gridSize: number,
+    roomWalls: WallSegment[]
+  ): boolean {
     const { wallBuilder } = this.config;
     const startVertex = wallBuilder.startVertex;
 

@@ -74,11 +74,7 @@ export class SpacingWarningRenderer {
       const ringPositions: number[] = [];
 
       for (let i = 1; i <= segments; i++) {
-        ringPositions.push(
-          positions.getX(i),
-          positions.getY(i),
-          0.01
-        );
+        ringPositions.push(positions.getX(i), positions.getY(i), 0.01);
         ringPositions.push(
           positions.getX(i === segments ? 1 : i + 1),
           positions.getY(i === segments ? 1 : i + 1),

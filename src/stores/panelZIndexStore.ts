@@ -17,10 +17,9 @@ export const panelZIndices = writable<Record<string, number>>({});
  */
 export function bringPanelToFront(panelId: string): number {
   currentMaxZIndex++;
-  panelZIndices.update(indices => ({
+  panelZIndices.update((indices) => ({
     ...indices,
-    [panelId]: currentMaxZIndex
+    [panelId]: currentMaxZIndex,
   }));
   return currentMaxZIndex;
 }
-

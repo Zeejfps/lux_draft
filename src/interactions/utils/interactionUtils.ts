@@ -69,7 +69,7 @@ export function getSelectionOrigin(
   if (selection.selectedLightIds.size > 0) {
     const lights = config.getLights();
     const firstId = Array.from(selection.selectedLightIds)[0];
-    const light = lights.find(l => l.id === firstId);
+    const light = lights.find((l) => l.id === firstId);
     if (light) {
       return { ...light.position };
     }
@@ -124,7 +124,7 @@ export function getSelectionOriginFromRoomState(
   // Check lights
   if (selection.selectedLightIds.size > 0) {
     const firstId = Array.from(selection.selectedLightIds)[0];
-    const light = lights.find(l => l.id === firstId);
+    const light = lights.find((l) => l.id === firstId);
     if (light) {
       return light.position;
     }
@@ -132,7 +132,7 @@ export function getSelectionOriginFromRoomState(
 
   // Check wall - use midpoint
   if (selection.selectedWallId) {
-    const wall = walls.find(w => w.id === selection.selectedWallId);
+    const wall = walls.find((w) => w.id === selection.selectedWallId);
     if (wall) {
       return {
         x: (wall.start.x + wall.end.x) / 2,
@@ -143,9 +143,9 @@ export function getSelectionOriginFromRoomState(
 
   // Check door
   if (selection.selectedDoorId) {
-    const door = doors.find(d => d.id === selection.selectedDoorId);
+    const door = doors.find((d) => d.id === selection.selectedDoorId);
     if (door) {
-      const wall = walls.find(w => w.id === door.wallId);
+      const wall = walls.find((w) => w.id === door.wallId);
       if (wall) {
         const { normalized, length } = getWallDirection(wall);
         if (length > 0) {

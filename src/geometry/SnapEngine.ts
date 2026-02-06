@@ -8,7 +8,11 @@ import {
   vectorLength,
   distancePointToPoint,
 } from '../utils/math';
-import { PARALLEL_ANGLE_THRESHOLD_RAD, CLOSURE_SNAP_THRESHOLD_FT, MIN_VECTOR_LENGTH_FT } from '../constants/editor';
+import {
+  PARALLEL_ANGLE_THRESHOLD_RAD,
+  CLOSURE_SNAP_THRESHOLD_FT,
+  MIN_VECTOR_LENGTH_FT,
+} from '../constants/editor';
 
 export class SnapEngine {
   private angleThreshold = PARALLEL_ANGLE_THRESHOLD_RAD;
@@ -51,5 +55,4 @@ export class SnapEngine {
 
     return { snappedPos: mousePos, snapType: 'none' };
   }
-
 }

@@ -7,7 +7,6 @@ import { generateId } from '../utils/id';
  * Provides pure functions that don't directly mutate stores.
  */
 export class GeometryService {
-
   /**
    * Insert a vertex on a wall and return the new state and inserted index.
    */
@@ -20,7 +19,7 @@ export class GeometryService {
       return { state, insertedIndex: null };
     }
 
-    const wallIndex = state.walls.findIndex(w => w.id === wallId);
+    const wallIndex = state.walls.findIndex((w) => w.id === wallId);
     if (wallIndex === -1) {
       return { state, insertedIndex: null };
     }
@@ -111,9 +110,8 @@ export class GeometryService {
    */
   getVertices(state: RoomState): Vector2[] {
     if (state.walls.length === 0) return [];
-    return state.walls.map(w => w.start);
+    return state.walls.map((w) => w.start);
   }
-
 }
 
 // Singleton instance for convenience

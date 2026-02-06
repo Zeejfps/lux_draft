@@ -4,7 +4,11 @@ import * as THREE from 'three';
  * Disposes of a Three.js Object3D's geometry and material resources.
  */
 export function disposeObject3D(object: THREE.Object3D): void {
-  if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.LineSegments) {
+  if (
+    object instanceof THREE.Mesh ||
+    object instanceof THREE.Line ||
+    object instanceof THREE.LineSegments
+  ) {
     object.geometry.dispose();
     if (Array.isArray(object.material)) {
       object.material.forEach((m) => m.dispose());
@@ -101,9 +105,10 @@ export function createTextSprite(text: string, options: TextSpriteOptions = {}):
   canvas.height = fontSize + padding;
 
   // Draw background
-  const bgColor = typeof backgroundColor === 'number'
-    ? `#${backgroundColor.toString(16).padStart(6, '0')}`
-    : backgroundColor;
+  const bgColor =
+    typeof backgroundColor === 'number'
+      ? `#${backgroundColor.toString(16).padStart(6, '0')}`
+      : backgroundColor;
   context.fillStyle = bgColor;
   context.fillRect(0, 0, canvas.width, canvas.height);
 

@@ -1,9 +1,5 @@
 import type { Vector2 } from '../../types';
-import type {
-  DragStartContext,
-  DragUpdateContext,
-  SelectionState,
-} from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext, SelectionState } from '../../types/interaction';
 import type { DragManagerCallbacks } from '../DragManager';
 import type { BaseDragConfig, RoomStateWithDoors } from '../types';
 import { BaseDragOperation } from '../DragOperation';
@@ -112,14 +108,22 @@ export class GrabModeDragOperation extends BaseDragOperation {
     const adjustedPos = applyGrabOffset(context.position, this.grabOffset);
 
     // Handle door separately if only door is selected
-    if (this.doorId && this.originalDoorPosition !== null &&
-        this.originalVertexPositions.size === 0 && this.originalLightPositions.size === 0 &&
-        !this.wallId) {
+    if (
+      this.doorId &&
+      this.originalDoorPosition !== null &&
+      this.originalVertexPositions.size === 0 &&
+      this.originalLightPositions.size === 0 &&
+      !this.wallId
+    ) {
       this.updateDoor(context.position);
     }
     // Handle wall separately if only wall is selected
-    else if (this.wallId && this.originalWallVertices &&
-        this.originalVertexPositions.size === 0 && this.originalLightPositions.size === 0) {
+    else if (
+      this.wallId &&
+      this.originalWallVertices &&
+      this.originalVertexPositions.size === 0 &&
+      this.originalLightPositions.size === 0
+    ) {
       this.updateWall(adjustedPos, context);
     } else {
       this.updateVerticesAndLights(adjustedPos, context);
@@ -266,7 +270,10 @@ export class GrabModeDragOperation extends BaseDragOperation {
   }
 
   private calculateDeltaFromAnchor(targetPos: Vector2): Vector2 {
-    if (this.anchorVertexIndex !== null && this.originalVertexPositions.has(this.anchorVertexIndex)) {
+    if (
+      this.anchorVertexIndex !== null &&
+      this.originalVertexPositions.has(this.anchorVertexIndex)
+    ) {
       const anchorOriginal = this.originalVertexPositions.get(this.anchorVertexIndex)!;
       return calculateDelta(anchorOriginal, targetPos);
     }

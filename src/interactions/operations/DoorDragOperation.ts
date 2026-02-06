@@ -1,8 +1,5 @@
 import type { WallSegment, Door } from '../../types';
-import type {
-  DragStartContext,
-  DragUpdateContext,
-} from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
 import { doorPositioningService } from '../../services';
@@ -51,7 +48,8 @@ export class DoorDragOperation extends BaseDragOperation {
   }
 
   update(context: DragUpdateContext): void {
-    if (!this._isActive || !this.doorId || !this.startPosition || this.originalPosition === null) return;
+    if (!this._isActive || !this.doorId || !this.startPosition || this.originalPosition === null)
+      return;
 
     const door = this.config.getDoorById(this.doorId);
     if (!door) return;

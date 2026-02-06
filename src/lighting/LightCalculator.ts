@@ -1,6 +1,12 @@
 import type { Vector2, LightFixture } from '../types';
 import { smoothstep, degToRad } from '../utils/math';
-import { MIN_DISTANCE_FT, BEAM_FALLOFF, MIN_SOLID_ANGLE, MAX_LUX_FOR_COLOR, FEET_TO_METERS } from './constants';
+import {
+  MIN_DISTANCE_FT,
+  BEAM_FALLOFF,
+  MIN_SOLID_ANGLE,
+  MAX_LUX_FOR_COLOR,
+  FEET_TO_METERS,
+} from './constants';
 
 export class LightCalculator {
   calculateLux(point: Vector2, lights: LightFixture[], ceilingHeight: number): number {
@@ -29,11 +35,13 @@ export class LightCalculator {
     const halfBeam = degToRad(light.properties.beamAngle / 2);
 
     // Beam attenuation - soft falloff at beam edge (matches shader)
-    const beamAtten = 1 - smoothstep(
-      halfBeam * BEAM_FALLOFF.innerEdge,
-      halfBeam * BEAM_FALLOFF.outerEdge,
-      angleFromVertical
-    );
+    const beamAtten =
+      1 -
+      smoothstep(
+        halfBeam * BEAM_FALLOFF.innerEdge,
+        halfBeam * BEAM_FALLOFF.outerEdge,
+        angleFromVertical
+      );
 
     // Cosine factor for surface illumination (Lambert's cosine law)
     const cosAngle = height / dist3D;
