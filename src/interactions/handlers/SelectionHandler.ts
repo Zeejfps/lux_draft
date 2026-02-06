@@ -305,7 +305,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null as any,
+      roomState: null,
       selection: this.config.getSelection(),
     });
 
@@ -390,7 +390,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null as any,
+      roomState: null,
       selection: this.config.getSelection(),
     });
   }
@@ -449,7 +449,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null as any,
+      roomState: null,
       selection: this.config.getSelection(),
     });
   }
@@ -470,7 +470,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null as any,
+      roomState: null,
       selection: this.config.getSelection(),
     });
 
@@ -489,7 +489,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null as any,
+      roomState: null,
       selection: this.config.getSelection(),
     });
   }

@@ -808,7 +808,7 @@
           },
           dragManager.getCallbacks()
         ),
-        getGrabModeState: () => ({ isActive: isGrabMode, offset: null, originalPositions: null as any }),
+        getGrabModeState: () => ({ isActive: isGrabMode, offset: null, originalPositions: null }),
         setGrabModeActive: (active) => { isGrabMode = active; },
         getSelection: () => buildInteractionContext().selection,
         getCurrentMousePos: () => currentMousePos,
