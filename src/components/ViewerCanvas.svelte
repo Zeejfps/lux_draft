@@ -90,9 +90,9 @@
 
   function handleMouseMove(e: MouseEvent): void {
     if (!isPanning || !scene) return;
-    const dx = -(e.clientX - lastPointerPos.x) / container.clientWidth;
-    const dy = (e.clientY - lastPointerPos.y) / container.clientHeight;
-    scene.pan(dx, dy);
+    const dx = e.clientX - lastPointerPos.x;
+    const dy = e.clientY - lastPointerPos.y;
+    scene.pan(-dx, dy);
     lastPointerPos = { x: e.clientX, y: e.clientY };
   }
 
@@ -139,9 +139,9 @@
 
     if (touches.length === 1) {
       // 1-finger pan
-      const dx = -(touches[0].clientX - lastPointerPos.x) / container.clientWidth;
-      const dy = (touches[0].clientY - lastPointerPos.y) / container.clientHeight;
-      scene.pan(dx, dy);
+      const dx = touches[0].clientX - lastPointerPos.x;
+      const dy = touches[0].clientY - lastPointerPos.y;
+      scene.pan(-dx, dy);
       lastPointerPos = { x: touches[0].clientX, y: touches[0].clientY };
     } else if (touches.length === 2) {
       // 2-finger pinch zoom + pan
@@ -153,9 +153,9 @@
         scene.setZoom(scene.getZoom() * scale);
       }
 
-      const dx = -(center.x - lastTouchCenter.x) / container.clientWidth;
-      const dy = (center.y - lastTouchCenter.y) / container.clientHeight;
-      scene.pan(dx, dy);
+      const dx = center.x - lastTouchCenter.x;
+      const dy = center.y - lastTouchCenter.y;
+      scene.pan(-dx, dy);
 
       lastTouchDist = dist;
       lastTouchCenter = center;
@@ -179,6 +179,19 @@
     // Cap pixel ratio on mobile
     scene.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
+    // Attach pan/zoom events to the Three.js canvas (it sits on top of the container)
+    const canvas = scene.domElement;
+    canvas.style.touchAction = 'none';
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('mouseleave', handleMouseUp);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+    canvas.addEventListener('touchend', handleTouchEnd);
+    canvas.addEventListener('touchcancel', handleTouchEnd);
+
     editorRenderer = new EditorRenderer(scene.scene);
     heatmapRenderer = new HeatmapRenderer(scene.scene);
     shadowRenderer = new ShadowRenderer(scene.scene);
@@ -200,22 +213,7 @@
   });
 </script>
 
-<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-<div
-  class="viewer-canvas"
-  bind:this={container}
-  on:mousedown={handleMouseDown}
-  on:mousemove={handleMouseMove}
-  on:mouseup={handleMouseUp}
-  on:mouseleave={handleMouseUp}
-  on:wheel={handleWheel}
-  on:touchstart={handleTouchStart}
-  on:touchmove={handleTouchMove}
-  on:touchend={handleTouchEnd}
-  on:touchcancel={handleTouchEnd}
-  role="img"
-  aria-label="Room viewer canvas"
-></div>
+<div class="viewer-canvas" bind:this={container}></div>
 
 <style>
   .viewer-canvas {
