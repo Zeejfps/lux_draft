@@ -1,5 +1,6 @@
 import type { EditorDocument } from './document';
 import type { Interaction } from './interaction';
+import type { ModuleBlob, QuarantineReason } from './module';
 import type { Selection } from './selection';
 import { createEmptyDocument } from './document';
 import { IDLE_INTERACTION } from './interaction';
@@ -11,20 +12,21 @@ import { NO_SELECTION } from './selection';
 
 /**
  * A module blob this build could not decode. Carried from load to save so unknown or newer
- * data is never silently dropped.
- *
- * Phase 3a fills this in; phase 1b only gives it a home on `Session` so no later phase has to
- * thread a new field through the reducer.
+ * data is never silently dropped (invariant 8), and never edited or rendered.
  */
 export interface QuarantinedSlice {
-  blob: { v: number; data: unknown };
-  reason: 'unsupported' | 'invalid' | 'unknownModule';
+  blob: ModuleBlob;
+  reason: QuarantineReason;
   message?: string;
 }
 
 export interface CarriedState {
   quarantined: Readonly<Record<string, QuarantinedSlice>>;
-  /** Structural hash of geometry at load time; drives the staleness flag. Computed in 3a. */
+  /**
+   * Structural hash of geometry at load time. If it no longer matches at save, the envelope
+   * records `geometryChangedSinceLoad` beside every quarantined blob — a preserved blob may
+   * have been authored for a different polygon.
+   */
   geometryFingerprint: string;
 }
 

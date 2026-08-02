@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "roomState": {
+    "ceilingHeight": 9,
+    "isClosed": true,
+    "walls": [
+      { "id": "w1", "start": { "x": 0, "y": 0 }, "end": { "x": 12, "y": 0 }, "length": 12 },
+      { "id": "w2", "start": { "x": 12, "y": 0 }, "end": { "x": 12, "y": 10 }, "length": 10 },
+      { "id": "w3", "start": { "x": 12, "y": 10 }, "end": { "x": 0, "y": 10 }, "length": 12 },
+      { "id": "w4", "start": { "x": 0, "y": 10 }, "end": { "x": 0, "y": 0 }, "length": 10 }
+    ],
+    "lights": [
+      {
+        "id": "light-1",
+        "position": { "x": 3, "y": 3 },
+        "properties": { "lumen": 800, "beamAngle": 60, "warmth": 2700 }
+      },
+      {
+        "id": "light-2",
+        "position": { "x": 9, "y": 7 },
+        "definitionId": "led-bright",
+        "properties": { "lumen": 1100, "beamAngle": 60, "warmth": 3000 }
+      }
+    ]
+  },
+  "lightDefinitions": []
+}

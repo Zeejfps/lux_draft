@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "roomState": {
+    "ceilingHeight": 9.5,
+    "isClosed": true,
+    "walls": [
+      { "id": "w1", "start": { "x": 0, "y": 0 }, "end": { "x": 12, "y": 0 }, "length": 12 },
+      { "id": "w2", "start": { "x": 12, "y": 0 }, "end": { "x": 12, "y": 10 }, "length": 10 },
+      { "id": "w3", "start": { "x": 12, "y": 10 }, "end": { "x": 0, "y": 10 }, "length": 12 },
+      { "id": "w4", "start": { "x": 0, "y": 10 }, "end": { "x": 0, "y": 0 }, "length": 10 }
+    ],
+    "lights": [
+      {
+        "id": "light-1",
+        "position": { "x": 3, "y": 3 },
+        "properties": { "lumen": 800, "beamAngle": 60, "warmth": 2700 }
+      }
+    ],
+    "doors": [
+      {
+        "id": "door-1",
+        "wallId": "w1",
+        "position": 4,
+        "width": 3,
+        "swingDirection": "right",
+        "swingSide": "outside"
+      }
+    ],
+    "obstacles": [
+      {
+        "id": "island-1",
+        "height": 3,
+        "walls": [
+          { "id": "iw1", "start": { "x": 4, "y": 4 }, "end": { "x": 8, "y": 4 }, "length": 4 },
+          { "id": "iw2", "start": { "x": 8, "y": 4 }, "end": { "x": 8, "y": 6 }, "length": 2 },
+          { "id": "iw3", "start": { "x": 8, "y": 6 }, "end": { "x": 4, "y": 6 }, "length": 4 },
+          { "id": "iw4", "start": { "x": 4, "y": 6 }, "end": { "x": 4, "y": 4 }, "length": 2 }
+        ]
+      }
+    ],
+    "rafterConfig": {
+      "orientation": "vertical",
+      "spacing": 2,
+      "offsetX": 0.5,
+      "offsetY": 0,
+      "visible": true
+    },
+    "displayPreferences": {
+      "useFractions": false,
+      "snapThreshold": 0.25,
+      "unitFormat": "inches",
+      "gridSnapEnabled": true,
+      "gridSize": 0.5,
+      "lightRadiusVisibility": "always"
+    }
+  },
+  "lightDefinitions": []
+}

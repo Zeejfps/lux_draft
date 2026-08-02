@@ -1,0 +1,33 @@
+{
+  "version": 3,
+  "geometry": {
+    "boundary": {
+      "isClosed": true,
+      "walls": [
+        { "id": "w1", "start": { "x": 0, "y": 0 }, "end": { "x": 12, "y": 0 }, "length": 12 },
+        { "id": "w2", "start": { "x": 12, "y": 0 }, "end": { "x": 12, "y": 10 }, "length": 10 },
+        { "id": "w3", "start": { "x": 12, "y": 10 }, "end": { "x": 0, "y": 10 }, "length": 12 },
+        { "id": "w4", "start": { "x": 0, "y": 10 }, "end": { "x": 0, "y": 0 }, "length": 10 }
+      ]
+    },
+    "doors": [],
+    "obstacles": []
+  },
+  "space": { "ceilingHeight": 8 },
+  "modules": {
+    "lighting": {
+      "v": 99,
+      "data": {
+        "fixtures": [
+          {
+            "id": "light-1",
+            "position": { "x": 6, "y": 5 },
+            "emitter": { "kind": "areaLight", "watts": 12 }
+          }
+        ],
+        "zones": [{ "id": "zone-a", "fixtureIds": ["light-1"], "scene": "evening" }],
+        "definitions": []
+      }
+    }
+  }
+}

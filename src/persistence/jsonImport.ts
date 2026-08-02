@@ -13,14 +13,10 @@ import type {
 import type { EditorDocument } from '../types/document';
 import { mergeLightDefinitions } from '../stores/lightDefinitionsStore';
 import { fromLegacyRoomState } from './legacyDocumentAdapter';
+import { ValidationError } from './ValidationError';
 import type { ExportData } from './jsonExport';
 
-export class ValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
+export { ValidationError } from './ValidationError';
 
 export function validateRoomState(data: unknown): RoomState {
   if (!data || typeof data !== 'object') {

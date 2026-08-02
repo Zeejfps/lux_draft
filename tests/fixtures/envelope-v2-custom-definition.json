@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "roomState": {
+    "ceilingHeight": 8,
+    "isClosed": true,
+    "walls": [
+      { "id": "w1", "start": { "x": 0, "y": 0 }, "end": { "x": 12, "y": 0 }, "length": 12 },
+      { "id": "w2", "start": { "x": 12, "y": 0 }, "end": { "x": 12, "y": 10 }, "length": 10 },
+      { "id": "w3", "start": { "x": 12, "y": 10 }, "end": { "x": 0, "y": 10 }, "length": 12 },
+      { "id": "w4", "start": { "x": 0, "y": 10 }, "end": { "x": 0, "y": 0 }, "length": 10 }
+    ],
+    "lights": [
+      {
+        "id": "light-1",
+        "position": { "x": 6, "y": 5 },
+        "definitionId": "custom-alpha",
+        "properties": { "lumen": 1234, "beamAngle": 33, "warmth": 4200 }
+      },
+      {
+        "id": "light-2",
+        "position": { "x": 2, "y": 2 },
+        "definitionId": "led-standard",
+        "properties": { "lumen": 800, "beamAngle": 60, "warmth": 2700 }
+      }
+    ]
+  },
+  "lightDefinitions": [
+    {
+      "id": "custom-alpha",
+      "name": "Sender's Alpha Spot",
+      "lumen": 1234,
+      "beamAngle": 33,
+      "warmth": 4200
+    },
+    {
+      "id": "custom-unreferenced",
+      "name": "Not used by any fixture",
+      "lumen": 100,
+      "beamAngle": 90,
+      "warmth": 3000
+    }
+  ]
+}

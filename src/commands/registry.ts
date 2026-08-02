@@ -1,5 +1,7 @@
 import type { EditorDocument } from '../types/document';
 import type { CommandHandler, CommandType, EditorCommand } from '../types/command';
+import { isModuleCommand } from '../types/command';
+import { moduleCommandHandler } from '../types/moduleRegistry';
 import { wallMoveHandler, wallSetLengthHandler, roomCloseHandler } from './wallCommands';
 import { vertexMoveHandler, vertexInsertHandler, vertexDeleteHandler } from './vertexCommands';
 import { doorAddHandler, doorMoveHandler, doorSetHandler, doorRemoveHandler } from './doorCommands';
@@ -64,22 +66,31 @@ const handlers: HandlerMap = {
   compound: compoundHandler,
 };
 
+/** Core command types only. Module command types come from the module registry. */
 export const registeredCommandTypes = Object.keys(handlers) as CommandType[];
+
+/**
+ * Core handlers are a static table; module handlers come from the registry the eager barrel
+ * fills. Handlers stay registered per *installed* module — nothing unregisters `lighting.*`
+ * because one document's lighting blob failed to decode.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resolveHandler(command: EditorCommand): CommandHandler<any> {
+  const handler = isModuleCommand(command)
+    ? moduleCommandHandler(command.type)
+    : handlers[command.type];
+  if (!handler) {
+    throw new Error(`No handler registered for command type "${command.type}"`);
+  }
+  return handler;
+}
 
 /** Pure. Looks up the handler by `type`. The only document transform in the app. */
 export function applyCommand(doc: EditorDocument, command: EditorCommand): EditorDocument {
-  const handler = handlers[command.type];
-  if (!handler) {
-    throw new Error(`No handler registered for command type "${command.type}"`);
-  }
-  return handler.apply(doc, command);
+  return resolveHandler(command).apply(doc, command);
 }
 
-/** The user-facing name of the edit. Unconsumed until phase 1b gives history labels. */
+/** The user-facing name of the edit. Consumed by history labels since phase 1b. */
 export function commandLabel(command: EditorCommand): string {
-  const handler = handlers[command.type];
-  if (!handler) {
-    throw new Error(`No handler registered for command type "${command.type}"`);
-  }
-  return handler.label(command);
+  return resolveHandler(command).label(command);
 }

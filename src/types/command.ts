@@ -55,9 +55,31 @@ export type DoorChanges = Partial<Omit<Door, 'id'>>;
 export type ObstacleChanges = Partial<Omit<Obstacle, 'id' | 'walls'>>;
 export type LightChanges = Partial<Omit<LightFixture, 'id'>>;
 
-export type EditorCommand = CoreCommand;
+/**
+ * A module's command. Modules contribute their own; the core never names them.
+ *
+ * Built only by `defineCommand` (`src/types/module.ts`), which owns the `${moduleId}.${verb}`
+ * string and generates the handler, so a producer and its handler cannot drift apart.
+ */
+export interface ModuleCommandEnvelope {
+  /** `${moduleId}.${verb}`. */
+  type: string;
+  moduleId: string;
+  payload: unknown;
+}
 
-export type CommandType = EditorCommand['type'];
+export type EditorCommand = CoreCommand | ModuleCommandEnvelope;
+
+/**
+ * Core command types only. Module command types are strings the core never enumerates, so the
+ * exhaustive core handler table and the tests that iterate it keep working unchanged.
+ */
+export type CommandType = CoreCommand['type'];
+
+/** `moduleId` is the discriminator: no core command has one. */
+export function isModuleCommand(command: EditorCommand): command is ModuleCommandEnvelope {
+  return 'moduleId' in command;
+}
 
 export interface CommandHandler<C extends EditorCommand> {
   label(command: C): string;

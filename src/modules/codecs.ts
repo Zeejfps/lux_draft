@@ -1,0 +1,30 @@
+import type { ModuleDefinition } from '../types/moduleRegistry';
+import { registerModule } from '../types/moduleRegistry';
+import type { LightingData } from './lighting/codec';
+import { lightingCodec } from './lighting/codec';
+import { lightingCommands } from './lighting/commands';
+
+/**
+ * The eager barrel: every installed module's codec and command table, statically imported.
+ *
+ * This is what reconciles lazy modules with synchronous persistence (invariant 7). Codecs and
+ * command handlers are in the initial chunk; tools, layers, panels and shaders are not, and
+ * the lint rules on each module's `codec.ts` / `commands.ts` keep it that way.
+ *
+ * Registration happens at import time, so importing this file anywhere in the entry graph is
+ * enough for `decodeDocument` to see every module. Each definition is a module-level constant
+ * so `installModules()` is idempotent — re-running it after a test clears the registry
+ * re-registers the same values, and running it twice without a clear is a no-op rather than a
+ * duplicate-id throw.
+ */
+
+const lightingModule: ModuleDefinition<LightingData> = {
+  codec: lightingCodec,
+  commands: lightingCommands,
+};
+
+export function installModules(): void {
+  registerModule(lightingModule);
+}
+
+installModules();

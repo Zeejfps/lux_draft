@@ -1,0 +1,26 @@
+{
+  "ceilingHeight": 8,
+  "isClosed": true,
+  "walls": [
+    { "id": "w1", "start": { "x": 0, "y": 0 }, "end": { "x": 12, "y": 0 }, "length": 12 },
+    { "id": "w2", "start": { "x": 12, "y": 0 }, "end": { "x": 12, "y": 10 }, "length": 10 },
+    { "id": "w3", "start": { "x": 12, "y": 10 }, "end": { "x": 0, "y": 10 }, "length": 12 },
+    { "id": "w4", "start": { "x": 0, "y": 10 }, "end": { "x": 0, "y": 0 }, "length": 10 }
+  ],
+  "lights": [
+    {
+      "id": "light-1",
+      "position": { "x": 4, "y": 5 },
+      "properties": { "lumen": 800, "beamAngle": 60, "warmth": 2700 }
+    }
+  ],
+  "doors": [
+    {
+      "id": "door-1",
+      "wallId": "w1",
+      "position": 3,
+      "width": 3,
+      "swingDirection": "left"
+    }
+  ]
+}
