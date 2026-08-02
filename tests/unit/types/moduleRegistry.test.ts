@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ModuleCodec } from '../../../src/floorplan/types/module';
-import type { ModuleRuntime, ToolDescriptor } from '../../../src/floorplan/types/moduleRuntime';
+import { readable } from 'svelte/store';
+import type {
+  ModuleRuntime,
+  OverlayToggle,
+  ToolDescriptor,
+} from '../../../src/floorplan/types/moduleRuntime';
 import {
   CORE_RESERVED_SHORTCUTS,
   shortcutBindingKey,
@@ -42,6 +47,15 @@ function runtime(id: string, extra: Partial<ModuleRuntime> = {}): ModuleRuntime 
 
 const tool = (id: string): ToolDescriptor => ({ id, label: id, title: id, icon: '' });
 
+const overlay = (id: string): OverlayToggle => ({
+  id,
+  label: id,
+  title: id,
+  icon: '',
+  active: readable(false),
+  toggle: () => {},
+});
+
 beforeEach(() => {
   clearModuleRegistry();
 });
@@ -75,6 +89,27 @@ describe('runtime registration', () => {
     expect(() =>
       validateRuntime(runtime('alpha', { tools: [tool('alpha.a'), tool('alpha.a')] }))
     ).toThrow(/Duplicate tool id/);
+  });
+
+  it('rejects an overlay id not namespaced with the module id', () => {
+    install('alpha');
+    expect(() => validateRuntime(runtime('alpha', { overlays: [overlay('rafters')] }))).toThrow(
+      /not namespaced/
+    );
+  });
+
+  it('rejects a duplicate overlay id, within one module and across two', () => {
+    install('alpha');
+    install('beta');
+    expect(() =>
+      validateRuntime(runtime('alpha', { overlays: [overlay('alpha.x'), overlay('alpha.x')] }))
+    ).toThrow(/Duplicate overlay id/);
+
+    // Cross-module, the namespace check is what fires first — same as for tool ids.
+    validateRuntime(runtime('alpha', { overlays: [overlay('alpha.y')] }));
+    expect(() => validateRuntime(runtime('beta', { overlays: [overlay('alpha.y')] }))).toThrow(
+      /not namespaced/
+    );
   });
 
   it('rejects a tool id claimed by another module', () => {
