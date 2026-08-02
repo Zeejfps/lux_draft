@@ -1087,17 +1087,17 @@ Each phase agent appends one entry here **before finishing**, so the next phase 
 happened rather than what was planned. Record deviations from the spec above, anything the next phase
 must know, and anything deliberately deferred. Keep entries short and factual.
 
-| Phase | Status      | Branch / commit     | Notes                                                                                                                   |
-| ----- | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there. |
-| 1a    | not started |                     |                                                                                                                         |
-| 1b    | not started |                     |                                                                                                                         |
-| 2     | not started |                     |                                                                                                                         |
-| 3a    | not started |                     |                                                                                                                         |
-| 3b    | not started |                     |                                                                                                                         |
-| 4     | not started |                     |                                                                                                                         |
-| 5     | not started |                     |                                                                                                                         |
-| 6     | not started |                     |                                                                                                                         |
+| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                 |
+| ----- | ----------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                               |
+| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape. |
+| 1b    | not started |                     |                                                                                                                                                                       |
+| 2     | not started |                     |                                                                                                                                                                       |
+| 3a    | not started |                     |                                                                                                                                                                       |
+| 3b    | not started |                     |                                                                                                                                                                       |
+| 4     | not started |                     |                                                                                                                                                                       |
+| 5     | not started |                     |                                                                                                                                                                       |
+| 6     | not started |                     |                                                                                                                                                                       |
 
 ### Deviations
 
@@ -1124,3 +1124,122 @@ must know, and anything deliberately deferred. Keep entries short and factual.
 - Rules were verified against throwaway fixture files under `src/floorplan`, `src/modules/*`, and
   `src/app` that reproduced each violation; the fixtures were deleted before committing. No
   production code was moved.
+
+#### Phase 1a
+
+Commits: `65d8639` (implementation), `68bb3ad` (tests), `f8c125e` (dead-wrapper cleanup).
+
+**Shape of the document, and the blast radius the plan does not mention.**
+
+- `EditorDocument` lives in `src/types/document.ts` with nested `geometry`/`space` as specified,
+  **plus `lights` and `rafterConfig` still at the document root** — `modules` does not exist until
+  3b, and lighting data has to live somewhere. Both fields are commented as legacy.
+- `roomStore` now emits `EditorDocument`, not `RoomState`. Preserving the store's _name_ and its
+  _live_ semantics does not preserve its field paths, so **every read site moved**
+  (`$roomStore.walls` → `$roomStore.geometry.boundary.walls`, `.ceilingHeight` →
+  `.space.ceilingHeight`, `.doors ?? []` → `.geometry.doors`, and so on) across the components,
+  the viewer, the derived stores, and the interaction handlers. This is unavoidable in 1a if 1b is
+  to leave readers untouched, but it is much larger than "readers are untouched" suggests.
+- `InteractionContext.roomState` and `DragStartContext.roomState` were renamed to `document` and
+  retyped to `EditorDocument`. The `RoomState*` config interfaces in
+  `interactions/types/configInterfaces.ts` kept their names — they are getter bundles, not the
+  document type — and phase 4 can rename them for free.
+- `RoomState` survives as the **wire** type only. `src/persistence/legacyDocumentAdapter.ts` is
+  the one adapter (`toLegacyRoomState` / `fromLegacyRoomState`); local storage, JSON
+  import/export, and share URLs call it at their boundary and 3b deletes the file. Public
+  signatures of `importFromString`, `decodeShareData`, `loadFromLocalStorage`,
+  `generateShareUrl`, `getJSONString`, `saveToLocalStorage` now take/return `EditorDocument`.
+- `GeometryService` was retyped from `RoomState` to `WallLoop` and returns walls rather than
+  documents, so command handlers can use it without knowing the document shape.
+
+**Commands (`src/commands/`, one file per noun, `registry.ts` holds the table).**
+
+- Names that differ from the plan's sketch:
+  - `room.close` carries `walls: WallSegment[]`, not `vertices: Vector2[]` — `WallBuilder` already
+    produces walls with ids and lengths, and regenerating them would churn wall ids (doors
+    reference them).
+  - `door.move` is `{ doorId, offset }`; `wallId` is omitted because nothing today moves a door
+    between walls. Add it when something does.
+  - `obstacle.move` is `{ obstacleId, vertices: Vector2[] }` (absolute position for every vertex,
+    in index order), not `{ origin }` — an obstacle is stored as a wall loop and has no origin
+    field. It stays absolute and idempotent.
+  - **Extra commands the plan does not list, all required because 1a must convert every writer:**
+    `door.set`, `obstacle.set`, `light.add`, `light.move`, `light.set`, `light.remove`,
+    `lighting.setRafterConfig`, `document.setDisplayPreferences`. The `light.*` and
+    `lighting.setRafterConfig` handlers are the ones 3b re-registers as module commands over
+    `LightingData`; the others are core.
+  - `compound` — see below.
+- `MOVE_AND_SET_COMMAND_TYPES` in `src/types/command.ts` is the machine-readable version of the
+  "absolute payloads" family; the idempotence contract test iterates it and fails if a new member
+  is added without a case.
+- `applyCommand` throws on an unregistered type rather than silently no-oping.
+- Labels exist on every handler and are unconsumed, as planned.
+
+**`GrabModeDragOperation`: heterogeneous drags are one compound command, not one multi-entity
+command.** A grab can hold room vertices and lights simultaneously and there is no entity a
+multi-entity payload could name; `{ kind: 'moduleEntity', ids }` in the plan's `DragTarget` only
+covers the homogeneous case. `{ type: 'compound'; label; commands }` applies its members in order,
+is serializable, is idempotent exactly when its members are (they all carry absolute targets), and
+reuses the single-entity handlers unchanged. It is one preview, one dispatch, one history entry.
+`UnifiedDragOperation` and multi-select `ObstacleVertexDragOperation` use the same construction,
+and each collapses to the bare single command when only one entity moves — so a single-vertex drag
+still dispatches `vertex.move`, not a compound of one.
+
+**Things Phase 1b must know before touching the stores.**
+
+- **Svelte's `writable` emits on every `set` of an object value even when the reference is
+  unchanged** (`safe_not_equal` returns true for any object). Returning the old reference from
+  `update` therefore does _not_ suppress the emission. `dispatch` reads, applies, compares with
+  `valueEqual`, and **skips the write entirely** on a no-op. `reduceSession` must keep that
+  property at the store boundary, not merely return the same `Session`.
+- `valueEqual` (`src/commands/serializable.ts`) treats a key whose value is `undefined` as absent,
+  so values that have been through `JSON.parse(JSON.stringify(...))` compare equal to their source.
+- The serializability assertion is stricter than a bare round-trip: it also walks the payload and
+  rejects non-plain data (`Map`, `Set`, class instances, functions, `NaN`/`Infinity`). A plain
+  `JSON.stringify`-then-compare passes a `Map` — it stringifies to `{}` and compares equal to an
+  empty object — which is exactly the mistake the assertion exists to catch. It runs inside
+  `dispatch` behind a bare `if (import.meta.env.DEV)` and it **throws**.
+- `commitInteraction()` sets `interaction` to idle _first_ and then dispatches, so the derived
+  `roomStore` briefly recomputes against the pre-dispatch committed document. Svelte batches `$:`
+  statements to the microtask flush, so no frame renders that intermediate value; making it one
+  emission is a `reduceSession` action, which is 1b's job.
+- Undo and redo clear `interaction` in `historyStore` today (two writable sets). 1b makes that
+  atomic.
+- `settingsStore` still owns `rafterConfig` and `displayPreferences` as separate writables and
+  mirrors them into the document by dispatching on subscribe, guarded by `isLoadingFromSavedState`.
+  That is a second source of truth and it survives 1a untouched; 1b or 3b should fold it in.
+- `openDocument(doc)` is the pre-`Session` `document.open`: it clears the interaction and sets
+  `committedRoom`. It **does** currently produce a history entry via the diff subscription, which
+  matches pre-1a behavior (`roomStore.set` did too). The plan says `document.open` pushes no undo
+  entry — 1b's acceptance criteria cover it, and it is a genuine behavior change to make there.
+- `insertVertexOnWall` and `deleteVertex` still return a value to their caller (the inserted index,
+  and success). They compute it from `committedRoom` _before_ dispatching. `vertex.insert` mints
+  fresh wall ids inside the handler, so it is non-deterministic and non-idempotent by design.
+
+**Deliberately deferred / not done.**
+
+- `Interaction` has two variants only (`idle`, `commandPreview`). The plan's `drawing` and
+  `measuring` variants are not introduced: drawing state still lives in `WallBuilder` and
+  measuring in `MeasurementController`, and moving them is not needed to make drags previewable.
+  `DragOrigin` is not modelled either — it is described in the plan as op-local and never read by
+  the reducer, and each operation already keeps its captured origin privately.
+- `IDragOperation.cancel()` is deleted as specified; `commit()` was also deleted and replaced by
+  `finish()`, which only marks the operation inactive and releases captured state. Cancelling is
+  now "discard the preview", which no longer needs an operation-side method at all.
+- `DragManagerCallbacks` retains `onSetSnapGuides` (a visual side effect, not a write) and gains
+  `onPreviewCommand` / `onCommitCommand` / `onCancelCommand`. Operations receive the narrower
+  `DragOperationCallbacks` (`onSetSnapGuides` only). History pause/resume is gone from
+  `historyStore` entirely, along with its tests.
+- `pointercancel` and window `blur` are wired through a new `'cancel'` `InputEventType` in
+  `InputManager`; `Canvas.svelte` cancels the drag (and leaves grab mode) on it.
+- Dev-mode deep-freeze is **not** added — the plan assigns it to 1b.
+- The pre-existing unused-`LightFixture` lint warning in `ViewerCanvas.svelte` was left alone.
+
+**Tests.** `tests/helpers/documents.ts` holds the fixtures (`squareRoom`, `rectWalls`,
+`makeLight`, `makeDoor`, `makeObstacle`). New suites:
+`tests/unit/commands/applyCommand.test.ts` (pure command table with a coverage assertion against
+`registeredCommandTypes`, JSON round-trip, move/set idempotence),
+`tests/unit/interactions/dragCommands.test.ts` (per-drag-kind pointer-sequence tables with snap and
+axis-lock), `tests/unit/stores/interactionPreview.test.ts` (preview live / commit exactly once /
+untouched on cancel / origin drag emits nothing). `historyStore.test.ts` and `roomStore.test.ts`
+were rewritten against the command API; the pause/resume block is gone. 311 tests pass.
