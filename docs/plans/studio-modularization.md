@@ -1087,18 +1087,40 @@ Each phase agent appends one entry here **before finishing**, so the next phase 
 happened rather than what was planned. Record deviations from the spec above, anything the next phase
 must know, and anything deliberately deferred. Keep entries short and factual.
 
-| Phase | Status      | Branch / commit | Notes |
-| ----- | ----------- | --------------- | ----- |
-| 0     | not started |                 |       |
-| 1a    | not started |                 |       |
-| 1b    | not started |                 |       |
-| 2     | not started |                 |       |
-| 3a    | not started |                 |       |
-| 3b    | not started |                 |       |
-| 4     | not started |                 |       |
-| 5     | not started |                 |       |
-| 6     | not started |                 |       |
+| Phase | Status      | Branch / commit     | Notes                                                                                                                   |
+| ----- | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there. |
+| 1a    | not started |                     |                                                                                                                         |
+| 1b    | not started |                     |                                                                                                                         |
+| 2     | not started |                     |                                                                                                                         |
+| 3a    | not started |                     |                                                                                                                         |
+| 3b    | not started |                     |                                                                                                                         |
+| 4     | not started |                     |                                                                                                                         |
+| 5     | not started |                     |                                                                                                                         |
+| 6     | not started |                     |                                                                                                                         |
 
 ### Deviations
 
-_(none yet)_
+#### Phase 0
+
+- **Two rules, not one.** `import/no-restricted-paths` (from `eslint-plugin-import`, added as a
+  devDependency) encodes the `floorplan/` and cross-module zones against _resolved_ paths — needed
+  because a sibling import `../flooring/x` from `modules/lighting/` is indistinguishable from a local
+  subdirectory by specifier string alone. Core `no-restricted-imports` adds a specifier-string
+  backstop for the `floorplan/` boundary (fires even when the target does not resolve, e.g. a
+  `*.svelte` import) and carries the codec/commands isolation rule, which is purely string-shaped
+  (`three`, `**/*.svelte`, `runtime`). `eslint-plugin-boundaries` was not used; both of its likely
+  configurations need the same resolver setup and buy nothing extra here.
+- **No `eslint-import-resolver-typescript`.** It conflicts on peers with the pinned
+  `typescript-eslint@8.54`. Instead the built-in node resolver is configured with
+  `extensions: ['.ts', '.js', '.mjs', '.svelte', '.json']`, which resolves this repo's extensionless
+  relative imports (including directory `index.ts` barrels). If path aliases are ever introduced,
+  this resolver setting must be revisited.
+- **Cross-module zones are generated from a `MODULE_IDS` list** (`['lighting', 'flooring']`) at the
+  top of `eslint.config.js`, since `no-restricted-paths` zones cannot express "any other sibling".
+  **A new module must be added to that array or it gets no cross-module enforcement.**
+- Only `import/no-restricted-paths` is enabled from `eslint-plugin-import`; no other rule from that
+  plugin (e.g. `import/no-unresolved`) was turned on, to avoid noise on the existing tree.
+- Rules were verified against throwaway fixture files under `src/floorplan`, `src/modules/*`, and
+  `src/app` that reproduced each violation; the fixtures were deleted before committing. No
+  production code was moved.
