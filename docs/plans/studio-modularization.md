@@ -1087,17 +1087,17 @@ Each phase agent appends one entry here **before finishing**, so the next phase 
 happened rather than what was planned. Record deviations from the spec above, anything the next phase
 must know, and anything deliberately deferred. Keep entries short and factual.
 
-| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                 |
-| ----- | ----------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                               |
-| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape. |
-| 1b    | not started |                     |                                                                                                                                                                       |
-| 2     | not started |                     |                                                                                                                                                                       |
-| 3a    | not started |                     |                                                                                                                                                                       |
-| 3b    | not started |                     |                                                                                                                                                                       |
-| 4     | not started |                     |                                                                                                                                                                       |
-| 5     | not started |                     |                                                                                                                                                                       |
-| 6     | not started |                     |                                                                                                                                                                       |
+| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                         |
+| ----- | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                       |
+| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.         |
+| 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone. |
+| 2     | not started |                     |                                                                                                                                                                               |
+| 3a    | not started |                     |                                                                                                                                                                               |
+| 3b    | not started |                     |                                                                                                                                                                               |
+| 4     | not started |                     |                                                                                                                                                                               |
+| 5     | not started |                     |                                                                                                                                                                               |
+| 6     | not started |                     |                                                                                                                                                                               |
 
 ### Deviations
 
@@ -1243,3 +1243,146 @@ still dispatches `vertex.move`, not a compound of one.
 axis-lock), `tests/unit/stores/interactionPreview.test.ts` (preview live / commit exactly once /
 untouched on cancel / origin drag emits nothing). `historyStore.test.ts` and `roomStore.test.ts`
 were rewritten against the command API; the pause/resume block is gone. 311 tests pass.
+
+#### Phase 1b
+
+Commits: `30643ec` (implementation), `e738251` (store-boundary and settings tests).
+
+**Where things live.**
+
+- `src/types/session.ts` — `Session`, `History`/`HistoryEntry`, `CarriedState`, `Diagnostics`,
+  `ModuleRuntimeStatus`, `LoadedDocument`, plus the selectors `undoLabel`, `redoLabel`,
+  `canUndo(h)`, `canRedo(h)` and the constructors `createEmptySession`, `asLoadedDocument`.
+- `src/types/selection.ts` — the `Selection` union and `NO_SELECTION`.
+- `src/stores/reduceSession.ts` — `SessionAction`, `reduceSession`, `MAX_HISTORY = 50`.
+- `src/stores/sessionStore.ts` — the store, and **every** narrow derived view.
+- `src/stores/roomStore.ts` — now the verb layer only: re-exports `roomStore` /
+  `committedDocument` / `interaction`, and holds the read helpers, the room-shaped derived
+  views (`canPlaceLights`, `roomBounds`, …) and one thin command producer per call site.
+- `src/utils/deepFreeze.ts` — the dev-only backstop.
+- Both new type files are re-exported from `src/types/index.ts`.
+
+**Deviations and additions.**
+
+- **`committedRoom` is gone, not aliased.** The plan says "repoint `committedRoom` … export the
+  latter as `committedDocument`"; keeping two names for one store is worse than moving the four
+  read sites (`App.svelte`, `Toolbar.svelte`, `settingsStore`, tests). `roomStore` keeps its name
+  and its live-preview meaning as planned, so no rendering or panel read site changed.
+- **`DeepReadonly` is still not applied.** `Session`'s fields are `readonly` one level deep, and
+  `EditorDocument` is mutable-typed exactly as it was in 1a. Introducing `DeepReadonly` would
+  have forced a cast at every handler return and every renderer read in the same commit that
+  replaces the store; the dev deep-freeze covers the same failure mode at runtime and the
+  existing tests exercise it. **A later phase should add the type-level half** — 3a is the
+  natural place, since it introduces `readModule`/`withModule` whose signatures the plan already
+  writes in terms of `DeepReadonly`.
+- **`sessionStore.current()` exists** and is not in the plan's sketch. `insertVertexOnWall` /
+  `deleteVertex` (which compute a return value from the committed document before dispatching)
+  and every `settingsStore` setter need a synchronous read that is not a subscription. It is
+  documented as a smell; prefer the narrow stores.
+- **`sessionStore.setRuntimeStatus(moduleId, status)`** wraps the plan's
+  `diagnostics.setRuntimeStatus` action. Nothing calls it yet; phase 4 does.
+- **`interaction` and `carried` are exported as narrow stores too**, beyond the five the plan
+  names. `interaction` has read sites (tests, and phase 2/4 will want it); `carried` is there so
+  3a has somewhere to read the quarantine map from.
+- **The reference-equality guard is per subscriber, not a shared `derived`.** `svelte`'s
+  `derived` calls `set` on every dependency emission and `writable.set` always notifies for
+  object values, so a `derived` cannot suppress anything. Each narrow store is a hand-written
+  `Readable` that holds its own `last` and declines to call `run`. `roomStore` additionally
+  memoizes `previewDocument` on the session reference — otherwise it would allocate a fresh
+  document per emission and the guard could never fire.
+- **The 1a no-op guarantee is preserved in two halves.** `reduceSession` returns the **same
+  session reference** for a value-equal result (and for `interaction.set` to an equal value,
+  `selection.set` to an equal value, undo/redo on an empty stack, `interaction.commit` with
+  nothing pending), and `sessionStore` **skips the write entirely** on `next === current`. Both
+  halves are asserted: the reducer table asserts `toBe`, the store test asserts zero emissions.
+- **`EditorDocument.modules`** is now a required field initialized to `{}`. Its type
+  `ModuleSlices = Record<never, never>` is deliberately opaque — no index signature — so 3a can
+  add `readModule`/`withModule` as the only doors without changing any call site. The legacy
+  persistence adapter drops it, which is correct while it is always empty.
+- **`document.open` takes a `LoadedDocument`**, as the plan specifies. Until 3a produces real
+  ones, `asLoadedDocument(doc)` wraps a bare document with empty carried state and diagnostics;
+  `openDocument(doc)` in `roomStore.ts` keeps its old signature so no call site changed.
+- **Undo/redo history labels are now surfaced**: the toolbar tooltips read
+  "Undo Move wall (Ctrl+Z)". That is the first consumer of the handler labels 1a added.
+- **`historyStore.clear()` has no replacement and no caller.** `document.open` clears history, so
+  the two `clear()` calls in `Toolbar.svelte` (new project, import) were deleted rather than
+  ported. If some future path needs "keep the document, drop the history", add a
+  `history.clear` action; nothing needs it today.
+
+**`Session.selection` — what phase 2 must do.**
+
+The field exists and holds the plan's `Selection` union verbatim (`none` / `wall` / `vertex` /
+`obstacle` / `obstacleVertex` / `door` / `module`). `selection.set` is a reducer action,
+`document.open` clears it to `{ kind: 'none' }`, `sessionStore.select()` and the narrow
+`selection` store are wired, and the reducer table covers replace-not-merge. **Nothing reads or
+writes it yet** — the six `appStore` writables are still the source of truth, exactly as the
+brief required.
+
+Phase 2 therefore has to:
+
+- Migrate the six stores onto this field, deleting them and the manual cross-clears. The shims
+  the plan describes should be `derived(selection, …)` over the field.
+- **Decide where light selection goes.** There is no `light` variant, because lighting is a
+  module: multi-select of fixtures becomes
+  `{ kind: 'module', moduleId: 'lighting', type: 'fixture', payload: { ids } }`. Phase 2 lands
+  before 3b, so it must either introduce that variant early (via `defineSelection('lighting',
+'fixture', …)`, which needs no module system — just the two functions) or add a temporary
+  `light` core variant and delete it in 3b. The first is cheaper; the union already has the
+  extension point.
+- Note the cardinality choice already baked in: `vertex` and `obstacleVertex` carry
+  `indices: number[]` (multi-select), everything else carries a single `id`. That matches what
+  `appStore` does today.
+- `DragStartContext.selection` / `InteractionContext.selection` still take the old
+  `SelectionState` bag (six sets/ids) from `types/interaction.ts`. Converting those is part of
+  phase 2's call-site migration and is what the `Canvas.svelte` `current*` mirrors feed.
+
+**`settingsStore` — folded in here, not deferred to 3b.**
+
+`rafterConfig` and `displayPreferences` are no longer writables that dispatch on subscribe.
+They are read-only `Readable`s projected from `committedDocument`, merging defaults on read
+(and migrating the legacy `lightRadiusVisibility: 'never'`), with a `valueEqual` guard so a
+geometry edit does not look like a settings change to every panel. Each setter
+(`toggleRafters`, `setRafterOrientation`, `setRafterSpacing`, `updateRafterConfig`,
+`toggleUnitFormat`, `toggleGridSnap`, `cycleLightRadiusVisibility`, `updateDisplayPreferences`)
+is one dispatch. Consequences:
+
+- **`initSettingsFromRoom()` is deleted**, along with the `isLoadingFromSavedState` re-entrancy
+  flag. `App.svelte` and `ViewerPage.svelte` no longer call anything after `openDocument`.
+- `Toolbar.svelte` and `Canvas.svelte` lost their local `displayPreferences.update(...)` /
+  `rafterConfig.update(...)` closures and call the setters instead.
+- Phase 3b moves `rafterConfig` into `modules.lighting`; only `readRafterConfig` in
+  `settingsStore.ts` and the `lighting.setRafterConfig` handler have to follow it.
+- **Pre-existing behavior kept, worth revisiting:** a display-preference toggle (grid snap, unit
+  format, light-radius visibility) still produces an undo entry, because it is a document field
+  and every document change is one entry. That was already true in 1a and before it; it is now
+  visible in the tooltip as "Undo Change display preferences". If that is wrong, the fix is to
+  move display preferences off the document — not to special-case history.
+
+**Dev deep-freeze.**
+
+`deepFreeze` runs on `loaded.document` in `document.open` and on every document `reduceSession`
+produces, both behind a bare `if (import.meta.env.DEV)`. The helper retains no state (no
+seen-set, no cache) so tree-shaking can drop it; it short-circuits on an already-frozen object,
+which also makes re-freezing history snapshots free. It surfaced **no mutations** — the whole
+suite (334 tests at that point, including the four integration suites that drive real handlers
+and renderers) passed unchanged, and a sweep for in-place writes to document data found only
+`LightManager`, which shallow-copies each fixture into its own map first. Preview documents are
+_not_ frozen: they are produced outside the reducer by `previewDocument`.
+
+**Not done / deferred.**
+
+- `Interaction` still has two variants. The plan's `drawing` and `measuring` variants remain in
+  `WallBuilder` and `MeasurementController`, as in 1a. `DragOrigin` is still op-local.
+- No `DeepReadonly` (see above).
+- The dev assertion that a command's _result_ is serializable, and the `defaultData()` freeze,
+  are not applicable yet — there are no codecs. 3a adds both.
+- `CarriedState.geometryFingerprint` is `''` and `quarantined` is always empty; 3a fills them.
+
+**Tests.** `tests/unit/stores/reduceSession.test.ts` is the pure table (no store, no Svelte, no
+DOM) and covers the mixed label sequence, the 51-dispatch eviction plus 50 undos, open pushing
+no entry while clearing interaction and selection, undo/redo clearing a pending drag including
+one whose entity the restored snapshot no longer contains, and the dev freeze.
+`tests/unit/stores/sessionStore.test.ts` covers the store boundary: one action one emission,
+zero emissions for a no-op, and each narrow store's guard. `historyStore.test.ts` became
+`sessionHistory.test.ts` (same scenarios, `sessionStore.undo/redo`, `clear()` scenarios
+rewritten as `openDocument`). `settingsStore.test.ts` is new. 352 tests pass.
