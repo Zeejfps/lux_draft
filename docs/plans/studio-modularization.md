@@ -1087,17 +1087,17 @@ Each phase agent appends one entry here **before finishing**, so the next phase 
 happened rather than what was planned. Record deviations from the spec above, anything the next phase
 must know, and anything deliberately deferred. Keep entries short and factual.
 
-| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                         |
-| ----- | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                       |
-| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.         |
-| 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone. |
-| 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.       |
-| 3a    | done        | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass. |
-| 3b    | not started |                     |                                                                                                                                                                               |
-| 4     | not started |                     |                                                                                                                                                                               |
-| 5     | not started |                     |                                                                                                                                                                               |
-| 6     | not started |                     |                                                                                                                                                                               |
+| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                          |
+| ----- | ----------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                        |
+| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.          |
+| 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone.  |
+| 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.        |
+| 3a    | done        | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass.  |
+| 3b    | done        | `modules` / 3e0d291 | Lighting data lives in `modules.lighting`; every entry point routes through `documentCodec` and ends in `sessionStore.open`. `legacyDocumentAdapter` and `RoomState` are gone. |
+| 4     | not started |                     |                                                                                                                                                                                |
+| 5     | not started |                     |                                                                                                                                                                                |
+| 6     | not started |                     |                                                                                                                                                                                |
 
 ### Deviations
 
@@ -1745,3 +1745,161 @@ follow, and `src/lighting/selection.ts`'s importers are the remaining exception 
 6. Re-run `tests/unit/persistence/documentCodec.test.ts` unchanged — it is the regression gate — and
    add the 3b acceptance case: load → visit a mode → save is value-identical, and a slice equal to
    its default is pruned.
+
+#### Phase 3b
+
+Commits: `ef5e871` (the data move), `874a1d8` (tests), `3e0d291` (share failure handling, picker-aware
+placement, panel reads).
+
+**The document has no domain fields at its root any more.** `EditorDocument` is
+`geometry + space + displayPreferences? + modules`. `lights` and `rafterConfig` are deleted, and so
+are `RoomState`, `DEFAULT_ROOM_STATE`, `LightChanges`, `src/persistence/legacyDocumentAdapter.ts`,
+`src/commands/lightCommands.ts`, `src/stores/deadZoneStore.ts` and `src/stores/spacingStore.ts`.
+
+**`createEmptyDocument()` normalizes module slices, and that is new machinery the plan does not
+mention.** An absent slice is how a _quarantined_ module is represented — `withModule` on one is a
+no-op — so a document nothing decoded (a new project, a hand-built test fixture) must still carry a
+materialized default or every `lighting.*` command it dispatches would silently do nothing.
+`defaultModuleSlices()` in `src/types/moduleRegistry.ts` builds `{ id: codec.defaultData() }` for
+every installed module and `createEmptyDocument()` calls it. Consequences:
+
+- **Registration must happen before any document is built.** `main.ts` already imports
+  `./modules/codecs` first; `tests/setup.ts` (new, wired via `setupFiles` in `vite.config.ts`) does
+  the same for the suite. A test that constructs a document without it gets a sliceless document and
+  no-op commands — a silent failure, so the setup file is load-bearing.
+- `src/types/document.ts` now imports `./moduleRegistry`. That is core→core and there is no runtime
+  cycle (`module.ts`'s import of `document.ts` is type-only), but it is worth knowing before the
+  `src/floorplan/` move.
+
+**The lighting write path, end to end.**
+
+1. A producer calls a verb in `src/stores/lightingStore.ts` (`addLight`, `moveLight`,
+   `applyDefinitionToFixtures`, `removeLights`, `toggleRafters`, `updateRafterConfig`,
+   `setRafterOrientation`, `setRafterSpacing`, `toggleDeadZones`, `toggleSpacingWarnings`).
+2. That verb builds a registered `lighting.*` command with `CommandKind.make(...)` and calls
+   `sessionStore.dispatch` exactly once. Several fixtures at once collapse to a `compound`, so it is
+   still one history entry.
+3. `applyCommand` resolves the handler through `moduleCommandHandler`, and `defineCommand`'s wrapper
+   applies it through `withModule`.
+4. Drags are unchanged in shape: `UnifiedDragOperation` and `GrabModeDragOperation` now return
+   `moveFixture.make({ fixtureId, position })` where they returned `{ type: 'light.move', ... }`, so
+   a fixture drag is a candidate command like any other.
+
+**Reads.** `src/stores/documentSlice.ts` (new, ~30 lines) is the shared guarded projection helper —
+the hand-written `Readable` pattern from `sessionStore.ts`, parameterized by source store and
+equality. `lightingStore.ts` exposes `lightingData` / `fixtures` (live, off `roomStore`, so a drag
+previews) and `committedLightingData` / `rafterConfig` / `deadZoneConfig` / `spacingConfig`
+(committed, so a panel does not flicker mid-gesture). `spacingWarnings` moved here too. `readModule`
+returns the stored slice by reference, so a plain reference guard is enough; `settingsStore`'s
+`displayPreferences` still needs `valueEqual` because it merges defaults on read.
+
+**Deviations from the plan's step list.**
+
+- **The narrow lighting stores are in `src/stores/lightingStore.ts`, not in `sessionStore.ts`** as
+  step 3 suggested. Putting them in `sessionStore.ts` would have made core import
+  `modules/lighting/codec.ts`, which is exactly the boundary phase 4 has to enforce. This file is
+  lighting's and phase 4 moves it wholesale.
+- **`rafterConfig` left `settingsStore.ts` entirely** rather than "only `readRafterConfig` follows
+  it", for the same reason. `settingsStore.ts` is now display preferences only, which is genuinely
+  core. `deadZoneStore.ts` and `spacingStore.ts` were deleted rather than repointed — their configs
+  are document data now, so a writable store for them was a second source of truth.
+- **`InteractionContext` gained a `fixtures: LightFixture[]` field.** `SelectionHandler` and
+  `BoxSelectionHandler` read `context.document.lights`; core handlers may not reach into a module
+  slice, so `Canvas.svelte` reads it out and passes it in. This is a seam, not a home — phase 4
+  replaces it with a `ModuleView` handed to lighting's own handlers.
+- **`SaveInput = { document, carried }`** (`src/types/session.ts`) and the `saveInput` narrow store
+  (`sessionStore.ts`, memoized on both parts) are how `carried` gets threaded. `saveNow`,
+  `setupAutoSave`, `exportToJSON`, `getJSONString` and `generateShareUrl` all take one, so a save
+  path that forgets the quarantined blobs does not compile. This is the plan's "(document, carried)
+  pair" made a type.
+- **`generateShareUrl(input, moduleId)` takes the module id as a parameter**; the callers pass
+  `LIGHTING_MODULE_ID`. Core names no module, and phase 5 puts the same id in the URL path. The URL
+  itself is still `#/viewer?d=...`, unchanged.
+- **`ExportData` is gone from the write path.** `jsonExport.createExportData` returns a
+  `DocumentEnvelopeV3` now. `toEnvelopeV3` still _reads_ `{ version: 1 | 2, roomState,
+lightDefinitions }`, permanently.
+- **Both share buttons now catch.** `encodeDocument` throws when the share target is quarantined;
+  the handlers alert and return rather than rejecting an async click handler.
+- **`applyDefinitionToFixtures` orders its compound deliberately.** `definitions.set` normalizes
+  against the fixtures as they are _after_ the `fixture.set`s, so the adopted definition command must
+  come last or it is pruned as unreferenced. Same reason `addFixture` carries an optional
+  `definition`.
+
+**The global definitions store and the adoption step.**
+
+`src/stores/lightDefinitionsStore.ts` is the fixture **picker library** and nothing else: its own
+`lumen2d_light_definitions` key, no document involvement. `mergeLightDefinitions` is deleted along
+with the merge-on-decode side effect in `processImportData`, so decode is pure.
+
+- `adoptIncomingDefinitions(document)` in `lightingStore.ts` is the explicit post-`open` step. It
+  adds only the ids the library lacks, so a local `custom-abc` is never overwritten by a stranger's.
+  Called immediately after `openLoaded` at all four load sites (`App.svelte`, `Toolbar.svelte`
+  import, `ViewerPage.svelte` share link and file open).
+- `pickerDefinitions` is what the UI offers: the library with each id resolved through
+  `resolveDefinition` (**the document's copy wins**), plus any document-only definition. Every
+  photometry read goes through it — `LightToolPanel`, `LightPropertiesPanel`, and `LightManager`,
+  which is now constructed with `(id) => get(pickerDefinitions).find(...)` instead of the library's
+  `getDefinitionById`. That is the fix for a share link rendering the sender's fixtures with the
+  recipient's photometry.
+
+**Behaviour changes worth knowing.**
+
+- Toggling dead zones or spacing warnings is now a document edit, so it is undoable and marks the
+  project dirty. Same for rafter visibility, which was already true after 1b. If that is wrong the
+  fix is to move those settings off the document, not to special-case history.
+- A file or share link whose lighting blob is undecodable quarantines instead of throwing (inherited
+  from 3a; now reachable from the UI). Geometry still loads and stays editable.
+- `Diagnostics.warnings` is populated on every real load and **still has no UI**. Deferred — the
+  natural home is the Studio shell in phase 4/5.
+
+**Deliberately not done.** No `ModuleRuntime` / `ModuleView` / activation scope; nothing moved to
+`src/floorplan/` or `src/modules/lighting/` beyond what 3a put there; `EditorRenderer` still names
+each renderer; `Toolbar`/`Canvas` are still hand-wired; the boundary lint is still inert; share URLs
+are still `#/viewer`. `Interaction` still has two variants. `Session.document` is still
+`EditorDocument`, not `DeepReadonly<EditorDocument>`.
+
+**What phase 4 must know.**
+
+- **Files that are lighting's and must move under `src/modules/lighting/`:** `src/lighting/*`
+  (`LightManager`, `LightCalculator`, `LightingStatsCalculator`, `SpacingAnalyzer`, `LightIcon`,
+  `IESParser`, `constants.ts`, `selection.ts`), `src/stores/lightingStore.ts`,
+  `src/stores/lightDefinitionsStore.ts`, `src/stores/lightingStatsStore.ts`,
+  `src/rendering/{LightRenderer,HeatmapRenderer,ShadowRenderer,DeadZoneRenderer,SpacingWarningRenderer,RafterOverlay,BaseLightingRenderer}.ts`,
+  `src/interactions/handlers/LightPlacementHandler.ts`, and the light panels under
+  `src/components/`. `codec.ts` and `commands.ts` are already there.
+- **The core→module imports the boundary lint will reject the moment core moves to
+  `src/floorplan/`**, all of them deliberate and all of them phase 4's to remove:
+  - `src/lighting/selection.ts` ← `SelectionHandler`, `UnifiedDragOperation`,
+    `GrabModeDragOperation`, `grabModeHelpers`, `interactionUtils`, `Toolbar`, `Canvas` (phase 2's
+    note, unchanged).
+  - `src/modules/lighting/commands.ts` ← `UnifiedDragOperation`, `GrabModeDragOperation` (new in
+    3b, for `moveFixture.make`).
+  - `src/modules/lighting/codec.ts` ← `src/stores/lightingStore.ts`, `Toolbar.svelte`,
+    `ViewerToolbar.svelte` (for `LIGHTING_MODULE_ID`).
+  - `InteractionContext.fixtures` is the shape of the problem: core interaction code needs
+    fixtures for hit-testing, selection origin and box selection. The `ModuleView` + module-owned
+    handlers contract is what removes all of the above at once; a config callback is the cheap
+    fallback if a file has to move early.
+- **`src/modules/*/codec.ts` and `commands.ts` may not import `three` or `*.svelte`** — still true,
+  and `lightingStore.ts` imports `svelte/store`, so it belongs in the module's _runtime_ half, not
+  beside the codec, or the lint rule has to distinguish them.
+- **Keep the push-not-pull registry.** `documentCodec` reads `types/moduleRegistry.ts`;
+  `modules/codecs.ts` pushes into it at import time. `types/document.ts` now reads it too.
+- **`asLoadedDocument` has two callers left**: `openDocument`/`resetRoom` in `roomStore.ts` (a new
+  project, which nothing decodes) and the settings tests. That is correct, not a leftover.
+- **`saveInput`, not `committedDocument`, is what any new save path subscribes to.**
+
+**Tests.** 477 pass (435 inherited plus the two new suites; the 454 of 3a lost the five legacy
+`light.*` cases from `applyCommand.test.ts`, the `validateRoomState` block that no longer exists, and
+the rafter half of `settingsStore.test.ts` — all replaced by module-command and lighting-store
+coverage). New: `tests/unit/persistence/entryPoints.test.ts` runs all seven phase-3a fixtures through
+`importFromString` and `loadFromLocalStorage`, asserts load → visit a mode → save is value-identical
+with no history entry, asserts a default slice is pruned, and covers share generate → decode
+including the custom-definition closure and the quarantined-target refusal;
+`tests/unit/stores/lightingStore.test.ts` covers live-vs-committed projections, no-emission on an
+unrelated edit, each setter as one undoable command, and the definition closure following its
+fixtures. `tests/helpers/documents.ts` gained `lightsOf` / `lightingOf` and seeds the lighting slice.
+`documentCodec.test.ts` is unchanged and still green.
+
+`npm run test:run`, `npm run type-check`, `npm run lint`, `npm run build` and `npx prettier --check .`
+all pass. `npx svelte-check` is down to four pre-existing errors, none in the lighting path.
