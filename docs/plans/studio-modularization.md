@@ -1087,17 +1087,17 @@ Each phase agent appends one entry here **before finishing**, so the next phase 
 happened rather than what was planned. Record deviations from the spec above, anything the next phase
 must know, and anything deliberately deferred. Keep entries short and factual.
 
-| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                          |
-| ----- | ----------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                        |
-| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.          |
-| 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone.  |
-| 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.        |
-| 3a    | done        | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass.  |
-| 3b    | done        | `modules` / 3e0d291 | Lighting data lives in `modules.lighting`; every entry point routes through `documentCodec` and ends in `sessionStore.open`. `legacyDocumentAdapter` and `RoomState` are gone. |
-| 4     | done        | `modules` / e15e681 | Module runtime manifest, activation scope and the entity seam; `src/{floorplan,modules,app}` exist and the boundary lint is live. `EditorRenderer` is a `SceneLayer[]` loop.   |
-| 5     | not started |                     |                                                                                                                                                                                |
-| 6     | not started |                     |                                                                                                                                                                                |
+| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                               |
+| ----- | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                             |
+| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.               |
+| 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone.       |
+| 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.             |
+| 3a    | done        | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass.       |
+| 3b    | done        | `modules` / 3e0d291 | Lighting data lives in `modules.lighting`; every entry point routes through `documentCodec` and ends in `sessionStore.open`. `legacyDocumentAdapter` and `RoomState` are gone.      |
+| 4     | done        | `modules` / e15e681 | Module runtime manifest, activation scope and the entity seam; `src/{floorplan,modules,app}` exist and the boundary lint is live. `EditorRenderer` is a `SceneLayer[]` loop.        |
+| 5     | done        | `modules` / 99ed779 | Routes are `#/{module}`, `#/{module}/viewer` and `#/modes`; `ModuleRuntime` gained `overlays` and `surfaces` so the shell imports no module UI. `npm run check:bundle` is the gate. |
+| 6     | not started |                     |                                                                                                                                                                                     |
 
 ### Deviations
 
@@ -2149,3 +2149,234 @@ entities to a test-controlled document, which is how the drag and selection-stor
 same count phase 3b left. The app was additionally smoke-tested by loading it in headless
 Chrome and asserting the module's tool button reaches the toolbar — which is how the
 `invalidate` bug was found.
+
+#### Phase 5
+
+Commits: `83eb465` (routing, the mode picker, module-contributed UI surfaces), `d386d00` (the
+bundle check), `4ec5eac` (tests), `99ed779` (the entity-count store).
+
+**The route table, as built** (`src/app/routerStore.ts`).
+
+| Hash                | Route                                      | Note                             |
+| ------------------- | ------------------------------------------ | -------------------------------- |
+| `#/`                | `{ kind: 'editor', moduleId: 'lighting' }` | **Permanent** alias.             |
+| `#/viewer`          | `{ kind: 'viewer', moduleId: 'lighting' }` | **Permanent** alias.             |
+| `#/modes`           | `{ kind: 'picker' }`                       | The mode-picker landing route.   |
+| `#/{module}`        | `{ kind: 'editor', moduleId }`             | Only if the module is installed. |
+| `#/{module}/viewer` | `{ kind: 'viewer', moduleId }`             | What new share links emit.       |
+| anything else       | `{ kind: 'picker' }`                       | Including an uninstalled module. |
+
+- `Route` is a union, not a string. `currentRoute` and `routeParams` are hand-written guarded
+  slices over one `writable` (a `derived` would re-emit on every hash change, and the phase-4
+  rule stands: **a guarded slice must not forward `invalidate`** — these subscribe with the
+  `run` callback only).
+- **The two bare forms are read, never written.** `routePath(route)` is always
+  module-qualified, so a link copied out of the address bar names its mode. `parseRoutePath` is
+  pure and exported, which is what the route table test drives.
+- **An uninstalled module id resolves to the picker, not to lighting.** Silently showing a
+  different mode's document is worse than asking. This is the one route decision the plan does
+  not specify.
+- The mode picker is at `#/modes` rather than at `#/`, because the plan requires bare `#/` to
+  resolve to lighting permanently — the two cannot both be the landing route. It is reachable
+  from the toolbar's branding block, which shows the active module's label.
+- `src/app/moduleRouting.ts` is the route → activation glue, extracted from `App.svelte` so a
+  test can drive it: `applyRoute(route)` activates for an editor route and deactivates for the
+  picker and the viewer; `startModuleRouting()` subscribes and returns the unsubscribe. It
+  never awaits one activation before starting the next — a route change is synchronous and the
+  user is allowed to out-run an `import()`.
+- `shareUrl.ts` builds `#/{moduleId}/viewer?d=…` itself rather than importing the router
+  (`floorplan/` may not import `app/`). That is the only duplicate of the route shape, and
+  `tests/unit/app/routerStore.test.ts` asserts a generated link parses back to its module.
+
+**The eager-chunk problem, and what `ModuleRuntime` gained.**
+
+Phase 4's warning was accurate: `Toolbar.svelte` imported lighting's store and `statsStore` for
+the overlay toggles and `App.svelte` rendered `LightToolPanel` / `RafterControls` /
+`LightDefinitionManager` directly, so most of the module was in the initial chunk. Two new
+manifest fields fix it, plus one deletion and one dynamic import:
+
+```ts
+/** Toolbar toggles, rendered in the shell's Overlay section while this module is active. */
+readonly overlays?: readonly OverlayToggle[];
+/** Free-standing UI mounted for as long as the module is active. Each takes no props. */
+readonly surfaces?: readonly PanelComponent[];
+```
+
+```ts
+export interface OverlayToggle {
+  readonly id: string; // `${moduleId}.${verb}`, claimed like a tool id
+  readonly label: string;
+  readonly title: string;
+  readonly icon: string; // raw SVG markup, same contract as ToolDescriptor.icon
+  readonly active: Readable<boolean>;
+  toggle(): void;
+}
+```
+
+- **`active` is a `Readable`, not `(view) => boolean`.** Some overlays are document data
+  reachable through the view (rafter visibility) and some are session-local presentation state
+  deliberately not in the document (the stats panel, the definition-manager modal). One shape
+  covers both. A module handing _out_ a read-only store is not a module being handed one —
+  invariant 6 is about what a module may read of the session.
+- **`statsPanel` is gone**, folded into `surfaces`. It existed only because the shell had to
+  name it; a surface guards its own visibility, so there is nothing left to distinguish.
+  `ActiveModule.statsPanel` became `ActiveModule.surfaces`.
+- **New stores on `moduleActivation.ts`:** `moduleOverlays`, `moduleSurfaces` and
+  `moduleEntitySummary` (`{ label, count } | null`, derived over `activeView` so it tracks the
+  live document). `EntityDescriptor` gained `label: string` (a plural noun, `'Lights'`) and
+  `EntityAccess` carries it; that is what the core property panel's count row reads now.
+- `validateRuntime` claims overlay ids in their own table, with the same namespacing and
+  duplicate checks as tool ids.
+- **`ViewerPage` is loaded with a dynamic `import()` from `App.svelte`.** The viewer is a whole
+  second page and it is lighting-shaped end to end (heatmap, shadows, a light info sheet);
+  importing it statically put the shaders back in the editor's chunk. It is the one place
+  outside `modules/` that still imports lighting directly, and that is fine now that it is
+  lazy.
+- **Definition adoption moved into the module.** `adoptIncomingDefinitions` takes
+  `LightDefinition[]` instead of a document, and lighting's `onActivate` subscribes it to
+  `committedLightingData` (a guarded slice, so it runs on activation and then only when the
+  slice changes — every load re-activates via `sessionStore.beforeOpen`). The three shell call
+  sites are gone. The viewer, which has no activation registry, still calls it by hand.
+- Smaller consequences: `Toolbar`'s "start a new project?" prompt asks `walls.length > 0 ||
+canUndo(history)` instead of counting fixtures; the Stats and Lights buttons moved from the
+  toolbar's "More" section into "Overlay", where the rest of the module's toggles are; the
+  `Radius` toggle stays core because `lightRadiusVisibility` is still a core document field
+  (the phase-4 note about that wart stands).
+
+After all of it, `src/app/**` outside `viewer/` has exactly one import from `modules/`:
+`routerStore.ts` reading `LIGHTING_MODULE_ID`, which is eager by definition and is what makes
+the permanent aliases mean something.
+
+**The bundle check** — `scripts/check-bundle.mjs`, `npm run check:bundle` (which builds first).
+
+- `vite.config.ts` sets `build.manifest: true`. The script walks the manifest's **static**
+  `imports` transitively from the entry chunk and deliberately does not follow
+  `dynamicImports`; the result is the set of files a browser must fetch before it can render.
+  Today that is one chunk.
+- Assertions are string-content matches, because chunks are minified and identifiers are
+  mangled while string bodies are not. Markers are matched **without surrounding quotes** — the
+  minifier rewrites quoting and emits backticks.
+  - **Absent:** the IES parser (`TILT=`, `Invalid IES file`), the heatmap shader
+    (`uLightBeamAngles`, `MAX_OBSTACLE_VERTICES`), the shadow shader (`uLightPosition`,
+    `uPolygonVertices[64]`).
+  - **Present:** lighting's codec (`lighting slice must be an object`), its command table
+    (`fixture.move`, `rafterConfig.set`), the document codec (`quarantin`,
+    `geometryChangedSinceLoad`).
+- Verified to actually fail: adding a static `IESParser` import to `StatusBar.svelte` produced
+  the expected failure, then was reverted.
+- **If a marker string is ever reworded the check goes green for the wrong reason** for the
+  REQUIRED set and red for the wrong reason for FORBIDDEN. Update the markers with the message.
+
+**The share dialog, and the 8000-character threshold.**
+
+`src/app/ShareDialog.svelte` replaces the toolbar's fire-and-copy button. It lists every
+installed module (from `registeredModules()`, so no runtime loads), defaults to the active mode
+without overriding a later choice, shows the URL and its length inline, and **disables a module
+whose slice is quarantined** — `encodeDocument` throws for one, and the dialog stops it before
+anyone has to read the exception. `ViewerToolbar` shares the route's module id.
+
+The threshold was revisited as the plan asks, and the conclusion is not the one the plan hints
+at. 8000 is a **server** limit — the default request-line cap in nginx and IIS — and a share
+payload lives in the URL _fragment_, which is never sent to a server at all. So the number was
+never measuring what it named, and "a link now carries one module instead of two" is a reason
+the warning fires less often rather than a reason to pick a different number. The pair is now:
+
+- **2000** — where third-party surfaces (chat clients, ticket fields, QR codes) truncate a
+  pasted link. Unchanged, and it is the warning that matters in practice.
+- **32000** — a conservative floor across browsers' own address-bar and history limits, with a
+  message that says to export JSON instead.
+
+Both are named constants in `shareUrl.ts` with that derivation written down.
+
+**Deliberately not done / deferred.**
+
+- **The viewer is still lighting-shaped.** It takes the route's `moduleId` as a prop and uses
+  it for the share button, but it builds lighting's layers by hand (it has no editor session
+  and therefore no activation registry) and its stats panel is lighting's. Making it
+  module-generic means giving it an activation scope, which is worth doing when there is a
+  second module with something to view. Today `#/flooring/viewer` is unreachable because the
+  route rejects an uninstalled module.
+- `Interaction` still has two variants; `drawing`/`measuring` remain in `WallBuilder` and
+  `MeasurementController`. `Session.document` is still `EditorDocument`, not
+  `DeepReadonly<EditorDocument>`. `DisplayPreferences.lightRadiusVisibility` is still a
+  lighting-shaped field on a core type, and `roomStore.canPlaceLights` still exists.
+- The mode picker is a list of cards with no per-mode preview or document state. It does not
+  need one until a document can carry two modes' data.
+- No route-level code splitting beyond the viewer and the module runtimes. The initial chunk is
+  ~755 kB, nearly all of it THREE.
+
+**Verification.** `npm run test:run` (542 tests, 33 files — 516 inherited plus 26),
+`npm run type-check`, `npm run lint`, `npm run build`, `npx prettier --check .` and
+`npm run check:bundle` all pass. `npx svelte-check` is at the same 4 pre-existing errors
+(`FloatingPanel`, `Canvas`'s `originalPositions: null`, two in `LightInfoBottomSheet`).
+
+The app was driven in headless Chrome (`--headless=new --use-angle=swiftshader
+--enable-unsafe-swiftshader --virtual-time-budget=8000 --dump-dom` against `vite preview`;
+**without the swiftshader flags `Scene` throws on WebGL context creation and `App`'s `onMount`
+never runs**, which reads as "routing is broken" and is not). Confirmed: every route in the
+table renders the right page; the module's five overlay toggles and its tool button reach the
+toolbar from the lazy runtime; a share payload loads through both `#/viewer?d=…` and
+`#/lighting/viewer?d=…`. A second pass through an iframe harness drove client-side hash
+navigation — `#/lighting` → `#/modes` → `#/lighting` → four rapid alternations — and ended with
+exactly one copy of each overlay button, i.e. one active module and no duplicated
+contributions.
+
+**Tests.** `tests/unit/app/routerStore.test.ts` (the route table including both permanent
+aliases and the uninstalled-module case, `parseHash` not corrupting an lz-string payload,
+`routePath` round-trip, and a generated share link parsing back to its module).
+`tests/unit/app/moduleRouting.test.ts` (the acceptance criteria: `#/lighting` → `#/flooring` →
+`#/lighting` with all three loads in flight and resolved out of order; the same with the
+intermediate load resolving last; picker and viewer routes leaving nothing active;
+`startModuleRouting` following real `hashchange` events; and a `sessionStore.open` landing
+mid-activation — each asserting exactly one active module, exactly one scene child and exactly
+one live subscription). **Both modules there are stubs with controllable load timing**, which
+is the point: the activation machine is proven before a second real module lands.
+`moduleRegistry.test.ts` gained overlay-id namespacing and duplicate cases.
+
+**Exactly what phase 6 must know to author a second module from scratch.**
+
+Registering `flooring` is six steps and no core changes:
+
+1. **`src/modules/flooring/codec.ts`** — export `FLOORING_MODULE_ID = 'flooring'` and a
+   `ModuleCodec<FlooringData>`: `id`, `schemaVersion` (≥ 1), `defaultData()` returning a
+   **freshly allocated** value every call (the shared contract test asserts
+   `defaultData() !== defaultData()`), `decode(blob)` returning a status rather than throwing,
+   and `compactForShare?` returning `FlooringData` at the current `schemaVersion`.
+2. **`src/modules/flooring/commands.ts`** — one `defineCommand(codec, verb, spec, options?)` per
+   edit, and a `flooringCommands: readonly RegisteredCommand[]` array. Pass
+   `{ absolute: true }` for every member of the move-and-set family; the contract test asserts
+   applying an absolute command twice equals applying it once. Verbs are bare (`layout.configure`);
+   `defineCommand` prefixes the module id.
+   Neither file may import `three`, a `*.svelte` component, or `runtime.ts` — the lint enforces
+   it, and the bundle check enforces the consequence.
+3. **`src/modules/flooring/runtime.ts`** — export a `ModuleRuntime` with `id` (must equal the
+   codec id) and `label`, plus any of: `tools` (ids `flooring.*`, each carrying its own inline
+   SVG `icon` and an optional single-letter `key`), `overlays` (ids `flooring.*`, each with a
+   `Readable<boolean>` and a `toggle()`), `entities` (an `EntityDescriptor` whose `selection`
+   is `defineSelection('flooring', …)` and which carries a plural `label`), `layers(scene)`,
+   `handlers(ctx)`, `panels` (keyed by `SelectionKind.panelKey`), `surfaces` (prop-less
+   components that guard their own visibility), `shortcuts` (not one of
+   `CORE_RESERVED_SHORTCUTS`), and `onActivate(ctx, scope)`. **Nothing here disposes anything**
+   — hand every disposer to `scope.own`, and pass `scope.signal` to async work.
+4. **`src/modules/codecs.ts`** — add a `ModuleDefinition` with `codec`, `commands`, `label` and
+   `loadRuntime: () => import('./flooring/runtime').then((m) => m.flooringRuntime)`, and
+   register it in `installModules()`. It must be a real dynamic `import()` or the bundle check
+   fails.
+5. **`eslint.config.js`** — add `'flooring'` to `MODULE_IDS` or it gets no cross-module
+   enforcement. (It is already in the list.)
+6. **`scripts/check-bundle.mjs`** — add the module's own forbidden markers (its renderer's
+   shaders, any parser) and required markers (a codec message, a command verb). The check only
+   proves what it is told to look for.
+
+Nothing else. The route (`#/flooring`, `#/flooring/viewer`), the mode-picker entry, the toolbar
+button, the overlay toggles, the mounted panels, entity hit-testing, box select, grab, snap,
+measure, Delete, the share dialog's module row, and the property panel's count row all fall out
+of the manifest. Two things that do **not**: a share link for a module whose runtime cannot
+render is still generated (data status and runtime status are independent, by design), and the
+**viewer is not module-aware** — `#/flooring/viewer` will route but render lighting's canvas,
+so either generalize the viewer or leave flooring editor-only for the phase.
+
+One more constraint the plan already names and phase 6 will meet first: **planks are not
+entities.** `EntityDescriptor` is for selectable, movable _points_; planks are derived output.
+Transitions and the layout origin fit the seam, planks want `SceneLayer.inputs?` and the
+projection requirements in "Derived data is a projection over narrow inputs".
