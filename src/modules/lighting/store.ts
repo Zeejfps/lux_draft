@@ -125,9 +125,12 @@ export function resolveFixtureDefinition(
  * own. This offers the definitions an incoming document references — and only the ids the
  * library does not already have, so a local `custom-abc` is never overwritten by a stranger's.
  * The document's copy is what renders either way.
+ *
+ * Takes the definitions rather than a document: since phase 5 the module's own `onActivate`
+ * runs this off `committedLightingData`, so the shell no longer calls it at every load site.
+ * The viewer, which has no activation registry, still calls it by hand.
  */
-export function adoptIncomingDefinitions(doc: EditorDocument): void {
-  const incoming = readLighting(doc).definitions;
+export function adoptIncomingDefinitions(incoming: readonly LightDefinition[]): void {
   if (incoming.length === 0) return;
   lightDefinitions.update((library) => {
     const known = new Set(library.map((d) => d.id));

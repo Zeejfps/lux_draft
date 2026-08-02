@@ -131,6 +131,7 @@ describe('runtime registration', () => {
         runtime('alpha', {
           entities: {
             selection: foreign,
+            label: 'Things',
             hitTolerance: 1,
             list: () => [],
             moveCommand: () => ({ type: 'compound', label: '', commands: [] }),

@@ -4,7 +4,7 @@
   import { selection, clearSelection } from '../floorplan/stores/selectionStore';
   import { getSelectedVertexIndices } from '../floorplan/types/selection';
   import { CORE_TOOL_SELECT } from '../floorplan/types/state';
-  import { activeModule, toolbarTools } from '../floorplan/stores/moduleActivation';
+  import { activeModule, moduleOverlays, toolbarTools } from '../floorplan/stores/moduleActivation';
   import { NO_ENTITIES } from '../floorplan/types/entity';
   import { committedDocument, resetRoom, openLoaded } from '../floorplan/stores/roomStore';
   import { sessionStore, history, saveInput } from '../floorplan/stores/sessionStore';
@@ -15,26 +15,16 @@
     cycleLightRadiusVisibility,
   } from '../floorplan/stores/settingsStore';
   import {
-    adoptIncomingDefinitions,
-    committedLightingData,
-    deadZoneConfig,
-    rafterConfig,
-    spacingConfig,
-    toggleDeadZones,
-    toggleRafters,
-    toggleSpacingWarnings,
-  } from '../modules/lighting/store';
-  import { LIGHTING_MODULE_ID } from '../modules/lighting/codec';
-  import { toggleLightingStats, lightingStatsConfig } from '../modules/lighting/statsStore';
-  import {
     togglePropertiesPanel,
     propertiesPanelConfig,
   } from '../floorplan/stores/propertiesPanelStore';
   import { isMeasuring } from '../floorplan/stores/measurementStore';
   import { exportToJSON } from '../floorplan/persistence/jsonExport';
   import { importFromJSON } from '../floorplan/persistence/jsonImport';
-  import { generateShareUrl } from '../floorplan/persistence/shareUrl';
   import { saveNow, clearLocalStorage } from '../floorplan/persistence/localStorage';
+  import OverlayToggleButton from './OverlayToggleButton.svelte';
+  import ShareDialog from './ShareDialog.svelte';
+  import { navigate, PICKER_PATH } from './routerStore';
   import type { Tool, ViewMode, LightRadiusVisibility, EditorDocument } from '../floorplan/types';
 
   const iconPath = `${import.meta.env.BASE_URL}icons/lux_draft_icon.png`;
@@ -46,38 +36,30 @@
   let currentRoom: EditorDocument;
   $: currentRoom = $committedDocument;
 
-  const dispatch = createEventDispatcher<{ toggleMeasurement: void; openLightManager: void }>();
+  const dispatch = createEventDispatcher<{ toggleMeasurement: void }>();
 
   let currentTool: Tool;
   let currentViewMode: ViewMode;
-  let raftersVisible: boolean;
   let undoEnabled: boolean;
   let redoEnabled: boolean;
   let undoTitle: string;
   let redoTitle: string;
-  let statsVisible: boolean;
   let propertiesVisible: boolean;
-  let deadZonesEnabled: boolean;
-  let spacingEnabled: boolean;
   let gridSnapEnabled: boolean;
   let measuringActive: boolean;
   let canMeasure: boolean;
   let lightRadiusVisibility: LightRadiusVisibility;
   let saveSuccess: boolean = false;
-  let shareSuccess: boolean = false;
+  let shareOpen: boolean = false;
 
   $: currentTool = $activeTool;
   $: currentViewMode = $viewMode;
-  $: raftersVisible = $rafterConfig.visible;
   $: undoEnabled = canUndo($history);
   $: redoEnabled = canRedo($history);
   // The label rides with the snapshot, so the tooltip names the edit rather than the verb.
   $: undoTitle = undoEnabled ? `Undo ${undoLabel($history)} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
   $: redoTitle = redoEnabled ? `Redo ${redoLabel($history)} (Ctrl+Y)` : 'Redo (Ctrl+Y)';
-  $: statsVisible = $lightingStatsConfig.visible;
   $: propertiesVisible = $propertiesPanelConfig.visible;
-  $: deadZonesEnabled = $deadZoneConfig.enabled;
-  $: spacingEnabled = $spacingConfig.enabled;
   $: gridSnapEnabled = $displayPreferences.gridSnapEnabled;
   $: measuringActive = $isMeasuring;
   // Core's own vertices, plus whatever the active module contributes as point entities.
@@ -103,15 +85,9 @@
     dispatch('toggleMeasurement');
   }
 
-  function openLightManager(): void {
-    dispatch('openLightManager');
-  }
-
   function handleNew(): void {
-    if (
-      currentRoom.geometry.boundary.walls.length > 0 ||
-      $committedLightingData.fixtures.length > 0
-    ) {
+    // "Is there anything to lose" without naming a module: geometry, or any edit at all.
+    if (currentRoom.geometry.boundary.walls.length > 0 || canUndo($history)) {
       if (!confirm('Start a new project? Unsaved changes will be lost.')) {
         return;
       }
@@ -134,24 +110,9 @@
     exportToJSON($saveInput);
   }
 
-  async function handleShare(): Promise<void> {
-    // `encodeDocument` refuses to share a module whose data this build could not decode — a
-    // link for it would fail on open.
-    let result: ReturnType<typeof generateShareUrl>;
-    try {
-      result = generateShareUrl($saveInput, LIGHTING_MODULE_ID);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'This design cannot be shared.');
-      return;
-    }
-    await navigator.clipboard.writeText(result.url);
-    shareSuccess = true;
-    setTimeout(() => {
-      shareSuccess = false;
-    }, 2000);
-    if (result.warning) {
-      alert(result.warning);
-    }
+  function handleShare(): void {
+    // A link is a single-module view, so the module is a choice rather than a constant.
+    shareOpen = true;
   }
 
   function handleImportClick(): void {
@@ -165,8 +126,9 @@
 
     try {
       const loaded = await importFromJSON(file);
+      // The active module adopts anything the incoming document references; the shell no
+      // longer knows what "anything" means.
       openLoaded(loaded);
-      adoptIncomingDefinitions(loaded.document);
       clearSelection();
     } catch (err) {
       alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -213,6 +175,18 @@
       <div class="branding-text">
         <h1>LuxDraft</h1>
         <div class="subtitle">Studio <span class="version-badge">{__APP_VERSION__}</span></div>
+        <!--
+          The mode switcher. The label comes from the active module's manifest, and the button
+          goes to the picker route — the shell names no mode.
+        -->
+        <button
+          class="mode-button"
+          on:click={() => navigate({ kind: 'picker' })}
+          title="Switch mode ({PICKER_PATH})"
+        >
+          {$activeModule?.label ?? 'Choose a mode'}
+          <span class="caret">&#9662;</span>
+        </button>
       </div>
     </div>
   </div>
@@ -293,39 +267,21 @@
         </svg>
         <span class="label">Export</span>
       </button>
-      <button
-        class="tool-button"
-        class:save-success={shareSuccess}
-        on:click={handleShare}
-        title="Copy Share Link"
-      >
-        {#if shareSuccess}
-          <svg
-            class="icon-svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-          <span class="label">Copied!</span>
-        {:else}
-          <svg
-            class="icon-svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <circle cx="18" cy="5" r="3" />
-            <circle cx="6" cy="12" r="3" />
-            <circle cx="18" cy="19" r="3" />
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-          </svg>
-          <span class="label">Share</span>
-        {/if}
+      <button class="tool-button" on:click={handleShare} title="Copy Share Link">
+        <svg
+          class="icon-svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="18" cy="5" r="3" />
+          <circle cx="6" cy="12" r="3" />
+          <circle cx="18" cy="19" r="3" />
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+        </svg>
+        <span class="label">Share</span>
       </button>
       <button
         class="tool-button"
@@ -516,68 +472,14 @@
   <div class="toolbar-section">
     <span class="section-label">Overlay</span>
     <div class="button-group">
-      <button
-        class="toggle-button"
-        class:active={raftersVisible}
-        on:click={toggleRafters}
-        title="Toggle Rafters (R)"
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <line x1="3" y1="6" x2="21" y2="6" />
-          <line x1="3" y1="12" x2="21" y2="12" />
-          <line x1="3" y1="18" x2="21" y2="18" />
-        </svg>
-        <span class="label">Rafters</span>
-      </button>
-      <button
-        class="toggle-button"
-        class:active={deadZonesEnabled}
-        on:click={toggleDeadZones}
-        title="Toggle Dead Zones"
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-          />
-          <line x1="12" y1="9" x2="12" y2="13" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-        <span class="label">Dead Zones</span>
-      </button>
-      <button
-        class="toggle-button"
-        class:active={spacingEnabled}
-        on:click={toggleSpacingWarnings}
-        title="Toggle Spacing Warnings"
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path d="M21 10H3" />
-          <path d="M21 6H3" />
-          <path d="M21 14H3" />
-          <path d="M21 18H3" />
-          <path d="M6 6v12" />
-          <path d="M18 6v12" />
-        </svg>
-        <span class="label">Spacing</span>
-      </button>
+      <!--
+        Overlay toggles come from the active module's manifest. Before phase 5 these were
+        hardcoded buttons reading lighting's stores, which is what kept the whole module in
+        the eager chunk.
+      -->
+      {#each $moduleOverlays as overlay (overlay.id)}
+        <OverlayToggleButton {overlay} />
+      {/each}
       <button
         class="toggle-button"
         class:active={lightRadiusVisibility === 'always'}
@@ -605,25 +507,6 @@
     <div class="button-group">
       <button
         class="toggle-button"
-        class:active={statsVisible}
-        on:click={toggleLightingStats}
-        title="Toggle Lighting Stats (Q)"
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <line x1="18" y1="20" x2="18" y2="10" />
-          <line x1="12" y1="20" x2="12" y2="4" />
-          <line x1="6" y1="20" x2="6" y2="14" />
-        </svg>
-        <span class="label">Stats</span>
-      </button>
-      <button
-        class="toggle-button"
         class:active={propertiesVisible}
         on:click={togglePropertiesPanel}
         title="Toggle Properties Panel (P)"
@@ -640,24 +523,11 @@
         </svg>
         <span class="label">Properties</span>
       </button>
-      <button class="tool-button" on:click={openLightManager} title="Manage Light Definitions">
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <circle cx="12" cy="12" r="3" />
-          <path
-            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-          />
-        </svg>
-        <span class="label">Lights</span>
-      </button>
     </div>
   </div>
 </div>
+
+<ShareDialog visible={shareOpen} on:close={() => (shareOpen = false)} />
 
 <style>
   .toolbar {
@@ -740,6 +610,31 @@
     font-size: 9px;
     color: var(--text-muted);
     white-space: nowrap;
+  }
+
+  .mode-button {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    padding: 2px 6px;
+    background: var(--button-bg, transparent);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .mode-button:hover {
+    background: var(--button-bg-hover);
+  }
+
+  .caret {
+    font-size: 9px;
+    color: var(--text-muted);
   }
 
   .section-label {

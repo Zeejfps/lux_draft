@@ -29,6 +29,8 @@ export interface ModuleEntity {
 export interface EntityDescriptor<T> {
   /** The selection kind these entities use. Supplies the module id, type and panel key. */
   readonly selection: SelectionKind<{ ids: string[] }>;
+  /** Plural noun for the shell's read-outs, e.g. `Lights`. Core never spells one out. */
+  readonly label: string;
   /** Click tolerance in feet. */
   readonly hitTolerance: number;
   /** The entities present in this view. */
@@ -49,6 +51,7 @@ export interface EntityDescriptor<T> {
 export interface EntityAccess {
   readonly moduleId: string;
   readonly type: string;
+  readonly label: string;
   readonly hitTolerance: number;
   list(): readonly ModuleEntity[];
   find(id: string): ModuleEntity | null;
@@ -73,6 +76,7 @@ function distanceSquared(a: Vector2, b: Vector2): number {
 export const NO_ENTITIES: EntityAccess = {
   moduleId: '',
   type: '',
+  label: '',
   hitTolerance: 0,
   list: () => [],
   find: () => null,
@@ -95,6 +99,7 @@ export function bindEntities<T>(
   return {
     moduleId: descriptor.selection.moduleId,
     type: descriptor.selection.type,
+    label: descriptor.label,
     hitTolerance: descriptor.hitTolerance,
     list,
     find: (id) => list().find((entity) => entity.id === id) ?? null,

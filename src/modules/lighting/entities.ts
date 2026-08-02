@@ -15,6 +15,7 @@ import { fixtureSelection } from './selection';
  */
 export const fixtureEntities: EntityDescriptor<LightingData> = {
   selection: fixtureSelection,
+  label: 'Lights',
   hitTolerance: LIGHT_HIT_TOLERANCE_FT,
   list: (view) => view.data.fixtures,
   // Absolute, so a drag re-applies it to the committed base every frame (invariant 3).

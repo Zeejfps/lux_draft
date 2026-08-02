@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import {
     lightDefinitions,
     addLightDefinition,
@@ -7,13 +6,16 @@
     deleteLightDefinition,
     addLightDefinitionFromIES,
     setSelectedDefinition,
+    definitionManagerVisible,
+    closeDefinitionManager,
   } from '../definitionsStore';
   import { readIESFile } from '../IESParser';
   import type { LightDefinition } from '../types';
 
-  export let visible: boolean = false;
-
-  const dispatch = createEventDispatcher<{ close: void }>();
+  // A module surface takes no props and owns its own visibility: the shell mounts
+  // `ModuleRuntime.surfaces` without naming any of them.
+  let visible: boolean;
+  $: visible = $definitionManagerVisible;
 
   let definitions: LightDefinition[] = [];
   $: definitions = $lightDefinitions;
@@ -35,7 +37,7 @@
 
   function close(): void {
     resetForm();
-    dispatch('close');
+    closeDefinitionManager();
   }
 
   function resetForm(): void {

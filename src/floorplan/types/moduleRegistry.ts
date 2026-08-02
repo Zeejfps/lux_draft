@@ -131,6 +131,7 @@ export function moduleCommandHandler(
  * forever and the collision would only ever surface as a shortcut doing the wrong thing.
  */
 const claimedToolIds = new Map<string, string>();
+const claimedOverlayIds = new Map<string, string>();
 const claimedLayerIds = new Map<string, string>();
 const claimedPanelKeys = new Map<string, string>();
 const claimedShortcuts = new Map<string, string>();
@@ -174,6 +175,18 @@ export function validateRuntime(runtime: ModuleRuntime): void {
     }
     seenTools.add(tool.id);
     claim(claimedToolIds, tool.id, id, 'tool id');
+  }
+
+  const seenOverlays = new Set<string>();
+  for (const overlay of runtime.overlays ?? []) {
+    if (!overlay.id.startsWith(`${id}.`)) {
+      throw new Error(`Overlay "${overlay.id}" is not namespaced with its module id "${id}"`);
+    }
+    if (seenOverlays.has(overlay.id)) {
+      throw new Error(`Duplicate overlay id "${overlay.id}" within module "${id}"`);
+    }
+    seenOverlays.add(overlay.id);
+    claim(claimedOverlayIds, overlay.id, id, 'overlay id');
   }
 
   for (const key of Object.keys(runtime.panels ?? {})) {
@@ -230,6 +243,7 @@ export function clearModuleRegistry(): void {
   definitions.clear();
   commandsByType.clear();
   claimedToolIds.clear();
+  claimedOverlayIds.clear();
   claimedLayerIds.clear();
   claimedPanelKeys.clear();
   claimedShortcuts.clear();

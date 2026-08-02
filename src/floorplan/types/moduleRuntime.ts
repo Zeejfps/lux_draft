@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import type { ComponentType, SvelteComponent } from 'svelte';
+import type { Readable } from 'svelte/store';
 import type { DeepReadonly } from './deepReadonly';
 import type { EditorCommand } from './command';
 import type { EditorDocument, FloorplanGeometry, SpaceMetadata } from './document';
@@ -111,6 +112,31 @@ export interface ToolDescriptor {
   enabled?(view: ModuleView<unknown>): boolean;
 }
 
+/**
+ * A toggle a module contributes to the shell's Overlay section.
+ *
+ * Without this the shell has to import the module's stores to draw its own buttons — which is
+ * legal (`app/**` may import anything) and is exactly what kept the whole of lighting in the
+ * eager chunk through phase 4. A toggle arriving through the manifest travels with the lazy
+ * runtime instead.
+ *
+ * `active` is a `Readable`, not `(view) => boolean`: some overlays are document data reachable
+ * through the view (rafter visibility) and some are session-local presentation state that is
+ * deliberately not in the document (the stats panel, the definition manager). One shape covers
+ * both, and a module handing *out* a read-only store is not a module being handed one
+ * (invariant 6 is about what a module may read of the session).
+ */
+export interface OverlayToggle {
+  /** `${moduleId}.${verb}`, claimed at validation exactly like a tool id. */
+  readonly id: string;
+  readonly label: string;
+  readonly title: string;
+  /** Raw SVG markup, rendered inside the toolbar's `<svg>` — same contract as a tool icon. */
+  readonly icon: string;
+  readonly active: Readable<boolean>;
+  toggle(): void;
+}
+
 /** A keyboard binding a module owns for as long as it is active. */
 export interface ShortcutDescriptor {
   /** Lower-case key name, e.g. `r`, `escape`, `delete`. */
@@ -188,13 +214,21 @@ export interface ModuleRuntime {
   readonly id: string;
   readonly label: string;
   readonly tools?: readonly ToolDescriptor[];
+  /** Toolbar toggles, rendered in the shell's Overlay section while this module is active. */
+  readonly overlays?: readonly OverlayToggle[];
   /** Point entities this module contributes to core hit-testing, box select and grab mode. */
   readonly entities?: EntityDescriptor<unknown>;
   layers?(scene: THREE.Scene): SceneLayer[];
   handlers?(ctx: ModuleContext<unknown>): IInteractionHandler[];
   /** Keyed by `SelectionKind.panelKey`. */
   readonly panels?: Readonly<Record<string, PanelComponent>>;
-  readonly statsPanel?: PanelComponent;
+  /**
+   * Free-standing UI mounted for as long as the module is active — tool panels, stats
+   * read-outs, modals. Each takes no props and guards its own visibility, so the shell mounts
+   * the list and names none of them. This is what replaced `statsPanel` and the shell's direct
+   * imports of `LightToolPanel` / `RafterControls` / `LightDefinitionManager`.
+   */
+  readonly surfaces?: readonly PanelComponent[];
   readonly shortcuts?: readonly ShortcutDescriptor[];
   onActivate?(ctx: ModuleContext<unknown>, scope: ActivationScope): void;
 }

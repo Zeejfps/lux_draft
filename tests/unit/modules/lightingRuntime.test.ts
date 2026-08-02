@@ -147,7 +147,8 @@ describe('lighting activated through the registry', () => {
     expect(record.layers.length).toBeGreaterThan(0);
     expect(record.handlers).toHaveLength(1);
     expect(record.tools.map((t) => t.id)).toEqual(['lighting.place']);
-    expect(record.statsPanel).not.toBeNull();
+    expect(record.surfaces.length).toBeGreaterThan(0);
+    expect(record.overlays.map((o) => o.id)).toContain('lighting.stats');
     expect(resolvePanel(fixtureSelection.panelKey)).not.toBeNull();
     expect(record.entities.list().map((e) => e.id)).toEqual(['l1', 'l2']);
 

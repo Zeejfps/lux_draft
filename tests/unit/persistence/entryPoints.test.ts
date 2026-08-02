@@ -197,7 +197,7 @@ describe('adoptIncomingDefinitions', () => {
       JSON.stringify(loadFixture('envelope-v2-custom-definition.json'))
     );
     openLoaded(loaded);
-    adoptIncomingDefinitions(loaded.document);
+    adoptIncomingDefinitions(lightingOf(loaded.document).definitions);
 
     const incoming = lightingOf(loaded.document).definitions[0];
     expect(get(lightDefinitions).some((d) => d.id === incoming.id)).toBe(true);
@@ -212,7 +212,7 @@ describe('adoptIncomingDefinitions', () => {
     lightDefinitions.set([...DEFAULT_LIGHT_DEFINITIONS, localConflict]);
 
     openLoaded(loaded);
-    adoptIncomingDefinitions(loaded.document);
+    adoptIncomingDefinitions(lightingOf(loaded.document).definitions);
 
     expect(get(lightDefinitions).filter((d) => d.id === incoming.id)).toEqual([localConflict]);
     // The document's copy is the one that renders.
@@ -222,7 +222,8 @@ describe('adoptIncomingDefinitions', () => {
   it('is a no-op for a document that references no custom definition', () => {
     const before = get(lightDefinitions);
     adoptIncomingDefinitions(
-      importFromString(JSON.stringify(loadFixture('envelope-v1.json'))).document
+      lightingOf(importFromString(JSON.stringify(loadFixture('envelope-v1.json'))).document)
+        .definitions
     );
     expect(get(lightDefinitions)).toBe(before);
   });

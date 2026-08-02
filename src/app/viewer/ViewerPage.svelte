@@ -7,12 +7,22 @@
   import LightInfoBottomSheet from '../../modules/lighting/ui/LightInfoBottomSheet.svelte';
   import { openLoaded } from '../../floorplan/stores/roomStore';
   import { adoptIncomingDefinitions, committedLightingData } from '../../modules/lighting/store';
+  import { LIGHTING_MODULE_ID } from '../../modules/lighting/codec';
   import { requestCameraFit } from '../../floorplan/stores/appStore';
   import { lightingStatsConfig } from '../../modules/lighting/statsStore';
   import { importFromJSON, ValidationError } from '../../floorplan/persistence/jsonImport';
   import { routeParams } from '../routerStore';
   import { decodeShareData } from '../../floorplan/persistence/shareUrl';
   import type { ViewMode } from '../../floorplan/types';
+
+  /**
+   * The module this viewer is showing, from the route (`#/{moduleId}/viewer`).
+   *
+   * The viewer is still lighting-shaped end to end — it builds lighting's layers by hand
+   * because it has no editor session and therefore no activation registry. Carrying the id
+   * makes the share button module-correct and is what a second viewing mode would branch on.
+   */
+  export let moduleId: string = LIGHTING_MODULE_ID;
 
   let viewMode: ViewMode = 'editor';
   let hasProject = false;
@@ -25,7 +35,8 @@
       try {
         const loaded = decodeShareData(params.d);
         openLoaded(loaded);
-        adoptIncomingDefinitions(loaded.document);
+        // No activation registry here, so the viewer runs the module's adoption step itself.
+        adoptIncomingDefinitions($committedLightingData.definitions);
         hasProject = true;
 
         if ($committedLightingData.fixtures.length > 0) {
@@ -53,7 +64,7 @@
     try {
       const loaded = await importFromJSON(e.detail.file);
       openLoaded(loaded);
-      adoptIncomingDefinitions(loaded.document);
+      adoptIncomingDefinitions($committedLightingData.definitions);
       hasProject = true;
 
       // Enable lighting stats if there are lights
@@ -79,6 +90,7 @@
 <div class="viewer-page">
   <ViewerToolbar
     bind:this={toolbar}
+    {moduleId}
     {viewMode}
     {hasProject}
     on:openFile={handleOpenFile}

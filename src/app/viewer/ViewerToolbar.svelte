@@ -3,9 +3,10 @@
   import { navigate } from '../routerStore';
   import { saveInput } from '../../floorplan/stores/sessionStore';
   import { generateShareUrl } from '../../floorplan/persistence/shareUrl';
-  import { LIGHTING_MODULE_ID } from '../../modules/lighting/codec';
   import type { ViewMode } from '../../floorplan/types';
 
+  /** The module this viewer is showing; a share link is a single-module view. */
+  export let moduleId: string;
   export let viewMode: ViewMode = 'editor';
   export let hasProject: boolean = false;
 
@@ -44,7 +45,7 @@
     // link for it would fail on open.
     let result: ReturnType<typeof generateShareUrl>;
     try {
-      result = generateShareUrl($saveInput, LIGHTING_MODULE_ID);
+      result = generateShareUrl($saveInput, moduleId);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'This design cannot be shared.');
       return;
@@ -60,7 +61,7 @@
   }
 
   function goToEditor(): void {
-    navigate('editor');
+    navigate({ kind: 'editor', moduleId });
   }
 </script>
 

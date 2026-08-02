@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { activeTool, setActiveTool } from '../../../floorplan/stores/appStore';
   import { CORE_TOOL_SELECT } from '../../../floorplan/types/state';
   import { LIGHTING_TOOL_PLACE } from '../constants';
   import { canPlaceLights } from '../../../floorplan/stores/roomStore';
-  import { selectedDefinitionId, setSelectedDefinition } from '../definitionsStore';
+  import {
+    openDefinitionManager,
+    selectedDefinitionId,
+    setSelectedDefinition,
+  } from '../definitionsStore';
   import { pickerDefinitions } from '../store';
   import FloatingPanel from '../../../floorplan/ui/FloatingPanel.svelte';
   import type { LightDefinition } from '../types';
-
-  const dispatch = createEventDispatcher<{ openLightManager: void }>();
 
   let definitions: LightDefinition[] = [];
   let currentDefinitionId: string;
@@ -28,7 +29,7 @@
   }
 
   function openLightManager(): void {
-    dispatch('openLightManager');
+    openDefinitionManager();
   }
 
   function handleClose(): void {

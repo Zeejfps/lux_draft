@@ -8,6 +8,7 @@ import type {
   ModuleContext,
   ModuleRuntime,
   ModuleView,
+  OverlayToggle,
   PanelComponent,
   RuntimeState,
   SceneLayer,
@@ -99,9 +100,11 @@ export interface ActiveModule {
   readonly layers: readonly SceneLayer[];
   readonly handlers: readonly IInteractionHandler[];
   readonly tools: readonly ToolDescriptor[];
+  readonly overlays: readonly OverlayToggle[];
   readonly shortcuts: readonly ShortcutDescriptor[];
   readonly entities: EntityAccess;
-  readonly statsPanel: PanelComponent | null;
+  /** Free-standing UI the shell mounts while this module is active. */
+  readonly surfaces: readonly PanelComponent[];
 }
 
 const active = writable<ActiveModule | null>(null);
@@ -206,9 +209,10 @@ function buildActivation(moduleId: string, label: string, runtime: ModuleRuntime
     layers,
     handlers,
     tools: runtime.tools ?? [],
+    overlays: runtime.overlays ?? [],
     shortcuts: runtime.shortcuts ?? [],
     entities,
-    statsPanel: runtime.statsPanel ?? null,
+    surfaces: runtime.surfaces ?? [],
   });
 
   // Last, so a throwing `onActivate` still leaves everything above owned by the scope.
@@ -317,6 +321,21 @@ export const toolbarTools: Readable<readonly ToolbarTool[]> = derived(
       })),
     ];
   }
+);
+
+/**
+ * The active module's overlay toggles and mounted surfaces. Two more one-line stores so the
+ * shell renders `{#each}` over the manifest instead of importing a module's stores and
+ * components — which is what kept the whole of lighting in the eager chunk before phase 5.
+ */
+export const moduleOverlays: Readable<readonly OverlayToggle[]> = derived(
+  active,
+  ($active) => $active?.overlays ?? []
+);
+
+export const moduleSurfaces: Readable<readonly PanelComponent[]> = derived(
+  active,
+  ($active) => $active?.surfaces ?? []
 );
 
 /** The activation state machine, for tests and diagnostics. */

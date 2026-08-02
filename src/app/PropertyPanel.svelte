@@ -2,7 +2,7 @@
   import { roomStore, dispatch } from '../floorplan/stores/roomStore';
   import { formatImperial, parseImperial } from '../floorplan/utils/format';
   import { displayPreferences, toggleUnitFormat } from '../floorplan/stores/settingsStore';
-  import { committedLightingData } from '../modules/lighting/store';
+  import { activeModule, activeView } from '../floorplan/stores/moduleActivation';
   import {
     propertiesPanelConfig,
     togglePropertiesPanel,
@@ -19,6 +19,11 @@
   $: currentRoom = $roomStore;
   $: unitFormat = $displayPreferences.unitFormat;
   $: ceilingHeightInput = formatImperial(currentRoom.space.ceilingHeight);
+
+  // The active module's own count, read through the entity seam so the shell names no domain.
+  // `$activeView` is the dependency that makes it recompute when the document changes.
+  $: entityLabel = $activeModule?.entities.label ?? '';
+  $: entityCount = ($activeView, $activeModule?.entities.list().length ?? 0);
 
   function handleCeilingHeightChange(e: Event): void {
     ceilingHeightInput = (e.target as HTMLInputElement).value;
@@ -78,10 +83,12 @@
         {currentRoom.geometry.boundary.isClosed ? 'Closed' : 'Open'}
       </span>
     </div>
-    <div class="property-row info">
-      <span>Lights</span>
-      <span class="light-count">{$committedLightingData.fixtures.length}</span>
-    </div>
+    {#if entityLabel}
+      <div class="property-row info">
+        <span>{entityLabel}</span>
+        <span class="light-count">{entityCount}</span>
+      </div>
+    {/if}
     <div class="property-row info">
       <span>Doors</span>
       <span>{currentRoom.geometry.doors.length}</span>

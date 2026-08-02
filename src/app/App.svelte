@@ -28,25 +28,19 @@
 </script>
 
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { get } from 'svelte/store';
+  import { onMount, onDestroy, type ComponentType } from 'svelte';
   import Canvas from '../floorplan/ui/Canvas.svelte';
   import Toolbar from './Toolbar.svelte';
   import PropertyPanel from './PropertyPanel.svelte';
-  import LightToolPanel from '../modules/lighting/ui/LightToolPanel.svelte';
   import DoorToolPanel from '../floorplan/ui/DoorToolPanel.svelte';
   import StatusBar from './StatusBar.svelte';
   import LengthInput from '../floorplan/ui/LengthInput.svelte';
-  import RafterControls from '../modules/lighting/ui/RafterControls.svelte';
-  import LightDefinitionManager from '../modules/lighting/ui/LightDefinitionManager.svelte';
-  import ViewerPage from './viewer/ViewerPage.svelte';
+  import ModePicker from './ModePicker.svelte';
   import DiagnosticsBanner from './DiagnosticsBanner.svelte';
   import { openLoaded } from '../floorplan/stores/roomStore';
   import { saveInput } from '../floorplan/stores/sessionStore';
-  import { adoptIncomingDefinitions } from '../modules/lighting/store';
   import { activeTool, setActiveTool, requestCameraFit } from '../floorplan/stores/appStore';
-  import { activateModule, activeModule, toolbarTools } from '../floorplan/stores/moduleActivation';
-  import { LIGHTING_MODULE_ID } from '../modules/lighting/codec';
+  import { moduleSurfaces, toolbarTools } from '../floorplan/stores/moduleActivation';
   import { CORE_TOOL_DRAW, CORE_TOOL_SELECT } from '../floorplan/types/state';
   import { selection } from '../floorplan/stores/selectionStore';
   import { panelsForSelection } from '../floorplan/ui/panelRegistry';
@@ -54,6 +48,7 @@
   import { toggleGridSnap } from '../floorplan/stores/settingsStore';
   import { togglePropertiesPanel } from '../floorplan/stores/propertiesPanelStore';
   import { currentRoute } from './routerStore';
+  import { startModuleRouting } from './moduleRouting';
   import '../floorplan/stores/themeStore'; // Initialize theme CSS variables
   import type { Vector2 } from '../floorplan/types';
 
@@ -63,9 +58,28 @@
 
   // Reactive route binding
   $: route = $currentRoute;
+
+  /**
+   * The viewer is a whole second page and it is lighting-shaped end to end; importing it
+   * statically would put the heatmap shaders and every light panel in the editor's chunk. It
+   * arrives through the same `import()` mechanism a module runtime does.
+   */
+  let ViewerPage: ComponentType | null = null;
+  let viewerRequested = false;
+
+  function loadViewerPage(): void {
+    if (viewerRequested) return;
+    viewerRequested = true;
+    void import('./viewer/ViewerPage.svelte').then((m) => {
+      ViewerPage = m.default as unknown as ComponentType;
+    });
+  }
+
+  $: if (route.kind === 'viewer') loadViewerPage();
+
   let showLengthInput: boolean = false;
-  let showLightManager: boolean = false;
   let cleanupAutoSave: (() => void) | null = null;
+  let stopModuleRouting: (() => void) | null = null;
   let measurement: { deltaX: number; deltaY: number; distance: number } | null = null;
 
   function handleMouseMove(e: CustomEvent<{ worldPos: Vector2 }>): void {
@@ -95,14 +109,6 @@
 
   function handleLengthCancel(): void {
     showLengthInput = false;
-  }
-
-  function handleOpenLightManager(): void {
-    showLightManager = true;
-  }
-
-  function handleCloseLightManager(): void {
-    showLightManager = false;
   }
 
   function handleGlobalKeydown(e: KeyboardEvent): void {
@@ -146,42 +152,48 @@
   }
 
   onMount(() => {
-    // Only initialize editor features when on the editor route
-    if (get(currentRoute) === 'editor') {
-      // Every load path ends in one `open` with a real decode result (invariant 9), then the
-      // explicit definition-adoption step that replaced decode's old global side effect.
-      const loaded = loadFromLocalStorage();
-      if (loaded) {
-        openLoaded(loaded);
-        adoptIncomingDefinitions(loaded.document);
-        // Fit camera to the loaded project
-        requestCameraFit();
-      }
+    // The viewer owns its own document (a share link or an opened file) and has no session to
+    // restore; everything below is the editor's.
+    if (route.kind === 'viewer') return;
 
-      cleanupAutoSave = setupAutoSave(saveInput);
-      window.addEventListener('keydown', handleGlobalKeydown);
-
-      // One mode, activated by the shell. Phase 5 drives this from the route instead.
-      void activateModule(LIGHTING_MODULE_ID);
+    // Every load path ends in one `open` with a real decode result (invariant 9). The
+    // definition-adoption step that used to live here is now the lighting module's own, run
+    // from `onActivate` — the shell no longer names it.
+    const loaded = loadFromLocalStorage();
+    if (loaded) {
+      openLoaded(loaded);
+      // Fit camera to the loaded project
+      requestCameraFit();
     }
+
+    cleanupAutoSave = setupAutoSave(saveInput);
+    window.addEventListener('keydown', handleGlobalKeydown);
+
+    // Activation follows the route from here on: exactly one module is active, and which one
+    // is the URL's business rather than this component's.
+    stopModuleRouting = startModuleRouting();
   });
 
   onDestroy(() => {
     if (cleanupAutoSave) {
       cleanupAutoSave();
     }
+    if (stopModuleRouting) {
+      stopModuleRouting();
+    }
     window.removeEventListener('keydown', handleGlobalKeydown);
   });
 </script>
 
-{#if route === 'viewer'}
-  <ViewerPage />
+{#if route.kind === 'viewer'}
+  {#if ViewerPage}
+    <svelte:component this={ViewerPage} moduleId={route.moduleId} />
+  {/if}
+{:else if route.kind === 'picker'}
+  <ModePicker />
 {:else}
   <div class="app">
-    <Toolbar
-      on:toggleMeasurement={handleToggleMeasurement}
-      on:openLightManager={handleOpenLightManager}
-    />
+    <Toolbar on:toggleMeasurement={handleToggleMeasurement} />
 
     <main class="main">
       <div class="canvas-area">
@@ -211,11 +223,14 @@
             <div class="measurement-hint">Press M or Esc to clear</div>
           </div>
         {/if}
-        <RafterControls />
-        {#if $activeModule?.statsPanel}
-          <svelte:component this={$activeModule.statsPanel} />
-        {/if}
-        <LightToolPanel on:openLightManager={handleOpenLightManager} />
+        <!--
+          The active module's free-standing UI. The shell mounts the list and names none of
+          it: tool panels, stats read-outs and modals all arrive through the manifest, which
+          is what keeps them out of the eager chunk.
+        -->
+        {#each $moduleSurfaces as surface, index (index)}
+          <svelte:component this={surface} />
+        {/each}
         <DoorToolPanel />
         <PropertyPanel />
         <DiagnosticsBanner />
@@ -232,8 +247,6 @@
       on:submit={handleLengthSubmit}
       on:cancel={handleLengthCancel}
     />
-
-    <LightDefinitionManager visible={showLightManager} on:close={handleCloseLightManager} />
   </div>
 {/if}
 

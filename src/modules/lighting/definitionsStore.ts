@@ -110,3 +110,24 @@ export function deleteLightDefinition(id: string): void {
 export function setSelectedDefinition(id: string): void {
   selectedDefinitionId.set(id);
 }
+
+/**
+ * Whether the definition-manager modal is open.
+ *
+ * Session-local presentation state, deliberately not document data. It lives here rather than
+ * as a prop threaded from the shell because the modal is a module **surface**: the shell mounts
+ * `ModuleRuntime.surfaces` without naming any of them, so a surface owns its own visibility.
+ */
+export const definitionManagerVisible = writable(false);
+
+export function toggleDefinitionManager(): void {
+  definitionManagerVisible.update((visible) => !visible);
+}
+
+export function openDefinitionManager(): void {
+  definitionManagerVisible.set(true);
+}
+
+export function closeDefinitionManager(): void {
+  definitionManagerVisible.set(false);
+}
