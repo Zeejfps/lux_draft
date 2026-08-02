@@ -1,5 +1,6 @@
 <script lang="ts">
   import { activeTool, setActiveTool } from '../stores/appStore';
+  import { CORE_TOOL_DOOR, CORE_TOOL_SELECT } from '../types/state';
   import { canPlaceDoors } from '../stores/roomStore';
   import {
     doorPlacementSettings,
@@ -22,7 +23,7 @@
   $: currentTool = $activeTool;
   $: canPlace = $canPlaceDoors;
   $: unitFormat = $displayPreferences.unitFormat;
-  $: visible = canPlace && currentTool === 'door';
+  $: visible = canPlace && currentTool === CORE_TOOL_DOOR;
 
   // Generate door width options based on unit format
   $: doorWidthOptions = Object.entries(DOOR_WIDTHS).map(([label, value]) => ({
@@ -46,7 +47,7 @@
   }
 
   function handleClose(): void {
-    setActiveTool('select');
+    setActiveTool(CORE_TOOL_SELECT);
   }
 </script>
 

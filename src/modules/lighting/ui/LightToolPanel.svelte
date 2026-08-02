@@ -1,6 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { activeTool, setActiveTool } from '../../../floorplan/stores/appStore';
+  import { CORE_TOOL_SELECT } from '../../../floorplan/types/state';
+  import { LIGHTING_TOOL_PLACE } from '../constants';
   import { canPlaceLights } from '../../../floorplan/stores/roomStore';
   import { selectedDefinitionId, setSelectedDefinition } from '../definitionsStore';
   import { pickerDefinitions } from '../store';
@@ -18,7 +20,7 @@
   $: currentDefinitionId = $selectedDefinitionId;
   $: currentTool = $activeTool;
   $: canPlace = $canPlaceLights;
-  $: visible = canPlace && currentTool === 'light';
+  $: visible = canPlace && currentTool === LIGHTING_TOOL_PLACE;
 
   function handleDefinitionChange(e: Event): void {
     const newDefinitionId = (e.target as HTMLSelectElement).value;
@@ -30,7 +32,7 @@
   }
 
   function handleClose(): void {
-    setActiveTool('select');
+    setActiveTool(CORE_TOOL_SELECT);
   }
 </script>
 

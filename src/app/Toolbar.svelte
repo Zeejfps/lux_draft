@@ -3,6 +3,7 @@
   import { activeTool, viewMode, setActiveTool, setViewMode } from '../floorplan/stores/appStore';
   import { selection, clearSelection } from '../floorplan/stores/selectionStore';
   import { getSelectedVertexIndices } from '../floorplan/types/selection';
+  import { CORE_TOOL_SELECT } from '../floorplan/types/state';
   import { activeModule, toolbarTools } from '../floorplan/stores/moduleActivation';
   import { NO_ENTITIES } from '../floorplan/types/entity';
   import { committedDocument, resetRoom, openLoaded } from '../floorplan/stores/roomStore';
@@ -88,7 +89,7 @@
   function handleToolChange(tool: Tool): void {
     // If clicking the already active tool (and it's not select), toggle back to select
     if (currentTool === tool && tool !== 'select') {
-      setActiveTool('select');
+      setActiveTool(CORE_TOOL_SELECT);
     } else {
       setActiveTool(tool);
     }

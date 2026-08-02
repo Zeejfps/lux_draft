@@ -1,6 +1,8 @@
 <script lang="ts">
   import { activeTool } from '../floorplan/stores/appStore';
   import { roomStore } from '../floorplan/stores/roomStore';
+  import { toolbarTools } from '../floorplan/stores/moduleActivation';
+  import { CORE_TOOL_DRAW, CORE_TOOL_SELECT, isCoreTool } from '../floorplan/types/state';
   import { formatImperial } from '../floorplan/utils/format';
   import type { Vector2, Tool } from '../floorplan/types';
 
@@ -12,6 +14,11 @@
 
   $: currentTool = $activeTool;
   $: isClosed = $roomStore.geometry.boundary.isClosed;
+  // The hint for a module's placement tool comes from its own descriptor: the status bar used
+  // to say "place light" in so many words.
+  $: activeToolLabel = isCoreTool(currentTool)
+    ? null
+    : ($toolbarTools.find((t) => t.descriptor.id === currentTool)?.descriptor.label ?? null);
 
   function formatCoord(value: number): string {
     return formatImperial(value, { decimal: false });
@@ -39,11 +46,11 @@
   <div class="status-spacer"></div>
 
   <div class="status-section hints">
-    {#if currentTool === 'draw' && !isClosed}
+    {#if currentTool === CORE_TOOL_DRAW && !isClosed}
       <span>Click to place vertices | ESC to cancel | Close polygon to finish</span>
-    {:else if currentTool === 'light' && isClosed}
-      <span>Click inside room to place light</span>
-    {:else if currentTool === 'select'}
+    {:else if activeToolLabel && isClosed}
+      <span>Click inside room to place {activeToolLabel.toLowerCase()}</span>
+    {:else if currentTool === CORE_TOOL_SELECT}
       <span>Click to select | DEL to delete | Scroll to zoom | Alt+drag to pan</span>
     {/if}
   </div>

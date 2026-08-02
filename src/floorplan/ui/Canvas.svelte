@@ -227,24 +227,27 @@
   // Rendering — one loop over core and module layers
   // ============================================
 
-  $: editorRenderer?.setModuleLayers($activeModule?.layers ?? []);
-  $: interactionManager?.setModuleHandlers($activeModule?.handlers ?? []);
-  $: keyboardShortcutManager?.setModuleBindings(
-    ($activeModule?.shortcuts ?? []).map((shortcut) => ({
-      key: shortcut.key,
-      ctrlKey: shortcut.ctrlKey,
-      shiftKey: shortcut.shiftKey,
-      altKey: shortcut.altKey,
-      description: shortcut.description,
-      action: () => shortcut.run(),
-    }))
-  );
+  // Each of these names its instance so that assigning it in `onMount` re-runs the statement:
+  // a reactive block that only reads a store would not fire again for the first frame.
+  $: if (editorRenderer) editorRenderer.setModuleLayers($activeModule?.layers ?? []);
+  $: if (interactionManager) interactionManager.setModuleHandlers($activeModule?.handlers ?? []);
+  $: if (keyboardShortcutManager)
+    keyboardShortcutManager.setModuleBindings(
+      ($activeModule?.shortcuts ?? []).map((shortcut) => ({
+        key: shortcut.key,
+        ctrlKey: shortcut.ctrlKey,
+        shiftKey: shortcut.shiftKey,
+        altKey: shortcut.altKey,
+        description: shortcut.description,
+        action: () => shortcut.run(),
+      }))
+    );
 
   // The whole of what the scene draws. `render` loops layers; there is no per-domain call left.
-  $: renderScene($activeView);
+  $: if (editorRenderer) renderScene(editorRenderer, $activeView);
 
-  function renderScene(view: ModuleView<unknown>): void {
-    editorRenderer?.render(view);
+  function renderScene(renderer: EditorRenderer, view: ModuleView<unknown>): void {
+    renderer.render(view);
   }
 
   $: if (editorRenderer && currentDisplayPrefs) {

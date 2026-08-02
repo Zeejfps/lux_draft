@@ -62,7 +62,7 @@
     viewMode
   ) as ModuleView<unknown>;
 
-  $: renderViewer(viewerView);
+  $: if (editorRenderer) renderViewer(editorRenderer, viewerView);
 
   $: if (
     $shouldFitCamera &&
@@ -74,9 +74,9 @@
     shouldFitCamera.set(false);
   }
 
-  function renderViewer(view: ModuleView<unknown>): void {
+  function renderViewer(renderer: EditorRenderer, view: ModuleView<unknown>): void {
     // One loop over core and lighting layers; each decides its own visibility from `viewMode`.
-    editorRenderer?.render(view);
+    renderer.render(view);
   }
 
   function animate(): void {
