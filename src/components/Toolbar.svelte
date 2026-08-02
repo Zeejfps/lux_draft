@@ -13,16 +13,23 @@
     canPlaceLights,
     canPlaceDoors,
     canDrawObstacles,
-    committedRoom,
+    committedDocument,
     resetRoom,
     openDocument,
   } from '../stores/roomStore';
-  import { toggleRafters, rafterConfig, displayPreferences } from '../stores/settingsStore';
+  import { sessionStore, history } from '../stores/sessionStore';
+  import { canUndo, canRedo, undoLabel, redoLabel } from '../types/session';
+  import {
+    toggleRafters,
+    rafterConfig,
+    displayPreferences,
+    toggleGridSnap,
+    cycleLightRadiusVisibility,
+  } from '../stores/settingsStore';
   import { toggleLightingStats, lightingStatsConfig } from '../stores/lightingStatsStore';
   import { togglePropertiesPanel, propertiesPanelConfig } from '../stores/propertiesPanelStore';
   import { toggleDeadZones, deadZoneConfig } from '../stores/deadZoneStore';
   import { toggleSpacingWarnings, spacingConfig } from '../stores/spacingStore';
-  import { historyStore, canUndo, canRedo } from '../stores/historyStore';
   import { isMeasuring } from '../stores/measurementStore';
   import { exportToJSON } from '../persistence/jsonExport';
   import { importFromJSON } from '../persistence/jsonImport';
@@ -37,7 +44,7 @@
   let fileInput: HTMLInputElement;
   // Save, export and share read the *committed* document, never the live preview.
   let currentRoom: EditorDocument;
-  $: currentRoom = $committedRoom;
+  $: currentRoom = $committedDocument;
 
   const dispatch = createEventDispatcher<{ toggleMeasurement: void; openLightManager: void }>();
 
@@ -49,6 +56,8 @@
   let raftersVisible: boolean;
   let undoEnabled: boolean;
   let redoEnabled: boolean;
+  let undoTitle: string;
+  let redoTitle: string;
   let statsVisible: boolean;
   let propertiesVisible: boolean;
   let deadZonesEnabled: boolean;
@@ -66,8 +75,11 @@
   $: doorsEnabled = $canPlaceDoors;
   $: obstaclesEnabled = $canDrawObstacles;
   $: raftersVisible = $rafterConfig.visible;
-  $: undoEnabled = $canUndo;
-  $: redoEnabled = $canRedo;
+  $: undoEnabled = canUndo($history);
+  $: redoEnabled = canRedo($history);
+  // The label rides with the snapshot, so the tooltip names the edit rather than the verb.
+  $: undoTitle = undoEnabled ? `Undo ${undoLabel($history)} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
+  $: redoTitle = redoEnabled ? `Redo ${redoLabel($history)} (Ctrl+Y)` : 'Redo (Ctrl+Y)';
   $: statsVisible = $lightingStatsConfig.visible;
   $: propertiesVisible = $propertiesPanelConfig.visible;
   $: deadZonesEnabled = $deadZoneConfig.enabled;
@@ -90,24 +102,12 @@
     setViewMode(mode);
   }
 
-  function toggleGridSnap(): void {
-    displayPreferences.update((p) => ({ ...p, gridSnapEnabled: !p.gridSnapEnabled }));
-  }
-
   function toggleMeasurement(): void {
     dispatch('toggleMeasurement');
   }
 
   function openLightManager(): void {
     dispatch('openLightManager');
-  }
-
-  function cycleLightRadiusVisibility(): void {
-    displayPreferences.update((p) => {
-      const newVisibility: LightRadiusVisibility =
-        p.lightRadiusVisibility === 'selected' ? 'always' : 'selected';
-      return { ...p, lightRadiusVisibility: newVisibility };
-    });
   }
 
   function handleNew(): void {
@@ -117,9 +117,9 @@
       }
     }
     clearLocalStorage();
+    // `open` replaces document, selection, interaction and history in one action.
     resetRoom();
     clearSelection();
-    historyStore.clear();
   }
 
   function handleSave(): void {
@@ -159,7 +159,6 @@
       const imported = await importFromJSON(file);
       openDocument(imported);
       clearSelection();
-      historyStore.clear();
     } catch (err) {
       alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
@@ -322,8 +321,8 @@
       <button
         class="tool-button"
         disabled={!undoEnabled}
-        on:click={() => historyStore.undo()}
-        title="Undo (Ctrl+Z)"
+        on:click={() => sessionStore.undo()}
+        title={undoTitle}
       >
         <svg
           class="icon-svg"
@@ -340,8 +339,8 @@
       <button
         class="tool-button"
         disabled={!redoEnabled}
-        on:click={() => historyStore.redo()}
-        title="Redo (Ctrl+Y)"
+        on:click={() => sessionStore.redo()}
+        title={redoTitle}
       >
         <svg
           class="icon-svg"

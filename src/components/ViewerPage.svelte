@@ -9,7 +9,6 @@
   import { requestCameraFit } from '../stores/appStore';
   import { lightingStatsConfig } from '../stores/lightingStatsStore';
   import { importFromJSON, ValidationError } from '../persistence/jsonImport';
-  import { initSettingsFromRoom } from '../stores/settingsStore';
   import { routeParams } from '../stores/routerStore';
   import { decodeShareData } from '../persistence/shareUrl';
   import type { ViewMode } from '../types';
@@ -25,7 +24,6 @@
       try {
         const doc = decodeShareData(params.d);
         openDocument(doc);
-        initSettingsFromRoom();
         hasProject = true;
 
         if (doc.lights.length > 0) {
@@ -53,7 +51,6 @@
     try {
       const doc = await importFromJSON(e.detail.file);
       openDocument(doc);
-      initSettingsFromRoom();
       hasProject = true;
 
       // Enable lighting stats if there are lights

@@ -24,6 +24,7 @@ export function makeDocument(parts: DocumentParts = {}): EditorDocument {
       obstacles: parts.obstacles ?? [],
     },
     space: { ceilingHeight: parts.ceilingHeight ?? doc.space.ceilingHeight },
+    modules: {},
     lights: parts.lights ?? [],
   };
 }

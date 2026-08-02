@@ -1,93 +1,59 @@
-import { writable, derived, get } from 'svelte/store';
+import { derived } from 'svelte/store';
 import type { WallSegment, Vector2, Door, Obstacle } from '../types/geometry';
 import type { EditorDocument } from '../types/document';
 import type { EditorCommand, DoorChanges, ObstacleChanges } from '../types/command';
-import type { Interaction } from '../types/interaction';
 import { createEmptyDocument } from '../types/document';
-import { IDLE_INTERACTION } from '../types/interaction';
-import {
-  applyCommand,
-  previewDocument,
-  assertCommandIsSerializable,
-  valueEqual,
-} from '../commands';
+import { asLoadedDocument } from '../types/session';
+import { sessionStore, roomStore } from './sessionStore';
 import { geometryService } from '../services/GeometryService';
 
 // ============================================
 // Store topology
 // ============================================
 //
-// `committedRoom` is what history, autosave, export and share read: it changes only when a
-// command is dispatched, a document is opened, or history moves. `interaction` holds the
-// candidate command the user is aiming. `roomStore` keeps its old name and its old *live*
-// meaning — during a gesture it shows the preview, exactly as writing mid-drag used to.
+// One `Session` value behind `sessionStore` (invariant 1); `roomStore` and
+// `committedDocument` are narrow derived views over it, defined in `sessionStore.ts`.
 //
-// Phase 1b replaces all three with a single `Session` value and `reduceSession`.
+// `roomStore` keeps its old name and its old *live* meaning — during a gesture it shows the
+// preview, exactly as writing mid-drag used to. `committedDocument` is what history, autosave,
+// export and share read; it changes only when a command is dispatched, a document is opened,
+// or history moves.
+//
+// This file is now the verb layer: read helpers, room-shaped derived views, and one thin
+// command producer per call site.
 
-/** Committed document. Never contains a preview. */
-export const committedRoom = writable<EditorDocument>(createEmptyDocument());
-
-/** Ephemeral gesture state. Not persisted, not undoable. */
-export const interaction = writable<Interaction>(IDLE_INTERACTION);
-
-/** Live view: committed document with the candidate command applied. What the editor renders. */
-export const roomStore = derived([committedRoom, interaction], ([$doc, $interaction]) =>
-  previewDocument($doc, $interaction)
-);
+export { roomStore, committedDocument, interaction } from './sessionStore';
 
 // ============================================
 // The write path
 // ============================================
 
-/**
- * The only way to edit the document (invariant 2).
- *
- * A command whose result is value-equal to the current document keeps the *same reference* and
- * the store is never written, so it does not emit and no history entry appears. That guarantee
- * lives here rather than in `historyStore`'s stringify diff, because phase 1b deletes that diff.
- *
- * (Svelte's `writable` emits on every `set` of an object value, reference-equal or not, so the
- * no-op has to skip the write rather than return the old reference from `update`.)
- */
+/** The only way to edit the document (invariant 2). One command, one history entry. */
 export function dispatch(command: EditorCommand): void {
-  if (import.meta.env.DEV) {
-    assertCommandIsSerializable(command);
-  }
-  const doc = get(committedRoom);
-  const next = applyCommand(doc, command);
-  if (valueEqual(next, doc)) return;
-  committedRoom.set(next);
+  sessionStore.dispatch(command);
 }
 
 /** Replace the whole document — load, import, share link, reset. Not a command, not undoable. */
 export function openDocument(doc: EditorDocument): void {
-  interaction.set(IDLE_INTERACTION);
-  committedRoom.set(doc);
+  sessionStore.open(asLoadedDocument(doc));
 }
 
 /** Show a candidate command. Writes nothing to the committed document. */
 export function previewCommand(command: EditorCommand): void {
-  interaction.set({ kind: 'commandPreview', command });
+  sessionStore.setInteraction({ kind: 'commandPreview', command });
 }
 
 /** Discard the candidate command. The committed document is untouched. */
 export function cancelInteraction(): void {
-  if (get(interaction).kind !== 'idle') {
-    interaction.set(IDLE_INTERACTION);
-  }
+  sessionStore.cancelInteraction();
 }
 
 /**
- * Commit the candidate command: dispatch that exact value and return to idle.
+ * Commit the candidate command: dispatch that exact value and return to idle, in one emission.
  * Returns true when something was pending.
  */
 export function commitInteraction(): boolean {
-  const current = get(interaction);
-  if (current.kind !== 'commandPreview') return false;
-
-  interaction.set(IDLE_INTERACTION);
-  dispatch(current.command);
-  return true;
+  return sessionStore.finishInteraction();
 }
 
 // ============================================
@@ -162,7 +128,7 @@ export function updateVertexPosition(vertexIndex: number, newPosition: Vector2):
 
 /** Returns the index of the inserted vertex, or null when the insert was rejected. */
 export function insertVertexOnWall(wallId: string, position: Vector2): number | null {
-  const doc = get(committedRoom);
+  const doc = sessionStore.current().document;
   const { insertedIndex } = geometryService.insertVertexOnWall(
     doc.geometry.boundary,
     wallId,
@@ -175,7 +141,7 @@ export function insertVertexOnWall(wallId: string, position: Vector2): number | 
 }
 
 export function deleteVertex(vertexIndex: number): boolean {
-  const doc = get(committedRoom);
+  const doc = sessionStore.current().document;
   const { success } = geometryService.deleteVertex(doc.geometry.boundary, vertexIndex);
   if (!success) return false;
 

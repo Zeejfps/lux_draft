@@ -1,14 +1,29 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import { historyStore, canUndo, canRedo } from '../../../src/stores/historyStore';
 import {
   roomStore,
-  committedRoom,
+  committedDocument,
   dispatch,
   openDocument,
   addLight,
 } from '../../../src/stores/roomStore';
+import { sessionStore, history } from '../../../src/stores/sessionStore';
+import {
+  canUndo as historyCanUndo,
+  canRedo as historyCanRedo,
+  undoLabel,
+  redoLabel,
+} from '../../../src/types/session';
 import { makeDocument, makeLight, rectWalls } from '../../helpers/documents';
+
+/** History is a slice of the session now; these read it exactly as the toolbar does. */
+function canUndo(): boolean {
+  return historyCanUndo(get(history));
+}
+
+function canRedo(): boolean {
+  return historyCanRedo(get(history));
+}
 
 function setCeiling(height: number): void {
   dispatch({ type: 'space.setCeilingHeight', height });
@@ -22,24 +37,23 @@ function walls() {
   return get(roomStore).geometry.boundary.walls;
 }
 
-describe('historyStore', () => {
+describe('session history', () => {
   beforeEach(() => {
-    // Reset to initial state - open a document first, then clear history
+    // `open` replaces the document *and* clears history in one action — a load is not an edit.
     openDocument(makeDocument({ ceilingHeight: 8 }));
-    historyStore.clear();
   });
 
   describe('basic functionality', () => {
     it('starts with empty history', () => {
-      expect(get(canUndo)).toBe(false);
-      expect(get(canRedo)).toBe(false);
+      expect(canUndo()).toBe(false);
+      expect(canRedo()).toBe(false);
     });
 
     it('records state changes', () => {
       setCeiling(10);
 
-      expect(get(canUndo)).toBe(true);
-      expect(get(canRedo)).toBe(false);
+      expect(canUndo()).toBe(true);
+      expect(canRedo()).toBe(false);
     });
 
     it('can undo a state change', () => {
@@ -48,7 +62,7 @@ describe('historyStore', () => {
       setCeiling(12);
       expect(ceiling()).toBe(12);
 
-      const result = historyStore.undo();
+      const result = sessionStore.undo();
       expect(result).toBe(true);
       expect(ceiling()).toBe(initialHeight);
     });
@@ -56,10 +70,10 @@ describe('historyStore', () => {
     it('can redo after undo', () => {
       setCeiling(15);
 
-      historyStore.undo();
-      expect(get(canRedo)).toBe(true);
+      sessionStore.undo();
+      expect(canRedo()).toBe(true);
 
-      const result = historyStore.redo();
+      const result = sessionStore.redo();
       expect(result).toBe(true);
       expect(ceiling()).toBe(15);
     });
@@ -68,34 +82,34 @@ describe('historyStore', () => {
       setCeiling(10);
       setCeiling(12);
 
-      historyStore.undo();
-      expect(get(canRedo)).toBe(true);
+      sessionStore.undo();
+      expect(canRedo()).toBe(true);
 
       setCeiling(20);
 
-      expect(get(canRedo)).toBe(false);
+      expect(canRedo()).toBe(false);
     });
 
     it('returns false when trying to undo with no history', () => {
-      const result = historyStore.undo();
+      const result = sessionStore.undo();
       expect(result).toBe(false);
     });
 
     it('returns false when trying to redo with no future', () => {
-      const result = historyStore.redo();
+      const result = sessionStore.redo();
       expect(result).toBe(false);
     });
 
-    it('can clear history', () => {
+    it('opening a document clears history and pushes no entry of its own', () => {
       setCeiling(10);
       setCeiling(12);
 
-      expect(get(canUndo)).toBe(true);
+      expect(canUndo()).toBe(true);
 
-      historyStore.clear();
+      openDocument(makeDocument({ ceilingHeight: 12 }));
 
-      expect(get(canUndo)).toBe(false);
-      expect(get(canRedo)).toBe(false);
+      expect(canUndo()).toBe(false);
+      expect(canRedo()).toBe(false);
     });
   });
 
@@ -107,16 +121,16 @@ describe('historyStore', () => {
       setCeiling(12);
       setCeiling(14);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(12);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(10);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(initialHeight);
 
-      expect(get(canUndo)).toBe(false);
+      expect(canUndo()).toBe(false);
     });
 
     it('handles multiple redos', () => {
@@ -125,37 +139,37 @@ describe('historyStore', () => {
       setCeiling(14);
 
       // Undo all
-      historyStore.undo();
-      historyStore.undo();
-      historyStore.undo();
+      sessionStore.undo();
+      sessionStore.undo();
+      sessionStore.undo();
 
       // Redo all
-      historyStore.redo();
+      sessionStore.redo();
       expect(ceiling()).toBe(10);
 
-      historyStore.redo();
+      sessionStore.redo();
       expect(ceiling()).toBe(12);
 
-      historyStore.redo();
+      sessionStore.redo();
       expect(ceiling()).toBe(14);
 
-      expect(get(canRedo)).toBe(false);
+      expect(canRedo()).toBe(false);
     });
 
     it('handles alternating undo/redo', () => {
       setCeiling(10);
       setCeiling(12);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(10);
 
-      historyStore.redo();
+      sessionStore.redo();
       expect(ceiling()).toBe(12);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(10);
 
-      historyStore.redo();
+      sessionStore.redo();
       expect(ceiling()).toBe(12);
     });
   });
@@ -165,10 +179,10 @@ describe('historyStore', () => {
       dispatch({ type: 'room.close', walls: rectWalls(10, 10) });
       expect(walls().length).toBe(4);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(walls().length).toBe(0);
 
-      historyStore.redo();
+      sessionStore.redo();
       expect(walls().length).toBe(4);
     });
 
@@ -176,10 +190,10 @@ describe('historyStore', () => {
       addLight(makeLight('light-1', { x: 5, y: 5 }));
       expect(get(roomStore).lights.length).toBe(1);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(get(roomStore).lights.length).toBe(0);
 
-      historyStore.redo();
+      sessionStore.redo();
       expect(get(roomStore).lights.length).toBe(1);
     });
 
@@ -196,40 +210,40 @@ describe('historyStore', () => {
       expect(ceiling()).toBe(10);
       expect(get(roomStore).geometry.boundary.isClosed).toBe(true);
 
-      historyStore.undo();
+      sessionStore.undo();
 
       expect(ceiling()).toBe(8);
       expect(get(roomStore).geometry.boundary.isClosed).toBe(false);
-      expect(get(canUndo)).toBe(false);
+      expect(canUndo()).toBe(false);
     });
   });
 
   describe('duplicate state detection', () => {
     it('does not record duplicate states', () => {
       setCeiling(10);
-      expect(get(canUndo)).toBe(true);
+      expect(canUndo()).toBe(true);
 
       // Dispatch the same absolute value - no emission, so no new history entry
       setCeiling(10);
 
       // Should still only need one undo
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(8);
-      expect(get(canUndo)).toBe(false);
+      expect(canUndo()).toBe(false);
     });
 
     it('a value-equal result keeps the same document reference', () => {
       const light = makeLight('light-1', { x: 5, y: 5 });
       addLight(light);
 
-      const before = get(committedRoom);
+      const before = get(committedDocument);
       dispatch({ type: 'light.move', lightId: 'light-1', position: { x: 5, y: 5 } });
 
-      expect(get(committedRoom)).toBe(before);
+      expect(get(committedDocument)).toBe(before);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(get(roomStore).lights.length).toBe(0);
-      expect(get(canUndo)).toBe(false);
+      expect(canUndo()).toBe(false);
     });
   });
 
@@ -242,7 +256,7 @@ describe('historyStore', () => {
 
       // Count how many undos we can do
       let undoCount = 0;
-      while (historyStore.undo()) {
+      while (sessionStore.undo()) {
         undoCount++;
       }
 
@@ -261,7 +275,7 @@ describe('historyStore', () => {
 
       // Undo 50 times
       for (let i = 0; i < 50; i++) {
-        historyStore.undo();
+        sessionStore.undo();
       }
 
       // Initial + 55 changes, keep last 50, so after 50 undos we are at 5
@@ -271,47 +285,45 @@ describe('historyStore', () => {
 
   describe('canUndo and canRedo functions', () => {
     it('canUndo() returns correct value', () => {
-      expect(historyStore.canUndo()).toBe(false);
+      expect(canUndo()).toBe(false);
 
       setCeiling(10);
-      expect(historyStore.canUndo()).toBe(true);
+      expect(canUndo()).toBe(true);
 
-      historyStore.undo();
-      expect(historyStore.canUndo()).toBe(false);
+      sessionStore.undo();
+      expect(canUndo()).toBe(false);
     });
 
     it('canRedo() returns correct value', () => {
-      expect(historyStore.canRedo()).toBe(false);
+      expect(canRedo()).toBe(false);
 
       setCeiling(10);
-      expect(historyStore.canRedo()).toBe(false);
+      expect(canRedo()).toBe(false);
 
-      historyStore.undo();
-      expect(historyStore.canRedo()).toBe(true);
+      sessionStore.undo();
+      expect(canRedo()).toBe(true);
 
-      historyStore.redo();
-      expect(historyStore.canRedo()).toBe(false);
+      sessionStore.redo();
+      expect(canRedo()).toBe(false);
     });
 
-    it('derived stores stay in sync with functions', () => {
+    it('the history slice carries the labels through the store', () => {
       setCeiling(10);
+      expect(undoLabel(get(history))).toBe('Change ceiling height');
+      expect(redoLabel(get(history))).toBeNull();
 
-      expect(get(canUndo)).toBe(historyStore.canUndo());
-      expect(get(canRedo)).toBe(historyStore.canRedo());
-
-      historyStore.undo();
-
-      expect(get(canUndo)).toBe(historyStore.canUndo());
-      expect(get(canRedo)).toBe(historyStore.canRedo());
+      sessionStore.undo();
+      expect(undoLabel(get(history))).toBeNull();
+      expect(redoLabel(get(history))).toBe('Change ceiling height');
     });
   });
 
   describe('edge cases', () => {
-    it('handles undo immediately after clear', () => {
+    it('handles undo immediately after opening a document', () => {
       setCeiling(10);
-      historyStore.clear();
+      openDocument(makeDocument({ ceilingHeight: 10 }));
 
-      const result = historyStore.undo();
+      const result = sessionStore.undo();
       expect(result).toBe(false);
     });
 
@@ -321,11 +333,11 @@ describe('historyStore', () => {
         setCeiling(8 + i * 0.1);
       }
 
-      expect(get(canUndo)).toBe(true);
+      expect(canUndo()).toBe(true);
 
       // Should be able to undo each change
       let count = 0;
-      while (historyStore.undo()) {
+      while (sessionStore.undo()) {
         count++;
       }
       expect(count).toBe(10);
@@ -337,12 +349,12 @@ describe('historyStore', () => {
       setCeiling(10);
       setCeiling(12);
 
-      historyStore.undo();
-      historyStore.undo();
-      historyStore.redo();
-      historyStore.redo();
-      historyStore.undo();
-      historyStore.undo();
+      sessionStore.undo();
+      sessionStore.undo();
+      sessionStore.redo();
+      sessionStore.redo();
+      sessionStore.undo();
+      sessionStore.undo();
 
       expect(get(roomStore)).toEqual(originalState);
     });
@@ -353,10 +365,10 @@ describe('historyStore', () => {
       dispatch({ type: 'light.move', lightId: 'light-1', position: { x: 10, y: 5 } });
       expect(get(roomStore).lights[0].position.x).toBe(10);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(get(roomStore).lights[0].position.x).toBe(5);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(get(roomStore).lights.length).toBe(0);
     });
   });
@@ -371,33 +383,33 @@ describe('historyStore', () => {
 
       expect(walls().length).toBe(3);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(walls().length).toBe(2);
 
-      historyStore.redo();
+      sessionStore.redo();
       expect(walls().length).toBe(3);
 
-      historyStore.undo();
-      historyStore.undo();
+      sessionStore.undo();
+      sessionStore.undo();
       expect(walls().length).toBe(1);
     });
 
-    it('handles clear followed by new changes', () => {
+    it('handles a document open followed by new changes', () => {
       setCeiling(10);
       setCeiling(12);
 
-      historyStore.clear();
+      openDocument(makeDocument({ ceilingHeight: 12 }));
 
       setCeiling(14);
       setCeiling(16);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(14);
 
-      historyStore.undo();
+      sessionStore.undo();
       expect(ceiling()).toBe(12);
 
-      expect(get(canUndo)).toBe(false);
+      expect(canUndo()).toBe(false);
     });
   });
 });

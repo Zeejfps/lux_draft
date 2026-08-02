@@ -17,10 +17,10 @@
   import LightingStatsPanel from './components/LightingStatsPanel.svelte';
   import LightDefinitionManager from './components/LightDefinitionManager.svelte';
   import ViewerPage from './components/ViewerPage.svelte';
-  import { committedRoom, openDocument } from './stores/roomStore';
+  import { committedDocument, openDocument } from './stores/roomStore';
   import { activeTool, setActiveTool, requestCameraFit } from './stores/appStore';
   import { loadFromLocalStorage, setupAutoSave } from './persistence/localStorage';
-  import { initSettingsFromRoom, displayPreferences } from './stores/settingsStore';
+  import { toggleGridSnap } from './stores/settingsStore';
   import { togglePropertiesPanel } from './stores/propertiesPanelStore';
   import { currentRoute } from './stores/routerStore';
   import './stores/themeStore'; // Initialize theme CSS variables
@@ -108,7 +108,7 @@
         setActiveTool('obstacle');
         break;
       case 's':
-        displayPreferences.update((p) => ({ ...p, gridSnapEnabled: !p.gridSnapEnabled }));
+        toggleGridSnap();
         break;
       case 'p':
         togglePropertiesPanel();
@@ -122,13 +122,12 @@
       const savedDocument = loadFromLocalStorage();
       if (savedDocument) {
         openDocument(savedDocument);
-        // Initialize settings from saved room state
-        initSettingsFromRoom();
+        // Rafter and display preferences are read straight off the document now.
         // Fit camera to the loaded project
         requestCameraFit();
       }
 
-      cleanupAutoSave = setupAutoSave(committedRoom);
+      cleanupAutoSave = setupAutoSave(committedDocument);
       window.addEventListener('keydown', handleGlobalKeydown);
     }
   });

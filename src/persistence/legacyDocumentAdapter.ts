@@ -32,6 +32,7 @@ export function fromLegacyRoomState(state: RoomState): EditorDocument {
       obstacles: state.obstacles ?? [],
     },
     space: { ceilingHeight: state.ceilingHeight },
+    modules: {},
     lights: state.lights ?? [],
   };
   if (state.rafterConfig !== undefined) doc.rafterConfig = state.rafterConfig;

@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { rafterConfig, setRafterOrientation, setRafterSpacing } from '../stores/settingsStore';
+  import {
+    rafterConfig,
+    setRafterOrientation,
+    setRafterSpacing,
+    updateRafterConfig,
+  } from '../stores/settingsStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { RafterConfig } from '../types';
 
@@ -21,7 +26,7 @@
   function handleOffsetChange(axis: 'offsetX' | 'offsetY', e: Event): void {
     const inches = parseFloat((e.target as HTMLInputElement).value);
     if (!isNaN(inches)) {
-      rafterConfig.update((c) => ({ ...c, [axis]: inches / 12 }));
+      updateRafterConfig({ [axis]: inches / 12 });
     }
   }
 </script>

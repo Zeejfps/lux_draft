@@ -4,7 +4,7 @@ import type { EditorDocument } from '../../../src/types/document';
 import type { EditorCommand } from '../../../src/types/command';
 import {
   roomStore,
-  committedRoom,
+  committedDocument,
   interaction,
   dispatch,
   openDocument,
@@ -12,7 +12,8 @@ import {
   commitInteraction,
   cancelInteraction,
 } from '../../../src/stores/roomStore';
-import { historyStore, canUndo } from '../../../src/stores/historyStore';
+import { sessionStore, history } from '../../../src/stores/sessionStore';
+import { canUndo as historyCanUndo } from '../../../src/types/session';
 import { DragManager } from '../../../src/interactions/DragManager';
 import { WallDragOperation } from '../../../src/interactions/operations/WallDragOperation';
 import { SnapController } from '../../../src/controllers/SnapController';
@@ -22,7 +23,7 @@ const NO_MODIFIERS = { shiftKey: false, ctrlKey: false, altKey: false };
 
 function countCommittedEmissions(run: () => void): number {
   let count = -1; // svelte stores emit the current value on subscribe
-  const stop = committedRoom.subscribe(() => {
+  const stop = committedDocument.subscribe(() => {
     count++;
   });
   run();
@@ -77,11 +78,10 @@ function wallOne(doc: EditorDocument) {
 describe('candidate command previews', () => {
   beforeEach(() => {
     openDocument(squareRoom());
-    historyStore.clear();
   });
 
   it('a preview changes the live view and not the committed document', () => {
-    const committedBefore = get(committedRoom);
+    const committedBefore = get(committedDocument);
 
     previewCommand({
       type: 'wall.move',
@@ -91,8 +91,8 @@ describe('candidate command previews', () => {
     });
 
     expect(wallOne(get(roomStore)).start).toEqual({ x: 0, y: -3 });
-    expect(get(committedRoom)).toBe(committedBefore);
-    expect(get(canUndo)).toBe(false);
+    expect(get(committedDocument)).toBe(committedBefore);
+    expect(historyCanUndo(get(history))).toBe(false);
   });
 
   it('commit dispatches the previewed value verbatim and returns to idle', () => {
@@ -109,12 +109,12 @@ describe('candidate command previews', () => {
 
     expect(get(interaction)).toEqual({ kind: 'idle' });
     // The last frame the user saw is exactly what was committed
-    expect(get(committedRoom)).toEqual(previewed);
+    expect(get(committedDocument)).toEqual(previewed);
     expect(get(roomStore)).toEqual(previewed);
   });
 
   it('cancel discards the preview and leaves the committed document untouched', () => {
-    const committedBefore = get(committedRoom);
+    const committedBefore = get(committedDocument);
 
     previewCommand({
       type: 'wall.move',
@@ -125,9 +125,9 @@ describe('candidate command previews', () => {
     cancelInteraction();
 
     expect(get(interaction)).toEqual({ kind: 'idle' });
-    expect(get(committedRoom)).toBe(committedBefore);
+    expect(get(committedDocument)).toBe(committedBefore);
     expect(get(roomStore)).toBe(committedBefore);
-    expect(get(canUndo)).toBe(false);
+    expect(historyCanUndo(get(history))).toBe(false);
   });
 
   it('commit with nothing pending is a no-op', () => {
@@ -138,7 +138,6 @@ describe('candidate command previews', () => {
 describe('a drag through the DragManager', () => {
   beforeEach(() => {
     openDocument(squareRoom());
-    historyStore.clear();
   });
 
   it('previews live and writes the committed document exactly once', () => {
@@ -152,12 +151,12 @@ describe('a drag through the DragManager', () => {
       manager.updateDrag({ x: 5, y: 3 }, NO_MODIFIERS);
       expect(wallOne(get(roomStore)).start).toEqual({ x: 0, y: 3 });
       // ...and none of that touched the committed document yet
-      expect(wallOne(get(committedRoom)).start).toEqual({ x: 0, y: 0 });
+      expect(wallOne(get(committedDocument)).start).toEqual({ x: 0, y: 0 });
       manager.commitDrag();
     });
 
     expect(emissions).toBe(1);
-    expect(wallOne(get(committedRoom)).start).toEqual({ x: 0, y: 3 });
+    expect(wallOne(get(committedDocument)).start).toEqual({ x: 0, y: 3 });
     expect(get(interaction)).toEqual({ kind: 'idle' });
   });
 
@@ -171,14 +170,14 @@ describe('a drag through the DragManager', () => {
     manager.commitDrag();
 
     let undos = 0;
-    while (historyStore.undo()) undos++;
+    while (sessionStore.undo()) undos++;
     expect(undos).toBe(1);
-    expect(wallOne(get(committedRoom)).start).toEqual({ x: 0, y: 0 });
+    expect(wallOne(get(committedDocument)).start).toEqual({ x: 0, y: 0 });
   });
 
   it('leaves the committed document untouched on cancel', () => {
     const manager = makeDragManager();
-    const committedBefore = get(committedRoom);
+    const committedBefore = get(committedDocument);
 
     const emissions = countCommittedEmissions(() => {
       startWallDrag(manager);
@@ -187,14 +186,14 @@ describe('a drag through the DragManager', () => {
     });
 
     expect(emissions).toBe(0);
-    expect(get(committedRoom)).toBe(committedBefore);
+    expect(get(committedDocument)).toBe(committedBefore);
     expect(get(roomStore)).toBe(committedBefore);
-    expect(get(canUndo)).toBe(false);
+    expect(historyCanUndo(get(history))).toBe(false);
   });
 
   it('a drag ending at its origin produces a reference-equal document and no history entry', () => {
     const manager = makeDragManager();
-    const committedBefore = get(committedRoom);
+    const committedBefore = get(committedDocument);
 
     const emissions = countCommittedEmissions(() => {
       startWallDrag(manager);
@@ -204,15 +203,14 @@ describe('a drag through the DragManager', () => {
     });
 
     expect(emissions).toBe(0);
-    expect(get(committedRoom)).toBe(committedBefore);
-    expect(get(canUndo)).toBe(false);
+    expect(get(committedDocument)).toBe(committedBefore);
+    expect(historyCanUndo(get(history))).toBe(false);
   });
 });
 
 describe('dispatch', () => {
   beforeEach(() => {
     openDocument(squareRoom());
-    historyStore.clear();
   });
 
   it('rejects a command that is not serializable data', () => {
@@ -233,16 +231,15 @@ describe('dispatch', () => {
   });
 
   it('a value-equal result returns the same document reference', () => {
-    const before = get(committedRoom);
+    const before = get(committedDocument);
     dispatch({ type: 'space.setCeilingHeight', height: before.space.ceilingHeight });
-    expect(get(committedRoom)).toBe(before);
+    expect(get(committedDocument)).toBe(before);
   });
 });
 
 describe('undo clears a pending preview', () => {
   beforeEach(() => {
     openDocument(squareRoom());
-    historyStore.clear();
   });
 
   it('undo discards the candidate command', () => {
@@ -256,9 +253,9 @@ describe('undo clears a pending preview', () => {
     });
     expect(get(interaction).kind).toBe('commandPreview');
 
-    historyStore.undo();
+    sessionStore.undo();
 
     expect(get(interaction)).toEqual({ kind: 'idle' });
-    expect(get(roomStore)).toBe(get(committedRoom));
+    expect(get(roomStore)).toBe(get(committedDocument));
   });
 });

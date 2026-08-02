@@ -60,9 +60,14 @@
     selectDoor,
     viewMode,
   } from '../stores/appStore';
-  import { historyStore } from '../stores/historyStore';
+  import { sessionStore } from '../stores/sessionStore';
   import { getDoorPlacementSettings } from '../stores/doorStore';
-  import { displayPreferences, rafterConfig, toggleUnitFormat } from '../stores/settingsStore';
+  import {
+    displayPreferences,
+    rafterConfig,
+    toggleUnitFormat,
+    toggleRafters,
+  } from '../stores/settingsStore';
   import { deadZoneConfig } from '../stores/deadZoneStore';
   import { spacingConfig, spacingWarnings } from '../stores/spacingStore';
   import { toggleLightingStats } from '../stores/lightingStatsStore';
@@ -639,12 +644,12 @@
     keyboardShortcutManager.registerAll(
       createDefaultKeyboardShortcuts({
         setViewMode: (mode) => viewMode.set(mode),
-        toggleRafters: () => rafterConfig.update((c) => ({ ...c, visible: !c.visible })),
+        toggleRafters: () => toggleRafters(),
         toggleUnitFormat: () => toggleUnitFormat(),
         toggleMeasurement: () => handleMeasurementToggle(),
         toggleLightingStats: () => toggleLightingStats(),
-        undo: () => historyStore.undo(),
-        redo: () => historyStore.redo(),
+        undo: () => sessionStore.undo(),
+        redo: () => sessionStore.redo(),
         handleEscape: () => handleEscape(),
         handleDelete: () => handleDelete(),
         selectAllObstacleVertices: () => handleSelectAllObstacleVertices(),
