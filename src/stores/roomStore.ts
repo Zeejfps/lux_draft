@@ -133,10 +133,6 @@ export function getVertices(doc: EditorDocument): Vector2[] {
   return doc.geometry.boundary.walls.map((w) => w.start);
 }
 
-export function getWalls(doc: EditorDocument): WallSegment[] {
-  return doc.geometry.boundary.walls;
-}
-
 export function getDoorsByWallId(doc: EditorDocument, wallId: string): Door[] {
   return doc.geometry.doors.filter((d) => d.wallId === wallId);
 }
@@ -162,10 +158,6 @@ export function updateWallLength(wallId: string, newLength: number): void {
 
 export function updateVertexPosition(vertexIndex: number, newPosition: Vector2): void {
   dispatch({ type: 'vertex.move', index: vertexIndex, position: newPosition });
-}
-
-export function moveWall(wallId: string, newStart: Vector2, newEnd: Vector2): void {
-  dispatch({ type: 'wall.move', wallId, start: newStart, end: newEnd });
 }
 
 /** Returns the index of the inserted vertex, or null when the insert was rejected. */
@@ -217,18 +209,6 @@ export function updateObstacle(id: string, changes: ObstacleChanges): void {
 
 export function removeObstacle(id: string): void {
   dispatch({ type: 'obstacle.remove', obstacleId: id });
-}
-
-export function updateObstacleVertexPosition(
-  obstacleId: string,
-  vertexIndex: number,
-  newPosition: Vector2
-): void {
-  dispatch({ type: 'obstacle.vertex.move', obstacleId, index: vertexIndex, position: newPosition });
-}
-
-export function moveObstacle(obstacleId: string, vertices: Vector2[]): void {
-  dispatch({ type: 'obstacle.move', obstacleId, vertices });
 }
 
 // --- lights (legacy; becomes `lighting.*` in phase 3b) ---

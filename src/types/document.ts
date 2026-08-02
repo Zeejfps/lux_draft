@@ -50,27 +50,3 @@ export function createEmptyDocument(): EditorDocument {
     lights: [],
   };
 }
-
-// ============================================
-// Narrow read helpers
-// ============================================
-
-export function documentWalls(doc: EditorDocument): WallSegment[] {
-  return doc.geometry.boundary.walls;
-}
-
-export function documentIsClosed(doc: EditorDocument): boolean {
-  return doc.geometry.boundary.isClosed;
-}
-
-export function documentVertices(doc: EditorDocument): import('./geometry').Vector2[] {
-  return doc.geometry.boundary.walls.map((w) => w.start);
-}
-
-export function documentDoors(doc: EditorDocument): Door[] {
-  return doc.geometry.doors;
-}
-
-export function documentObstacles(doc: EditorDocument): Obstacle[] {
-  return doc.geometry.obstacles;
-}
