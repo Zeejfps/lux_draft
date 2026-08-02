@@ -181,7 +181,13 @@ wall" as redo labels in that order, and that information is not recoverable from
 `RoomState`. Pairing each snapshot with its label makes the transfer trivial:
 
 ```ts
-commit(label, fn):  past.push({ document: current, label }); current = fn(current); future = [];
+const MAX_HISTORY = 50; // preserved from historyStore.ts:10
+
+commit(label, fn):  const next = fn(current);
+                    if (deepEqual(next, current)) return;          // no-op commits push nothing
+                    past.push({ document: current, label });
+                    if (past.length > MAX_HISTORY) past.shift();   // evict oldest
+                    current = next; future = [];
 undo():             const e = past.pop(); future.unshift({ document: current, label: e.label });
                     current = e.document;
 redo():             const e = future.shift(); past.push({ document: current, label: e.label });
@@ -191,6 +197,15 @@ redo():             const e = future.shift(); past.push({ document: current, lab
 The label rides with the entry across both stacks, so `undoLabel` / `redoLabel` are one-line derived
 reads. Test with a mixed sequence: commit A, commit B, undo, undo, redo — asserting the label pair at
 every step.
+
+**The 50-entry cap is load-bearing and must not be lost in the rewrite.** `historyStore.ts:10` caps
+`past` today; an unbounded stack retains whole document snapshots for the life of a session, which is
+exactly the growth the module slices make worse. Eviction is oldest-first from `past` only — `future`
+is bounded by `past` since entries move between them. Test: commit 51 times, assert
+`past.length === 50` and that entry 1 is gone.
+
+`undo`/`redo` never evict, so a full stack survives arbitrary undo/redo traversal; only new commits
+push out history, which is the standard and expected behavior.
 
 ### 3.2 There is exactly one way to write, and it is a commit
 
@@ -688,8 +703,9 @@ Target: the `RoomState` / `Session` shape in §3.1. `lights` moves into `modules
 only through `readModule(doc, lightingCodec)`.
 
 `rafterConfig` moves into the lighting slice too — a ceiling-joist concept with no meaning for
-flooring. `ceilingHeight` stays on the core document (it is a room property), but note it is only
-_consumed_ by lighting today.
+flooring. So do the custom light definitions the fixtures reference, which are a third payload with
+no home in the current design and their own correctness bug (§7.3a). `ceilingHeight` stays on the
+core document (it is a room property), but note it is only _consumed_ by lighting today.
 
 ### Blocker B — the selection model is six parallel stores
 
@@ -835,11 +851,72 @@ meanings and make the migration matrix ambiguous.
 Resolution — two independent, explicitly-named levels:
 
 - **Envelope**: `version: 3` means modules-shaped. Readers for `1` and `2` are kept **permanently**;
-  they parse the legacy flat shape and lift `lights` / `rafterConfig` into `modules.lighting`.
+  they parse the legacy flat shape and lift `lights`, `rafterConfig`, **and `lightDefinitions`** into
+  `modules.lighting` (§7.3a).
 - **Per-module**: each blob carries its own `v`, owned and migrated by that module's codec. A module
   can revise its schema without touching the envelope version or any other module.
 
 Legacy share URLs encode envelope 1 and 2. Those decoders are load-bearing forever, not transitional.
+
+### 7.3a Referenced assets — custom light definitions
+
+The envelope has a third payload the rest of this plan did not account for, and it does not fit any
+existing category. `ExportData.lightDefinitions` (`jsonExport.ts:5-9`) carries custom fixture
+definitions; `state.lights[].definitionId` references them. It is neither document geometry nor an
+opaque carried blob nor derived output — it is a **referenced asset library**, and today it is
+handled as a global side effect:
+
+- `lightDefinitions` is a global `writable` seeded from `DEFAULT_LIGHT_DEFINITIONS` plus customs read
+  from its **own separate localStorage key** (`lightDefinitionsStore.ts:32-42`).
+- Export embeds only the definitions actually referenced by this room and only those whose id starts
+  with `custom-` (`jsonExport.ts:31-49`) — built-ins travel by id alone.
+- Import calls `mergeLightDefinitions`, which adds only ids not already present
+  (`lightDefinitionsStore.ts:105-112`) — **existing wins**.
+
+That last rule is a live bug, not just an awkward fit. Open a share link whose `custom-abc` differs
+from your local `custom-abc` and the incoming definition is silently dropped; the fixtures then
+render with your photometry instead of the sender's. It also makes `decodeDocument` impure — a
+decode would mutate a global store as a side effect, which the §7.1 pipeline explicitly must not do.
+
+**Decision: definitions referenced by a document belong to the document.**
+
+```ts
+export interface LightingData {
+  fixtures: LightFixture[];
+  rafterConfig: RafterConfig;
+  deadZone: DeadZoneConfig;
+  spacing: SpacingConfig;
+  /** Closure of non-builtin definitions referenced by `fixtures`. Built-ins resolve by id. */
+  definitions: LightDefinition[];
+}
+```
+
+Rationale: `definitionId` is a document-internal reference, and a document that renders differently
+depending on which machine opens it is broken. Making the closure part of `LightingData` is also the
+minimal change to what is already on disk — the current format embeds exactly this closure, so v2
+files migrate by moving the array, not by recomputing it.
+
+Consequences, all of which resolve open questions rather than adding new rules:
+
+- `decodeDocument` becomes pure. It moves `exportData.lightDefinitions` into
+  `modules.lighting.definitions` and calls nothing.
+- The global store is **demoted to a library** — it backs the fixture picker and keeps its own
+  localStorage key. It is app state, not document state, and never round-trips through the document.
+- Adopting definitions into the library becomes an explicit post-load step, not a decode side
+  effect: after `open`, offer any unknown incoming definitions to the library. Same user-visible
+  outcome as today, but the decode path no longer mutates globals.
+- `resolveDefinition(id)` checks the document's `definitions` first, then the library. The document's
+  copy wins, which is the reverse of today's precedence and is the fix for the share-link bug.
+- `compactForShare` keeps the closure — dropping it would produce a link that renders wrong on any
+  machine but the sender's.
+
+**Alternative considered:** leave definitions global and carry them in `CarriedState`. Rejected —
+`definitionId` would then reference data outside the document, so undo, export, and share would each
+need their own rule for keeping the two in sync, and the collision bug would survive.
+
+Phase 3 fixture, non-optional: a v2 file with one `custom-` definition referenced by a fixture,
+asserting the definition survives decode → encode → decode with its photometry intact, and that a
+_conflicting_ local definition of the same id does not override it.
 
 ### 7.4 History and derived data
 
@@ -892,11 +969,35 @@ Phases 3 and 4 divide cleanly: **phase 3 is the data plane, phase 4 is the UI pl
 
 ### Phase 1a — drag operations become pure previews (3–4 days) ← **start here**
 
-Independent of everything else, and shippable on its own against the _current_ stores. Doing it
-first means phase 1b inherits a codebase with a single write mode already.
+Shippable on its own against the _current_ stores, so phase 1b inherits a codebase that already has
+a single write mode.
 
-- Add `Interaction` (tagged union) and `previewDocument` / `applyDrag` (§3.2.1) as pure functions,
-  plus an `interaction` store.
+**Store topology, which is the part that has to be right.** Note that `roomStore` is _already_ the
+live view today — drags write to it, which is why 49 read sites across 20 files see live geometry
+during a gesture. Preserving that meaning for `roomStore` is what keeps every reader untouched:
+
+```ts
+// 1a: the writable is renamed and demoted; `roomStore` keeps its name and its live meaning.
+const committedRoom = writable<RoomState>(...);          // was `roomStore`; writers point here
+export const interaction = writable<Interaction>({ kind: 'idle' });
+export const roomStore = derived(                        // same name, same live semantics
+  [committedRoom, interaction],
+  ([$doc, $i]) => previewDocument($doc, $i)
+);
+```
+
+- **Writers** (all 29, §3.2) get a mechanical rename: `roomStore.update` → `committedRoom.update`.
+  This is a rename, not the commit migration — no labels, no `sessionStore`, no history rework. That
+  is 1b's job.
+- **Readers** change in exactly zero places. They keep `roomStore` and keep seeing live drags.
+- **Persistence, autosave, and `historyStore`** are repointed to `committedRoom` — a small
+  enumerable set, and the only sites that must _not_ see previews.
+- In 1b, `committedRoom` is absorbed into `sessionStore`, `roomStore` re-points to the session's live
+  view, and `committedDocument` is exported for the persistence set. Readers are untouched again.
+
+The work itself:
+
+- Add `Interaction` (tagged union) and `previewDocument` / `applyDrag` (§3.2.1) as pure functions.
 - Convert the six operations in `src/interactions/operations/` so `update()` returns its computed
   result instead of calling a writing callback, and delete their `cancel()` implementations.
   `WallDragOperation` first — it is the smallest and already pure apart from `:90`.
@@ -904,20 +1005,24 @@ first means phase 1b inherits a codebase with a single write mode already.
 - Collapse `DragManagerCallbacks`' seven writing callbacks into a return type; delete
   `onPauseHistory` / `onResumeHistory` and the `historyStore.pauseRecording` / `resumeRecording`
   primitives entirely.
-- Point renderers and the live-updating derived stores (dead zones, spacing warnings, lighting
-  stats) at the previewed document; leave persistence reading the committed one.
+- `commitDrag` calls the existing `roomStore.ts` helper once (`moveWall(...)`, `updateDoor(...)`, …)
+  instead of the op calling it per frame. The helpers are unchanged in this phase.
 - Wire `pointercancel` and window `blur` to `cancelDrag` — not wired today.
-- **Tests:** each drag op previews live, commits exactly one labeled entry, commits nothing when it
-  ends at its origin, and leaves the document untouched on cancel.
+- **Tests:** each drag op previews live, writes the committed document exactly once, writes nothing
+  when it ends at its origin, and leaves the committed document untouched on cancel.
 - **Ships value alone:** removes history suppression from the codebase, makes drag cancel correct by
   construction, and stops autosave from ever capturing a mid-drag document.
+
+**If the rename churn is unwelcome, merge 1a and 1b** into one 6–8 day phase and go straight to
+`sessionStore`. The split is worth it mainly because 1a is testable against the existing history
+implementation, which makes the drag rewrite verifiable before the history rewrite lands.
 
 ### Phase 1b — session store + commit spine (3–4 days)
 
 - Introduce `Session`, `sessionStore`, `commit` / `open` / `undo` / `redo` / `setInteraction` /
   `select` (§3.1–3.2). `modules` starts as an empty opaque map; no module system yet.
-- Keep `roomStore` as a derived view — now `previewDocument(s.document, s.interaction)` — so every
-  read site and every Svelte template is untouched. Add `committedDocument` for persistence.
+- Re-point `roomStore` (still the live derived view) and `committedRoom` at `sessionStore`; export
+  the latter as `committedDocument`. Readers are untouched for the second time.
 - **Convert all 29 writers in this phase — the §3.2 inventory is the checklist.** Making `roomStore`
   derived breaks every writer at once, including the 13 helper internals in `roomStore.ts`. There is
   no partial landing: `roomStore.ts` cannot compile against a derived `roomStore` until its own
@@ -927,7 +1032,8 @@ first means phase 1b inherits a codebase with a single write mode already.
 - `resetRoom()` becomes `open(emptyDocument())`.
 - Add dev-mode deep-freeze on `open` and `commit` (§3.4.1) and fix the mutations it surfaces.
 - **Tests:** the mixed-label sequence from §3.1 (commit A, commit B, undo, undo, redo, asserting the
-  label pair at every step); load pushes no undo entry; `open` clears interaction and selection.
+  label pair at every step); commit 51 times and assert the stack holds 50 with entry 1 evicted;
+  load pushes no undo entry; `open` clears interaction and selection.
 - **Risk:** breadth, not depth — 29 sites, all the same conversion, in one landing.
 - **Ships value alone:** removes the O(document) `JSON.stringify` on every emission, gives undo
   entries real labels, and fixes the load-pushes-undo bug that exists today.
@@ -962,11 +1068,16 @@ doing it twice.
 - Add `RoomState.modules` and `CarriedState`; move `lights`, `rafterConfig`, dead-zone and spacing
   config into `modules.lighting`; route lighting's writes through `commitModule`, and its drag
   preview through `previewDocument`'s `dragging` case like any other drag (§3.4).
+- Move referenced custom light definitions into `LightingData.definitions` (§7.3a); demote the global
+  `lightDefinitions` store to a picker library; replace the `mergeLightDefinitions` decode side
+  effect with an explicit post-`open` adoption step; make `resolveDefinition` prefer the document's
+  copy.
 - Implement normalize-on-load / prune-on-save (§3.3), with the fresh-`defaultData()` baseline rule
   (§7.1) and the shared fresh-default contract test applied to every registered codec (§3.4.1).
 - Envelope `version: 3` with permanent readers for 1 and 2 (§7.3).
-- **Test first**, before changing any types: fixtures for envelope v1, v2, a future-version module
-  blob, a corrupt module blob, and an unknown module id — asserting the migrated shape, the
+- **Test first**, before changing any types: fixtures for envelope v1, v2, **a v2 file with a
+  referenced `custom-` light definition** (§7.3a), a future-version module blob, a corrupt module
+  blob, and an unknown module id — asserting the migrated shape, the
   quarantine behavior, and **value-identical** round-trip of quarantined blobs (deep equality after
   a decode → encode → decode cycle). Not byte-identical: the blob has already been through
   `JSON.parse`, so key order, whitespace, string escapes, and numeric spelling are free to change.
@@ -1016,6 +1127,8 @@ doing it twice.
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Big-bang refactor stalls mid-way                                     | Seven implementation phases plus scaffolding, each shippable; 1a/1b/2/3 stand alone.           |
 | Rewriting six drag operations regresses interaction feel             | Phase 1a is standalone, against current stores; per-op test for live preview + one entry.      |
+| Custom light definitions lost or silently overridden on import       | Definitions move into `LightingData`; document copy wins; v2 conflict fixture (§7.3a).         |
+| History grows unbounded once `MAX_HISTORY` is reimplemented          | Cap is in the `commit` contract (§3.1); test that commit 51 evicts entry 1.                    |
 | `GrabModeDragOperation` (302 lines) is the hard conversion           | Convert it last in 1a, after the pattern is proven on `WallDragOperation`.                     |
 | Reading committed where previewed is meant, or the reverse           | Visuals freeze mid-drag / saves capture half a gesture; named in §3.5, checked in review.      |
 | Phase 1b must convert all 29 writers atomically — no partial landing | Reads untouched; inventory enumerated in §3.2; flip `roomStore` to derived last.               |
