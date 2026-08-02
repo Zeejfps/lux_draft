@@ -3,7 +3,7 @@
  * derived store emits only when its own slice changed.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { get, type Readable } from 'svelte/store';
+import { derived, get, type Readable } from 'svelte/store';
 import {
   sessionStore,
   roomStore,
@@ -169,5 +169,54 @@ describe('sessionStore', () => {
       expect(get(history).past).toHaveLength(0);
       expect(sessionStore.undo()).toBe(false);
     });
+  });
+});
+
+describe('a guarded slice underneath a Svelte `derived`', () => {
+  beforeEach(() => {
+    sessionStore.open(asLoadedDocument(squareRoom()));
+  });
+
+  /**
+   * The narrow stores suppress emissions, and Svelte's `derived` refuses to recompute while
+   * any dependency is *pending* — a bit set by `invalidate` and cleared by the matching `run`.
+   * A guarded store that forwards `invalidate` therefore wedges every `derived` above it the
+   * first time it suppresses, permanently. Phase 4 surfaced this: the toolbar stopped seeing
+   * the active module, because `toolbarTools` is a `derived` over `roomStore`.
+   */
+  it('keeps recomputing after the slice suppresses an emission', () => {
+    let computed = 0;
+    const start = derived(roomStore, ($doc) => {
+      computed += 1;
+      return $doc.geometry.boundary.walls[0].start;
+    });
+    const stop = start.subscribe(() => {});
+    expect(computed).toBe(1);
+
+    // A selection change: the session emits, `roomStore` suppresses (same document). Before
+    // the fix this left `derived` pending forever.
+    sessionStore.select({ kind: 'wall', id: 'wall-1' });
+    sessionStore.select({ kind: 'none' });
+
+    // …and a real geometry change must still get through.
+    sessionStore.dispatch(moveWall(3));
+    stop();
+
+    expect(computed).toBe(2);
+  });
+
+  it('a derived over two guarded slices still tracks both', () => {
+    const seen: string[] = [];
+    const pair = derived(
+      [roomStore, selection],
+      ([$doc, $selection]) => `${$doc.geometry.boundary.walls.length}:${$selection.kind}`
+    );
+    const stop = pair.subscribe((value) => seen.push(value));
+
+    sessionStore.select({ kind: 'wall', id: 'wall-1' });
+    sessionStore.dispatch(moveWall(5));
+    stop();
+
+    expect(seen).toContain('4:wall');
   });
 });

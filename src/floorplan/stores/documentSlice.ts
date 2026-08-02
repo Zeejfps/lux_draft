@@ -19,7 +19,10 @@ export function documentSlice<T>(
   equals: (a: T, b: T) => boolean = Object.is
 ): Readable<T> {
   return {
-    subscribe(run, invalidate) {
+    // `invalidate` is not forwarded — see the note on `slice` in `sessionStore.ts`. A guarded
+    // store that forwards it wedges every Svelte `derived` built on top of it the first time
+    // it suppresses an emission.
+    subscribe(run) {
       let last: T;
       let started = false;
       return source.subscribe((doc) => {
@@ -28,7 +31,7 @@ export function documentSlice<T>(
         started = true;
         last = next;
         run(next);
-      }, invalidate);
+      });
     },
   };
 }

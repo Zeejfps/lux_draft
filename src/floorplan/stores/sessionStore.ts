@@ -136,7 +136,17 @@ export const sessionStore = createSessionStore();
 
 function slice<T>(select: (session: Session) => T): Readable<T> {
   return {
-    subscribe(run, invalidate) {
+    /**
+     * The `invalidate` callback is deliberately **not** forwarded to the session store.
+     *
+     * Svelte's `derived` marks a dependency pending on `invalidate` and clears it on the
+     * matching `run`, refusing to recompute while anything is pending. Forwarding it would
+     * set that bit on every session change and clear it only on the ones this slice actually
+     * emits — so the first suppressed emission would wedge every `derived` built on top of
+     * this store permanently. Not forwarding it means the bit is never set, and `derived`
+     * recomputes exactly when this slice emits.
+     */
+    subscribe(run) {
       let last: T;
       let started = false;
       return sessionStore.subscribe((session) => {
@@ -145,7 +155,7 @@ function slice<T>(select: (session: Session) => T): Readable<T> {
         started = true;
         last = next;
         run(next);
-      }, invalidate);
+      });
     },
   };
 }
