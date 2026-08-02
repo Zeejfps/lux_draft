@@ -129,13 +129,20 @@ export interface Diagnostics {
   disabledModules: string[];
 }
 
-export interface History {
-  past: RoomState[];
-  future: RoomState[];
-  /** Label of the commit that would be undone next; drives the UI. */
-  undoLabel: string | null;
-  redoLabel: string | null;
+/** A snapshot and the name of the action that produced the change away from it. */
+export interface HistoryEntry {
+  document: RoomState;
+  label: string;
 }
+
+export interface History {
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+}
+
+/** Derived, not stored — labels must travel with their snapshots, not alongside the stacks. */
+export const undoLabel = (h: History) => h.past.at(-1)?.label ?? null;
+export const redoLabel = (h: History) => h.future[0]?.label ?? null;
 
 export interface Session {
   readonly document: RoomState;
@@ -153,6 +160,24 @@ computed from `session.document` and has nowhere to be written to.
 `history` snapshots `RoomState` only. Quarantine, diagnostics, and selection are siblings of the
 document, so their exclusion from undo is structural — not a `readonly` marker that TypeScript
 erases at compile time while `structuredClone` copies the field anyway.
+
+**Labels are per-entry, not per-stack.** A pair of `undoLabel` / `redoLabel` fields alongside the
+stacks can name the _next_ undo but cannot survive repeated undo/redo: after committing "Move wall"
+then "Change ceiling height", undoing twice has to surface "Change ceiling height" and then "Move
+wall" as redo labels in that order, and that information is not recoverable from two arrays of bare
+`RoomState`. Pairing each snapshot with its label makes the transfer trivial:
+
+```ts
+commit(label, fn):  past.push({ document: current, label }); current = fn(current); future = [];
+undo():             const e = past.pop(); future.unshift({ document: current, label: e.label });
+                    current = e.document;
+redo():             const e = future.shift(); past.push({ document: current, label: e.label });
+                    current = e.document;
+```
+
+The label rides with the entry across both stacks, so `undoLabel` / `redoLabel` are one-line derived
+reads. Test with a mixed sequence: commit A, commit B, undo, undo, redo — asserting the label pair at
+every step.
 
 ### 3.2 Writes are commits, not sets
 
@@ -208,17 +233,20 @@ moment it loses `set`/`update`, every existing writer stops compiling. That is t
 the compiler produces the migration checklist — but it means phase 1 must convert all 29 sites (14 in
 `roomStore.ts`, 15 outside it), not just the ones outside `roomStore.ts`. Full inventory:
 
-| Where                                                                                                                                                                                                                                                                    | Count | Becomes                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------------------------------------------------------------- |
-| `roomStore.ts` helper internals — `updateWallLength`, `updateVertexPosition`, `insertVertexOnWall`, `moveWall`, `deleteVertex`, `addDoor`, `updateDoor`, `removeDoor`, `addObstacle`, `updateObstacle`, `removeObstacle`, `updateObstacleVertexPosition`, `moveObstacle` | 13    | `commit(label, fn)` — bodies are already `(state) => newState`, so the lambda moves over unchanged |
-| `roomStore.resetRoom`                                                                                                                                                                                                                                                    | 1     | `open(emptyDocument())`                                                                            |
-| `historyStore.undo` / `.redo`                                                                                                                                                                                                                                            | 2     | deleted with `historyStore`                                                                        |
-| Load paths — `App.svelte:124`, `ViewerPage.svelte:27,55`, `Toolbar.svelte:158`                                                                                                                                                                                           | 4     | `open(loaded)`                                                                                     |
-| Genuine edits — `settingsStore:22,28`, `PropertyPanel:32`, `LightPropertiesPanel:32,54`, `Canvas.svelte:574,616,667,709`                                                                                                                                                 | 9     | `commit(label, fn)`                                                                                |
+| Where                                                                                                                                                                    | Count | Becomes                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ----------------------------------------------------------------------------- |
+| `roomStore.ts` **drag-reachable** helpers — `updateVertexPosition`, `moveWall`, `updateDoor`, `updateObstacleVertexPosition`, `moveObstacle`                             | 5     | pure `*In(doc, …)` transform + `commit` wrapper; drags call `gesture.apply`   |
+| `roomStore.ts` remaining helpers — `updateWallLength`, `insertVertexOnWall`, `deleteVertex`, `addDoor`, `removeDoor`, `addObstacle`, `updateObstacle`, `removeObstacle`  | 8     | `commit(label, fn)` — bodies are already `(state) => newState`                |
+| `roomStore.resetRoom`                                                                                                                                                    | 1     | `open(emptyDocument())`                                                       |
+| `historyStore.undo` / `.redo`                                                                                                                                            | 2     | deleted with `historyStore`                                                   |
+| Load paths — `App.svelte:124`, `ViewerPage.svelte:27,55`, `Toolbar.svelte:158`                                                                                           | 4     | `open(loaded)`                                                                |
+| `Canvas.svelte:616` — `onUpdateLightPositions` drag callback                                                                                                             | 1     | `gesture.applyModule(lightingCodec, …)` after phase 3; `gesture.apply` before |
+| Ordinary edits — `settingsStore:22,28`, `PropertyPanel:32`, `LightPropertiesPanel:32,54`, `Canvas.svelte:574` (delete lights), `:667` (close room), `:709` (place light) | 8     | `commit(label, fn)`                                                           |
 
-The helper conversions are the cheap ones — those functions already take the shape `commit` wants
-and merely need a label. The four `roomStore.set` load paths are the ones that change semantics, and
-that is the point: they are exactly the sites that push a spurious undo entry today.
+Two of these rows are the interesting ones. The six drag-reachable sites (five helpers plus
+`onUpdateLightPositions`) are why edits are written as pure transforms rather than as `commit` calls —
+see §3.2.1. And the four `roomStore.set` load paths change semantics, which is the point: they are
+exactly the sites that push a spurious undo entry today. The other 19 are mechanical.
 
 Read sites — the large majority, including every Svelte template and every
 `get(roomStore)` — are untouched, because `roomStore` survives as a derived view.
@@ -237,6 +265,8 @@ The primitive is therefore an explicit long-lived handle, not a callback:
 export interface Gesture {
   /** Applies and emits immediately, so the canvas updates live. Records no history. */
   apply(fn: (doc: Readonly<RoomState>) => RoomState): void;
+  /** Typed module-slice edit inside the gesture. Sugar over `apply` + `withModule` (§3.4.2). */
+  applyModule<T>(codec: ModuleCodec<T>, fn: (prev: Readonly<T>) => T): void;
   /** Close: push one entry if the document changed in value. Returns whether it did. */
   commit(): boolean;
   /** Close: restore the entry snapshot, push nothing. Idempotent. */
@@ -285,6 +315,33 @@ And for `transact`, which is only sugar over the primitive:
 exhaustive: `pointerup`, `pointercancel`, and window `blur` all route to `commitDrag`/`cancelDrag`.
 `pointercancel` and `blur` are not wired today — worth fixing while the drag paths are already open in
 phase 1.
+
+#### The unit is a pure transform; `commit` and `apply` are the two ways to run it
+
+Because `commit` throws inside a gesture, any edit reachable from _both_ a drag and a non-drag path
+would break if it hardcoded either one. This is not a corner case — five of the thirteen
+`roomStore.ts` helpers are exactly that: `updateVertexPosition`, `moveWall`, `updateDoor`,
+`updateObstacleVertexPosition`, and `moveObstacle` are the `DragManagerCallbacks` targets
+(`Canvas.svelte:614-627`) _and_ are called from property panels and keyboard handlers. A `moveWall`
+that hardcodes `commit` throws on every wall drag.
+
+So each such edit is written once as a pure `RoomState → RoomState` transform, with two thin callers:
+
+```ts
+// pure — the actual logic, no store access
+export function moveWallIn(doc: Readonly<RoomState>, id: string, a: Vector2, b: Vector2): RoomState;
+
+// non-drag callers
+export const moveWall = (id, a, b) => commit('Move wall', (d) => moveWallIn(d, id, a, b));
+
+// drag callers
+onMoveWall: (id, a, b) => gesture.apply((d) => moveWallIn(d, id, a, b));
+```
+
+Same shape for module slices via `withModule` (§3.4.2), which is what `commitModule` and
+`Gesture.applyModule` are both built from. This is the general answer to "how does a write choose
+between committing and participating in a gesture": it doesn't — the transform is agnostic, and the
+call site picks.
 
 #### No-op detection is a value comparison at close, not reference equality
 
@@ -351,6 +408,15 @@ export interface ModuleCodec<T> {
 
 /** `ModuleSlices` is opaque — no index signature is exported, so these are the only doors. */
 export function readModule<T>(doc: Readonly<RoomState>, codec: ModuleCodec<T>): Readonly<T>;
+
+/** Pure: returns a new document with this module's slice replaced. No store access. */
+export function withModule<T>(
+  doc: Readonly<RoomState>,
+  codec: ModuleCodec<T>,
+  fn: (prev: Readonly<T>) => T
+): RoomState;
+
+/** Commits a slice edit as one history entry. Throws inside a gesture — use `applyModule`. */
 export function commitModule<T>(
   codec: ModuleCodec<T>,
   label: string,
@@ -360,6 +426,25 @@ export function commitModule<T>(
 
 Call sites read `readModule(doc, lightingCodec)` and get `LightingData`, not `unknown`. The id string
 is written once, in the codec.
+
+### 3.4.2 Module writes inside a gesture
+
+`commitModule` throws while a gesture is open, for the same reason `commit` does — but module data
+gets dragged. Lighting's `onUpdateLightPositions` rewrites every selected fixture's position on each
+pointer move (`Canvas.svelte:615-623`), and once `lights` lives in `modules.lighting` that write is a
+slice write. Flooring will want the same for a draggable layout origin and for transitions.
+
+`withModule` is the pure transform, and the two runners are one-liners over it:
+
+```ts
+commitModule = (codec, label, fn) => commit(label, (d) => withModule(d, codec, fn));
+gesture.applyModule = (codec, fn) => gesture.apply((d) => withModule(d, codec, fn));
+```
+
+Module drag code therefore stays fully typed — `applyModule` carries `ModuleCodec<T>` exactly as
+`commitModule` does — and never reaches for `roomStore` or an untyped slice to escape the gesture
+rule. `withModule` is exported because a module may need to compose several slice edits into a single
+`apply`; that is the only reason to call it directly.
 
 This also makes "`modules[id]` holds input, never output" a fact rather than a rule. `T` is named by
 `codec.ts`, and the boundary lint rule (§4) forbids `codec.ts` from importing `runtime.ts` — so the
@@ -510,14 +595,14 @@ export interface ModuleCodec<T> {
   /** Current schema version this build writes. */
   readonly schemaVersion: number;
 
-  /** Fresh slice for a document that has none. Must be cheap and pure. */
+  /** Fresh slice for a document that has none. Cheap, pure, and freshly allocated (§3.4.1). */
   defaultData(): T;
 
   /** Decode a stored blob. Never throws — returns a status. */
   decode(blob: ModuleBlob): DecodeResult<T>;
 
   /** Strip derived/non-essential fields for share URLs. Defaults to identity. */
-  compactForShare?(data: T): unknown;
+  compactForShare?(data: Readonly<T>): unknown;
 }
 
 /** On-disk envelope for one module's slice. */
@@ -824,8 +909,10 @@ Phases 3 and 4 divide cleanly: **phase 3 is the data plane, phase 4 is the UI pl
   `commit`. Sequence within the phase: land `sessionStore` alongside the writable `roomStore` first,
   migrate writers, then flip `roomStore` to derived as the last commit.
 - Replace `DragManagerCallbacks.onPauseHistory` / `onResumeHistory` with a `Gesture | null` held by
-  `DragManager`: `startDrag` → `begin`, `commitDrag` → `commit`, `cancelDrag` → `cancel`. Route the
-  drag operations' writes through `gesture.apply`.
+  `DragManager`: `startDrag` → `begin`, `commitDrag` → `commit`, `cancelDrag` → `cancel`.
+- Split the six drag-reachable edits into pure `*In(doc, …)` transforms with `commit` wrappers, and
+  point the `DragManagerCallbacks` at `gesture.apply` (§3.2.1). Doing this wrong is the one way to
+  break every drag at once, so land it before flipping `roomStore`.
 - Wire the missing gesture exits: `pointercancel` and window `blur` currently have no path to
   `cancelDrag`, and under the new model a missed exit suppresses history until the next drag.
 - Delete `statesAreEqual`, the `roomStore` subscription in `historyStore`, and the pause/resume
@@ -833,7 +920,9 @@ Phases 3 and 4 divide cleanly: **phase 3 is the data plane, phase 4 is the UI pl
 - `resetRoom()` becomes `open(emptyDocument())`.
 - Add dev-mode deep-freeze on `open` and `commit` (§3.4.1) and fix the mutations it surfaces.
 - **Tests:** the full §3.2.1 suite — including the returns-to-origin case that reference equality
-  would miss — plus a per-drag-op test for one-undo-entry and live intermediate frames.
+  would miss — plus a per-drag-op test for one-undo-entry and live intermediate frames, and the
+  mixed-label sequence from §3.1 (commit A, commit B, undo, undo, redo, asserting the label pair at
+  every step).
 - **Risk:** the drag paths are the subtle ones. Verify per drag op that a wall drag lands as one undo
   entry, that the canvas updates on every intermediate frame, that a drag ending at its origin
   consumes no undo step, and that `cancelDrag` restores the entry snapshot without relying on
@@ -869,7 +958,8 @@ doing it twice.
   `jsonExport`, `localStorage`, plus `shareUrl` on both sides. Every load ends in
   `sessionStore.open(loaded)`.
 - Add `RoomState.modules` and `CarriedState`; move `lights`, `rafterConfig`, dead-zone and spacing
-  config into `modules.lighting`; route lighting's writes through `commitModule`.
+  config into `modules.lighting`; route lighting's writes through `commitModule`, and its drag path
+  (`onUpdateLightPositions`) through `gesture.applyModule` (§3.4.2).
 - Implement normalize-on-load / prune-on-save (§3.3), with the fresh-`defaultData()` baseline rule
   (§7.1) and the shared fresh-default contract test applied to every registered codec (§3.4.1).
 - Envelope `version: 3` with permanent readers for 1 and 2 (§7.3).
@@ -926,6 +1016,8 @@ doing it twice.
 | Phase 1 must convert all 29 writers atomically — no partial landing  | Reads untouched; inventory enumerated in §3.2; flip `roomStore` to derived last.               |
 | Drag interactions regress on the pause/resume → gesture swap         | §3.2.1 pins the full state table; test per drag op for one entry + live frames.                |
 | A leaked open gesture silently suppresses history                    | `begin` throws while one is open; `pointercancel` / `blur` exits wired in phase 1.             |
+| Dual-use edits throw when reached from a drag                        | Each is a pure `*In` transform with `commit` and `apply` callers (§3.2.1); 6 sites listed.     |
+| Undo/redo labels desync after repeated undo                          | Labels ride with snapshots in `HistoryEntry`; mixed-sequence test in phase 1 (§3.1).           |
 | Zero-motion or return-to-origin drags consume an undo step           | `commit()` does one structural comparison at close, not reference equality (§3.2.1).           |
 | In-place mutation bypasses history, or drifts the prune baseline     | `Readonly<T>` at boundaries, dev deep-freeze, fresh-default contract test per codec (§3.4.1).  |
 | Existing share URLs break                                            | Envelope 1/2 readers are permanent; fixture tests land before the type change.                 |
