@@ -35,7 +35,45 @@ export function valueEqual(a: unknown, b: unknown): boolean {
  * round-tripped through storage. Without this, `EditorCommand` quietly degrades into a
  * tagged callback the first time someone stuffs a Map, a Set, or a class instance into one.
  */
+/** Throws on anything that is not plain JSON data: Map, Set, class instance, function, NaN. */
+function assertPlainData(value: unknown, path: string): void {
+  if (value === null) return;
+
+  const type = typeof value;
+  if (type === 'string' || type === 'boolean') return;
+  if (type === 'number') {
+    if (!Number.isFinite(value as number)) {
+      throw new Error(`Command payload at ${path} is ${String(value)}, which JSON cannot express`);
+    }
+    return;
+  }
+  if (type === 'undefined') return; // an absent optional field
+
+  if (type !== 'object') {
+    throw new Error(`Command payload at ${path} is a ${type}, which is not serializable data`);
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => assertPlainData(item, `${path}[${i}]`));
+    return;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(
+      `Command payload at ${path} is a ${(value as object).constructor?.name ?? 'non-plain object'}, ` +
+        'which is not serializable data. Commands carry plain objects and arrays only.'
+    );
+  }
+
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    assertPlainData(item, `${path}.${key}`);
+  }
+}
+
 export function assertCommandIsSerializable(command: EditorCommand): void {
+  assertPlainData(command, command.type);
+
   let json: string;
   try {
     json = JSON.stringify(command);

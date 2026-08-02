@@ -42,18 +42,21 @@ export const roomStore = derived([committedRoom, interaction], ([$doc, $interact
 /**
  * The only way to edit the document (invariant 2).
  *
- * A command whose result is value-equal to the current document returns the *same reference*,
- * so the store does not emit and no history entry appears. That guarantee lives here rather
- * than in `historyStore`'s stringify diff, because phase 1b deletes that diff.
+ * A command whose result is value-equal to the current document keeps the *same reference* and
+ * the store is never written, so it does not emit and no history entry appears. That guarantee
+ * lives here rather than in `historyStore`'s stringify diff, because phase 1b deletes that diff.
+ *
+ * (Svelte's `writable` emits on every `set` of an object value, reference-equal or not, so the
+ * no-op has to skip the write rather than return the old reference from `update`.)
  */
 export function dispatch(command: EditorCommand): void {
   if (import.meta.env.DEV) {
     assertCommandIsSerializable(command);
   }
-  committedRoom.update((doc) => {
-    const next = applyCommand(doc, command);
-    return valueEqual(next, doc) ? doc : next;
-  });
+  const doc = get(committedRoom);
+  const next = applyCommand(doc, command);
+  if (valueEqual(next, doc)) return;
+  committedRoom.set(next);
 }
 
 /** Replace the whole document — load, import, share link, reset. Not a command, not undoable. */
