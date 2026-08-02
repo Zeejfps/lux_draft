@@ -30,11 +30,9 @@ A document contains shared geometry and metadata plus typed module slices:
 
 ### What transfers unchanged
 
-Roughly 11k of the current ~19k LOC is domain-agnostic already: scene and input, geometry
-(SnapEngine, PolygonValidator, WallBuilder, DimensionLabel), interactions and drag operations, core
-rendering, persistence, controllers, and UI shell primitives.
-
-Three pieces of domain luck are worth planning around:
+Most of the editor is domain-agnostic already — scene and input, geometry, interactions and drag
+operations, core rendering, persistence, controllers, and UI primitives. Three pieces of domain luck
+are worth planning around:
 
 - **Obstacles are already floor cutouts.** Islands, cabinets, and hearths transfer with zero changes
   — the polygon type and its drawing, drag, and vertex-edit machinery are what flooring needs.
@@ -52,11 +50,12 @@ Everything below is stated once here and referenced by number elsewhere.
    interaction and selection state, session diagnostics, and snapshot history. Data lifetime is a
    position in a type, not a convention.
 2. **Commands are the only way to edit a document.** `dispatch(command)` — one command, one history
-   entry, one store emission. Commands are serializable data with absolute (never delta) payloads,
-   and handlers are pure `(document, command) => document`.
-3. **A drag previews a candidate command and dispatches that same value on completion.** The last
-   frame the user saw is, by construction, the state that gets committed. Nothing writes the document
-   mid-gesture, so history is never suppressed.
+   entry, one store emission. Commands are serializable data, handlers are pure
+   `(document, command) => document`, and move/set commands carry absolute targets rather than deltas.
+3. **A drag previews a candidate command and dispatches that same value on completion.** Preview and
+   commit apply the identical command to the same committed base, so the last frame the user saw is,
+   by construction, the state that gets committed. Nothing writes the document mid-gesture, so history
+   is never suppressed.
 4. **Every session transition is one reducer action.** `reduceSession(session, action)` is pure,
    total, and the whole state machine.
 5. **Derived output is never stored.** It has no field on `Session`, no persistence API accepts it,
@@ -117,8 +116,14 @@ through the document root.
 // floorplan/types/session.ts
 
 /** Persisted, never edited, never rendered. Carried from load to save. */
+export interface QuarantinedSlice {
+  blob: ModuleBlob;
+  reason: 'unsupported' | 'invalid' | 'unknownModule';
+  message?: string;
+}
+
 export interface CarriedState {
-  quarantined: Readonly<Record<string, ModuleBlob>>;
+  quarantined: Readonly<Record<string, QuarantinedSlice>>;
   /** Structural hash of geometry at load time; drives the staleness flag. */
   geometryFingerprint: string;
 }
@@ -224,17 +229,24 @@ so still one history entry.
 
 Three properties make the command layer worth its cost, and each is enforced rather than documented:
 
-| Property                      | Enforced by                                                              |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| Serializable data only        | Dev-mode JSON round-trip assertion on dispatch; registry contract test   |
-| Absolute payloads, not deltas | Contract test: applying a command twice equals applying it once          |
-| Pure handlers                 | Handlers take no store; the command table tests run with no store or DOM |
+| Property                                   | Enforced by                                                            |
+| ------------------------------------------ | ---------------------------------------------------------------------- |
+| Serializable data only                     | Dev-mode JSON round-trip assertion on dispatch; registry contract test |
+| Move/set payloads are absolute, not deltas | Contract test over that family: applying twice equals applying once    |
+| Pure handlers                              | Handlers take no store; command tables test with no store or DOM       |
+
+**Absolute payloads are required of the move and set family only** — `wall.move`, `vertex.move`,
+`door.move`, `obstacle.move`, `obstacle.vertex.move`, `wall.setLength`, `space.setCeilingHeight`, and
+their module equivalents. That family is the one re-applied to the committed base on every frame of a
+drag, so a delta would accumulate, and idempotence is what makes preview and commit the same value.
+The add, insert, and remove commands are **not** idempotent and are not required to be — reapplying
+an add duplicates, an insert inserts twice, a delete hits a different index. They are produced by
+discrete clicks and never previewed per frame.
 
 Serializability is what makes logging, replay, fixture-based testing, and any future collaboration
-possible; without it `EditorCommand` is a tagged callback. Absolute payloads are what make the drag
-preview and the dispatch the same value rather than two computations that agree. Because the label
-comes from the handler, it cannot drift from the operation — and keyboard nudge, property-panel
-entry, and drag become three producers of one command instead of three code paths.
+possible; without it `EditorCommand` is a tagged callback. Because the label comes from the handler it
+cannot drift from the operation, and keyboard nudge, property-panel entry, and drag become three
+producers of one command instead of three code paths.
 
 **Commands are the write boundary, not the history representation.** A command log is the
 obvious-looking optimization and needs inverses or replay-from-origin; snapshots stay.
@@ -357,11 +369,10 @@ cannot, both statically eliminated from production behind a bare `if (import.met
   retained side effects, or tree-shaking cannot drop it.
 - **Command serializability assertion** on every dispatch.
 
-Two failure modes justify this. A handler that mutates its `doc` argument and returns it makes
-`deepEqual(next, current)` trivially true, so the reducer treats a real edit as a no-op and undo
-skips it. And a `defaultData()` returning a shared object gets that reference normalized into the
-document; a mutation then drifts the baseline prune-on-save compares against, the slice is pruned,
-and the data is silently dropped — surfacing long after the commit that caused it. The shared codec
+Two failure modes justify this. A handler that mutates its `doc` and returns it makes the reducer's
+equality check trivially true, so a real edit lands with no history entry. And a `defaultData()`
+returning a shared object drifts the baseline prune-on-save compares against, so the slice is pruned
+and the data silently dropped — surfacing long after the commit that caused it. The shared codec
 contract test asserts `defaultData() !== defaultData()`.
 
 ### Selection
@@ -517,32 +528,28 @@ export interface ActivationScope {
 that make that safe:
 
 - **The scope is the unit of ownership.** Scene layers, input handlers, shortcut bindings, derived
-  subscriptions, projection caches, workers, and pending async work are all registered with it. Naming
-  only layers and handlers leaks the rest — and flooring's layout engine holds both a subscription
-  and a worker.
-- **Dedup.** A second `activate()` while `loading` returns the in-flight promise. `import()` is
-  idempotent; the scope construction that follows is not.
-- **Generation token.** Each activation increments a counter; a resolution whose token is stale
-  constructs nothing and disposes nothing, because it never built anything.
+  subscriptions, projection caches, workers, and pending async work all register with it. Naming only
+  layers and handlers leaks the rest — flooring's layout engine holds a subscription and a worker.
+- **Dedup.** A second `activate()` while `loading` returns the in-flight promise; `import()` is
+  idempotent but the scope construction that follows is not.
+- **Generation token.** Each activation increments a counter; a stale resolution constructs and
+  disposes nothing, because it never built anything.
 - **The registry owns disposal.** Modules never dispose their own contributions. `open(loaded)`
   deactivates before swapping documents, so no layer sees two unrelated documents.
-- **The module record is cached; the scope is not.** It binds a `THREE.Scene` and a `ModuleContext`
-  and is rebuilt per activation. Caching it is the straightforward way to leak a scene.
-- **Failure is session-scoped.** See the two-status model below.
+- **The record is cached; the scope is not.** It binds a `THREE.Scene` and a `ModuleContext` and is
+  rebuilt per activation — caching it is the straightforward way to leak a scene.
 
 ### Registration validates and fails fast
 
-The design depends on unique strings, and a duplicate shadows silently — surfacing later as the wrong
-codec decoding a slice, the wrong handler applying a command, or a panel rendering for the wrong
-selection. Registration throws on: duplicate module id; `runtime.id !== codec.id`; duplicate command
-type, tool id, layer id, or panel key; a tool id or command type not namespaced with the module id;
-an already-bound shortcut.
+A duplicate string shadows silently, surfacing later as the wrong codec decoding a slice or a panel
+rendering for the wrong selection. Registration throws on: duplicate module id;
+`runtime.id !== codec.id`; duplicate command type, tool id, layer id, or panel key; a tool id or
+command type not namespaced with the module id; an already-bound shortcut.
 
 Shortcut precedence is explicit rather than registration-order: **core wins over modules, and a
-module-vs-module conflict is a registration error** — detectable even though only one module is active
-at a time, and better caught then than when a user finally has both installed.
-
-These live in a shared registry contract test every module is run through.
+module-vs-module conflict is a registration error** — detectable at registration even though only one
+module is active at a time. All of this lives in a shared registry contract test every module runs
+through.
 
 ---
 
@@ -612,18 +619,27 @@ document.
 ### Failure policy: data status vs. runtime status
 
 ```ts
-/** Document-scoped. Decided at decode; determines what is written back. */
+/** Derived, not stored. Decode puts each id in exactly one of the two maps. */
 export type ModuleDataStatus =
   | { kind: 'live' }
-  | { kind: 'quarantined'; reason: 'unsupported' | 'invalid' | 'unknownModule'; message?: string };
+  | { kind: 'quarantined'; reason: QuarantinedSlice['reason']; message?: string };
 
-/** Session-scoped. Lives in Diagnostics, never in the document or envelope. */
+export function moduleDataStatus(session: Session, id: string): ModuleDataStatus;
+
+/** Session-scoped. Stored in Diagnostics, never in the document or envelope. */
 export type ModuleRuntimeStatus =
   | { kind: 'inactive' }
   | { kind: 'loading' }
   | { kind: 'active' }
   | { kind: 'failed'; message: string };
 ```
+
+**Data status is a classification, not stored state.** An id is live iff it is in `document.modules`
+and quarantined iff it is in `carried.quarantined`; decode guarantees exactly one, asserted in dev.
+`moduleDataStatus` reads the reason from `QuarantinedSlice`, which is why the reason lives beside the
+blob rather than only in `Diagnostics.warnings` — the warnings are a user-facing presentation of that
+classification, not a second source of truth for it. Runtime status is genuinely session state and is
+the only one of the two with a stored field.
 
 `live` data with a `failed` runtime is a real and important state: the module's import 404'd, WebGL
 lacks an extension, or the layout engine threw during construction. The data decoded fine and is
@@ -639,9 +655,14 @@ written back at the current `schemaVersion` exactly as if the mode had been visi
 | No codec registered for the id         | `quarantined: 'unknownModule'` | Blob verbatim; no warning (expected in single-module builds). |
 | Runtime failed to load                 | unchanged (`live`)             | `runtimeStatus: failed`. Data saves normally. Mode hidden.    |
 
-Quarantined means: mode not selectable, no default materialized, no commands registered, blob written
-back unchanged. Runtime-failed means: mode not selectable this session, nothing else changes. In both
-cases geometry and the other module stay fully editable (invariant 8).
+Quarantined means: mode not selectable, no default materialized, the blob written back unchanged, and
+no slice for a module command to read or target. **Handlers stay registered** — registration is per
+installed module and static (invariant 7), so nothing unregisters `lighting.*` because one document's
+lighting blob failed to decode. Dispatching a module command whose slice is quarantined is a no-op
+and a dev assert; no UI path can produce one, because the mode is not selectable.
+
+Runtime-failed means: mode not selectable this session, nothing else changes. In both cases geometry
+and the other module stay fully editable (invariant 8).
 
 **Staleness.** Preserving a blob verbatim while the user reshapes the room means a future build may
 reopen data authored for a different polygon — and a flooring layout computed for the old room is
@@ -830,7 +851,10 @@ export const roomStore = derived(                        // same name, same live
   ([$doc, $i]) => previewDocument($doc, $i)
 );
 export function dispatch(c: EditorCommand) {             // becomes a reducer action in 1b
-  committedRoom.update((doc) => applyCommand(doc, c));
+  committedRoom.update((doc) => {
+    const next = applyCommand(doc, c);
+    return deepEqual(next, doc) ? doc : next;           // no-op detection lives here, not in history
+  });
 }
 ```
 
@@ -849,6 +873,9 @@ Tasks:
   pause/resume primitives entirely.
 - Convert every writer to `dispatch`. `historyStore` still infers by diffing this phase — one dispatch
   is one update, so one entry, which is all 1a needs. Handler labels exist but are unconsumed until 1b.
+- Put value-equality no-op detection in `dispatch` itself, returning the same reference so the store
+  does not emit. Do not rely on `historyStore`'s `JSON.stringify` diff to swallow no-op drags: it
+  happens to today, but 1b deletes that diff, and the guarantee must survive the deletion.
 - Repoint persistence, autosave, and `historyStore` at `committedRoom` — the only sites that must not
   see previews.
 - Wire `pointercancel` and window `blur` to cancel the interaction. Not wired today.
@@ -857,16 +884,14 @@ Acceptance criteria:
 
 - A pure `(document, command) → document` table covers every handler, running with no store or DOM.
 - Per drag kind, a `(pointer sequence) → command` table asserts snap and axis-lock land correctly.
-- Each drag previews live, writes the committed document exactly once, writes nothing when it ends at
-  its origin, and leaves it untouched on cancel.
+- Each drag previews live, writes the committed document exactly once, and leaves it untouched on
+  cancel. A drag ending at its origin dispatches a command that produces a reference-equal document,
+  so the store does not emit and no history entry appears.
 - Every dispatched command survives a JSON round-trip value-identically.
-- Applying any command twice equals applying it once.
+- For the move and set family only: applying a command twice equals applying it once.
 
 **Key risk:** rewriting the drag operations regresses interaction feel. Mitigated by landing against
 current stores with per-op tests, and by converting `GrabModeDragOperation` last.
-
-**Ships alone:** removes history suppression, fixes drag cancel by construction, stops autosave
-capturing mid-drag documents, and makes the edit surface testable without a store.
 
 ### Phase 1b — session store and reducer (3–4 days)
 
@@ -899,9 +924,6 @@ Acceptance criteria:
 **Key risk:** breadth. Making `roomStore` derived breaks every writer at once, so `sessionStore` lands
 alongside the writable, writers migrate, and `roomStore` flips to derived last.
 
-**Ships alone:** removes the `JSON.stringify` on every emission, gives undo entries real labels, fixes
-the load-pushes-undo bug, and reduces the state machine to one testable function.
-
 ### Phase 2 — unified selection (2–3 days)
 
 Tasks:
@@ -926,7 +948,7 @@ from the document root, so 3b lands against a tested decoder.
 
 Tasks:
 
-- Define `ModuleCodec` / `ModuleBlob` / `DecodeResult` / `ModuleDataStatus`, the opaque `ModuleSlices`
+- Define `ModuleCodec` / `ModuleBlob` / `DecodeResult` / `QuarantinedSlice`, the opaque `ModuleSlices`
   with `readModule` / `withModule`, `defineCommand`, and the registry in `modules/codecs.ts`.
 - Write `lighting/codec.ts` and `lighting/commands.ts` against the target `LightingData`, unused for
   now.
@@ -946,8 +968,6 @@ Acceptance criteria:
   byte-identically: the blob has been through `JSON.parse`, so key order, whitespace, escapes, and
   numeric spelling may change. Preserving the JSON _value_ is what a future build needs.
 - The conflicting-definition fixture keeps the document's photometry, not the local library's.
-
-**Ships alone:** the v1/v2 readers and their fixtures are permanent assets regardless of what follows.
 
 ### Phase 3b — move lighting data into the slice (3–4 days)
 
@@ -1043,7 +1063,6 @@ Phase-specific risks sit with their phases. These span the whole effort:
 | Existing share URLs break                                           | Envelope 1/2 readers are permanent; fixtures land before the type change.                       |
 | History snapshots balloon with derived data                         | No field for it; round-trip test asserts the persisted slice shape.                             |
 | Codec bundle bloat defeats lazy loading                             | Lint bans `three` / `*.svelte` / `runtime.ts` from codecs and commands; bundle check in 5.      |
-| Someone reimplements history as a command log                       | Inverses are a second implementation; snapshots plus the 50-cap stay. See ADR 0001.             |
 | Product focus dilutes (lighting designers vs. flooring contractors) | Branding and entry points in phase 5, not a code split.                                         |
 
 ---

@@ -1,15 +1,22 @@
-# ADR 0001 — Studio modularization: rejected alternatives
+# ADR 0001 — Use a single-repository module registry for Studio
 
 **Status:** accepted
 **Date:** 2026-08-02
 **Plan:** [docs/plans/studio-modularization.md](../plans/studio-modularization.md)
 
-Design history for the Studio modularization. The plan states conclusions; this records what was
-proposed and rejected, so the same branches are not re-argued. Each rejection below still holds.
+## Decision
+
+Extract a domain-agnostic floorplan editor inside the existing repository, with lighting and flooring
+as registered modules behind a Studio shell. Edits are explicit commands; a document is shared
+geometry plus opaque, typed module slices; codecs load eagerly and runtimes lazily. Split into
+packages or separate entry points only against the triggers below.
+
+The plan states the resulting design. This ADR records what was proposed and rejected on the way
+there, so the same branches are not re-argued. Each rejection still holds.
 
 ---
 
-## Repository shape
+## Rejected: repository shape
 
 **Separate repo / fork the app.** Rejected — duplicates ~11k LOC of editor code that would diverge
 immediately.
@@ -22,7 +29,7 @@ then a package split), whereas going monorepo now is the only option that is exp
 
 ---
 
-## The write model
+## Rejected: the write model
 
 The document was an ambient mutable store, and `historyStore` _inferred_ that an edit happened by
 subscribing to it and `JSON.stringify`-diffing. Because intent was inferred rather than declared,
@@ -60,7 +67,7 @@ alongside collaboration, where a command log is needed for a different reason.
 
 ---
 
-## Document shape
+## Rejected: document shape
 
 **Flat `walls` / `doors` / `obstacles` / `isClosed` / `ceilingHeight` root.** Rejected — bakes "one
 room, with a ceiling, lit" into the core type. Nesting under `geometry.boundary` is what lets
@@ -83,7 +90,7 @@ sync, and the existing "existing definition wins on import" bug would survive.
 
 ---
 
-## Module contract
+## Rejected: module contract
 
 **`capabilities: ModuleCapability[]` replacing the runtime manifest.** Rejected for now. Proposed to
 avoid an ever-growing interface, but it does not buy that: adding a capability costs a union member
@@ -125,6 +132,12 @@ the persisted shape.
 
 **"`future` is bounded by `past`."** False — undo everything and `future` is 50 while `past` is 0.
 The invariant is `past.length + future.length ≤ MAX_HISTORY`.
+
+**"Applying any command twice equals applying it once."** False for `door.add`, `obstacle.add`,
+`vertex.insert`, and `vertex.delete` — reapplying an add duplicates, reapplying an insert inserts
+twice, reapplying a delete hits a different index. Absolute payloads prevent accidental double
+_movement_; they do not make every command idempotent. Idempotence is required only of the
+drag-produced move and set family, which is the only family re-applied per frame.
 
 **"Undo during a drag is well-defined because there is no in-flight document write to conflict
 with."** Incomplete. If the interaction survives an undo, the candidate command is re-applied to the
