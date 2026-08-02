@@ -338,6 +338,21 @@ export const moduleSurfaces: Readable<readonly PanelComponent[]> = derived(
   ($active) => $active?.surfaces ?? []
 );
 
+/**
+ * A count of the active module's entities, labelled by the module — "Lights 12".
+ *
+ * The core property panel used to read lighting's store for exactly this row. `activeView` is
+ * in the dependency list because the count is a function of the live document, not of the
+ * activation record.
+ */
+export const moduleEntitySummary: Readable<{ label: string; count: number } | null> = derived(
+  [active, activeView],
+  ([$active]) => {
+    const label = $active?.entities.label;
+    return label ? { label, count: $active!.entities.list().length } : null;
+  }
+);
+
 /** The activation state machine, for tests and diagnostics. */
 export function runtimeState(): RuntimeState {
   return state;

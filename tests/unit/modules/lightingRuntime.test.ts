@@ -16,6 +16,7 @@ import {
   activateModule,
   activeModule,
   deactivateModule,
+  moduleEntitySummary,
   setModuleScene,
 } from '../../../src/floorplan/stores/moduleActivation';
 import { resolvePanel } from '../../../src/floorplan/ui/panelRegistry';
@@ -151,6 +152,8 @@ describe('lighting activated through the registry', () => {
     expect(record.overlays.map((o) => o.id)).toContain('lighting.stats');
     expect(resolvePanel(fixtureSelection.panelKey)).not.toBeNull();
     expect(record.entities.list().map((e) => e.id)).toEqual(['l1', 'l2']);
+    // The shell's "Lights 2" row, read through the entity seam rather than lighting's store.
+    expect(get(moduleEntitySummary)).toEqual({ label: 'Lights', count: 2 });
 
     const drawn = scene.children.length;
     expect(drawn).toBeGreaterThan(0);
