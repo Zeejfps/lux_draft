@@ -1092,7 +1092,7 @@ must know, and anything deliberately deferred. Keep entries short and factual.
 | 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                       |
 | 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.         |
 | 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone. |
-| 2     | not started |                     |                                                                                                                                                                               |
+| 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.       |
 | 3a    | not started |                     |                                                                                                                                                                               |
 | 3b    | not started |                     |                                                                                                                                                                               |
 | 4     | not started |                     |                                                                                                                                                                               |
@@ -1386,3 +1386,155 @@ one whose entity the restored snapshot no longer contains, and the dev freeze.
 zero emissions for a no-op, and each narrow store's guard. `historyStore.test.ts` became
 `sessionHistory.test.ts` (same scenarios, `sessionStore.undo/redo`, `clear()` scenarios
 rewritten as `openDocument`). `settingsStore.test.ts` is new. 352 tests pass.
+
+#### Phase 2
+
+Commits: `1dfc53c` (implementation), `682ccfc` (tests), `db7a4ef` (live-read fix).
+
+**The fixture-selection decision: `defineSelection('lighting', 'fixture')`, not a temporary
+core variant.**
+
+`src/lighting/selection.ts` holds `fixtureSelection = defineSelection<{ ids: string[] }>('lighting',
+'fixture', parse)` plus two conveniences, `getSelectedFixtureIds(selection)` and
+`fixtureSelectionOf(ids)`. Chosen over a temporary `light` core variant because it leaves nothing
+to unwind: `defineSelection` needs no module system, the panel key `lighting.fixture` is already
+the string phase 4 will register the runtime panel under, and 3b/4 move the _file_ without
+changing the value shape, the panel key, or any call site. A temporary core variant would have
+had to be deleted from the union, the reducer's tests, every accessor, and the panel map — all
+in 3b, the phase with the largest data change already.
+
+Consequence worth knowing: **core interaction code imports `../lighting/selection`**
+(`SelectionHandler`, `UnifiedDragOperation`, `GrabModeDragOperation`, `grabModeHelpers`,
+`interactionUtils`, `Toolbar`, `Canvas`). That is a core→module import the boundary lint will
+reject once these files live under `src/floorplan/`. It is deliberate and phase-4-shaped: those
+call sites are the ones phase 4 replaces with a `ModuleView`/handler contribution anyway. If
+phase 3a or 3b moves files into `src/floorplan/` before that, `getSelectedFixtureIds` has to
+reach them through a config callback instead of an import.
+
+**`multi` is a new variant on the plan's union — the plan's union could not express the
+selection the app already had.**
+
+```ts
+| { kind: 'multi'; parts: readonly SelectionPart[] }
+```
+
+Box selection selects room vertices _and_ lighting fixtures together, and grab mode then moves
+both — which is exactly why phase 1a introduced compound commands. No single-variant shape names
+that, and dropping it would have been a functional regression. `SelectionPart` is
+`Exclude<Selection, none | multi>`, so nesting is unrepresentable; `combineSelection(parts)` is
+the only constructor (flattens, drops `none`, keeps the first part per panel key, and collapses
+to `none` / the bare part when it can). Only `selectInBox` and `retainBoxCandidates` produce one.
+Everything else replaces the whole value, so cross-clearing stays structural.
+
+**API in `src/types/selection.ts` (names differing from the plan's sketch).**
+
+- `SelectionKind<T>` gained `moduleId` and `type` alongside `panelKey`; the registry contract
+  test in 3a/4 will want them.
+- `defineSelection` **throws if `moduleId === 'core'`** — `CORE_MODULE_ID` is the namespace core
+  selections use, so a core panel key is `core.wall`, `core.vertex`, `core.door`,
+  `core.obstacle`, `core.obstacleVertex`. `panelKeyOf(part)` produces both forms, which is what
+  lets one map serve core and module selections.
+- `match` looks **inside a `multi`**, so a module can find its own payload in a heterogeneous
+  selection without knowing the container exists.
+- Accessors, all total and all reading through `multi`: `getSelectedWallId`, `getSelectedDoorId`,
+  `getSelectedObstacleId`, `getSelectedVertexIndices`, `getSelectedObstacleVertexIndices`,
+  `selectionParts`, `selectionPanelKeys`, `isEmptySelection`, `toggleMember`.
+- **Cardinality is arrays, not `Set`s.** `Selection` is plain serializable data (asserted by a
+  JSON round-trip test), which a `Set` is not. Renderers still take `Set`s; `Canvas` builds them.
+- `getSelectedObstacleId` returns the obstacle of an `obstacleVertex` selection too. That
+  reproduces today's behavior, where `selectObstacleVertex` set both stores, without a second
+  field to keep in step. It is the one selection that lights up two accessors.
+
+**Panel registry — `src/components/panelRegistry.ts`, ~45 lines with comments.**
+
+`Map<string, ComponentType>` plus `registerPanel(s)` (throws on a duplicate key),
+`resolvePanel(key)`, `panelsForSelection(selection)` and `clearPanels()` (test seam). `App.svelte`
+registers in a `<script context="module">` block so it happens exactly once, and dispatches with:
+
+```svelte
+{#each panelsForSelection($selection) as panel (panel.key)}
+  <svelte:component this={panel.component} />
+{/each}
+```
+
+A `multi` selection resolves to several panels, which is how "vertices and fixtures both selected
+shows both property panels" survived. Panels are now **mounted on demand** rather than rendered
+always and self-hiding; each kept its internal `visible` guard, and `FloatingPanel` persists its
+position by `persistenceKey`, so remounting is invisible.
+
+**Exactly what phase 4 must repoint:** the `registerPanels({...})` literal in `App.svelte`'s module
+script — replace it with a walk over each registered module runtime's `panels` record
+(`ModuleRuntime.panels` is already specified as keyed by `SelectionKind.panelKey`), and move core
+panel registration next to the core layers. The dispatch seam (`panelsForSelection` and the
+`{#each}`) does not change, and neither do the key strings. The file itself probably moves to
+`src/app/`; it lives under `components/` only because `src/app/` does not exist yet.
+
+**Where things live.**
+
+- `src/types/selection.ts` — the union, `defineSelection`, panel keys, accessors.
+- `src/lighting/selection.ts` — `fixtureSelection` and its two helpers.
+- `src/stores/selectionStore.ts` — the verb layer, re-exporting the narrow `selection` store so a
+  component has one import for read and write.
+- `src/components/panelRegistry.ts` — registration + dispatch.
+
+**Deleted.** The six `appStore` writables (`selectedLightIds`, `selectedWallId`,
+`selectedVertexIndices`, `selectedDoorId`, `selectedObstacleId`,
+`selectedObstacleVertexIndices`), the two backward-compat deriveds (`selectedVertexIndex`,
+`selectedLightId`), all eight `select*`/`clear*Selection` helpers, `SelectionState` from
+`types/interaction.ts`, and `SelectionService` (its only job was toggling a `Set`; that is
+`toggleMember` now). `appStore.ts` is down to modes, the active tool, and the camera-fit signal.
+No derived shims survive — the migration was one commit rather than store-by-store, because
+`SelectionState` threaded through the handler and drag-operation signatures and half-migrating it
+would have meant two shapes in `InteractionContext` at once.
+
+**Handler API changes phase 4 will meet.**
+
+- `InteractionContext.selection` and `DragStartContext.selection` are now `Selection`.
+- `SelectionHandlerCallbacks` lost `onClearLightSelection`, `onClearVertexSelection`,
+  `onClearWallSelection`, `onClearDoorSelection`, `onClearObstacleSelection`,
+  `onClearObstacleVertexSelection`, `getSelectedVertexIndices`, `getSelectedLightIds` and
+  `getSelectedObstacleVertexIndices`. It gained `onRetainBoxCandidates` (shift+box-drag from empty
+  space: keep the parts a box can extend, drop the rest). `SelectionActionCallbacks` in
+  `selectionHelpers.ts` lost its three clear callbacks the same way.
+- `SelectionHandler` reads the selection through `config.getSelection()` rather than through
+  callbacks, so there is one source.
+
+**The `Canvas.svelte` mirrors — converted together, as the plan's risk note required.**
+
+There is one `$: currentSelection = $selection` and a single `$:` block deriving all six render
+mirrors from it in one pass, so they cannot arrive out of step. **Input handlers do not read the
+mirror**: `liveSelection()` (`get(selection)`) reads through the store synchronously, because
+shift-click toggle-off detection selects and immediately re-reads, and `$:` assignments flush on
+the microtask. That was the one non-mechanical bug in the migration — the deleted
+`get(selectedVertexIndices)` callbacks had been reading synchronously.
+
+**Behavior changes.**
+
+- `setActiveTool` now clears the _whole_ selection. It previously left `selectedVertexIndices`
+  alone — an inconsistency with `clearSelection`, not a feature.
+- Shift-clicking a vertex still drops the fixture selection and vice versa (each `select*`
+  replaces), matching the old `selectVertex`/`selectLight` which cleared each other explicitly.
+  Only a box drag combines the two.
+
+**Not done / deferred.**
+
+- No `DeepReadonly` still (1b's note stands); `Selection` fields are plain arrays.
+- `Interaction` still has two variants; `drawing`/`measuring` remain in `WallBuilder` and
+  `MeasurementController`.
+- Pre-existing `svelte-check` errors in `PropertyPanel.svelte`, `FloatingPanel.svelte`,
+  `LightInfoBottomSheet.svelte` and `ViewerCanvas.svelte` were left alone (they are not in the
+  `npm run` gate). Two genuine `currentRoom.walls` reads in `VertexPropertiesPanel.svelte` — dead
+  since 1a nested the document — were fixed, since that file was being edited anyway.
+- `ViewerCanvas.svelte` has its own `selectedViewerLight` store and was deliberately untouched:
+  the viewer is a separate page with no editor session.
+
+**Tests.** `tests/unit/types/selection.test.ts` (round-trip `match(make(x))` including through a
+`multi` and through JSON, non-matching module/type, hostile payload rejected, panel key derived
+from the same pair, `core` namespace refused, structural cross-clearing, `combineSelection`
+collapse and flattening), `tests/unit/components/panelRegistry.test.ts` (dispatch by `panelKey`
+for core _and_ module selections, several panels for a `multi`, two keys sharing one component,
+unregistered kind is silent, duplicate key throws), `tests/unit/stores/selectionStore.test.ts`
+(the store exports exactly one `clear*`; every `select*` replaces every other kind; shift toggle;
+obstacle-vertex fallback; box selection; tool switch and `open` clearing; a repeat selection emits
+nothing). 396 tests pass; the 352 inherited from 1b were not changed except for the two that
+constructed a `SelectionState` bag.
