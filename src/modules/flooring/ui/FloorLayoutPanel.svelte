@@ -1,6 +1,9 @@
 <script lang="ts">
   import FloatingPanel from '../../../floorplan/ui/FloatingPanel.svelte';
+  import { selection } from '../../../floorplan/stores/selectionStore';
+  import { isOriginSelected } from '../selection';
   import {
+    committedFlooringData,
     floorRegions,
     flooringData,
     layoutConfig,
@@ -8,6 +11,7 @@
     plankSpec,
     removeFloorDivider,
     setFloorDividerKind,
+    setOrigin,
     setPlank,
     setRegionSurface,
     toggleLayoutPanel,
@@ -32,6 +36,23 @@
 
   $: plank = $plankSpec;
   $: layout = $layoutConfig;
+  $: origin = $committedFlooringData.origin;
+
+  // The origin lives here rather than in a panel of its own: it is one more layout input, and
+  // picking the marker on the canvas just points at the row that already edits it.
+  $: originSelected = isOriginSelected($selection);
+
+  let wasOriginSelected = false;
+  $: {
+    if (originSelected && !wasOriginSelected) layoutPanelVisible.set(true);
+    wasOriginSelected = originSelected;
+  }
+
+  function setOriginCoordinate(axis: 'x' | 'y', e: Event): void {
+    const value = parseFloat((e.target as HTMLInputElement).value);
+    if (!Number.isFinite(value)) return;
+    setOrigin({ ...origin, [axis]: value });
+  }
 
   $: presetLabel =
     PLANK_PRESETS.find((p) => p.widthIn === plank.widthIn && p.lengthIn === plank.lengthIn)?.name ??
@@ -96,8 +117,9 @@
   title="Floor Layout"
   defaultX={16}
   defaultY={60}
-  minWidth="204px"
-  maxWidth="228px"
+  minWidth="196px"
+  maxWidth="216px"
+  compact={true}
   persistenceKey="flooring-layout-panel"
   showCloseButton={true}
   onClose={toggleLayoutPanel}
@@ -148,6 +170,32 @@
         <span class="unit">in</span>
       </div>
     </label>
+  </div>
+
+  <div class="section" class:highlight={originSelected}>
+    <div class="section-title">Origin</div>
+
+    <div class="control-row">
+      <span>Start point</span>
+      <div class="input-group">
+        <input
+          class="panel-input"
+          type="number"
+          step="0.25"
+          aria-label="Origin X"
+          value={origin.x.toFixed(2)}
+          on:change={(e) => setOriginCoordinate('x', e)}
+        />
+        <input
+          class="panel-input"
+          type="number"
+          step="0.25"
+          aria-label="Origin Y"
+          value={origin.y.toFixed(2)}
+          on:change={(e) => setOriginCoordinate('y', e)}
+        />
+      </div>
+    </div>
   </div>
 
   <div class="section">
@@ -312,25 +360,33 @@
   {/if}
 
   <p class="hint">
-    Drag the blue origin marker to move the starting corner. The floor is re-derived, never stored.
+    Drag the blue marker to move the origin. The floor is re-derived, never stored.
   </p>
 </FloatingPanel>
 
 <style>
   .section {
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
 
   .section:last-of-type {
     margin-bottom: 6px;
   }
 
+  /* The origin section answers the canvas: selecting the marker points at the row that edits it. */
+  .section.highlight {
+    margin: -4px -6px 6px;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--panel-bg-alt);
+  }
+
   .section-title {
-    font-size: 11px;
+    font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-muted);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
 
   .control-row {
@@ -338,8 +394,8 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-bottom: 6px;
-    font-size: 12px;
+    margin-bottom: 4px;
+    font-size: 11px;
     color: var(--text-secondary);
     /* Labels wrap before they widen the panel; the controls keep their size. */
     min-width: 0;
@@ -357,7 +413,7 @@
   }
 
   .input-group input {
-    width: 56px;
+    width: 52px;
   }
 
   .unit {

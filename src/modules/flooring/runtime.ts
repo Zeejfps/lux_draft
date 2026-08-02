@@ -13,7 +13,6 @@ import type { Door, WallSegment } from '../../floorplan/types/geometry';
 import { FLOORING_MODULE_ID, type FlooringData } from './codec';
 import { FLOORING_TOOL_DIVIDER, FLOORING_TOOL_TRANSITION } from './constants';
 import { originEntities } from './entities';
-import { originSelection } from './selection';
 import { createFlooringLayers } from './layers';
 import { DividerPlacementHandler, PlankHoverHandler, TransitionPlacementHandler } from './handlers';
 import {
@@ -33,7 +32,6 @@ import {
 } from './store';
 import CutListPanel from './ui/CutListPanel.svelte';
 import FloorLayoutPanel from './ui/FloorLayoutPanel.svelte';
-import OriginPropertiesPanel from './ui/OriginPropertiesPanel.svelte';
 
 /**
  * The flooring module's **lazy** half (invariant 7).
@@ -43,7 +41,7 @@ import OriginPropertiesPanel from './ui/OriginPropertiesPanel.svelte';
  * `decodeDocument` needs.
  *
  * This file is the honest measure of how additive a second module is. It declares tools,
- * overlays, one entity, three layers, two handlers, a panel and two surfaces, and **nothing
+ * overlays, one entity, three layers, two handlers and two surfaces, and **nothing
  * else** — no routing, no toolbar wiring, no selection plumbing, no hit-testing, no keyboard
  * handling, no share support, no persistence. All of that already worked.
  */
@@ -134,9 +132,8 @@ export const flooringRuntime: ModuleRuntime = {
 
   entities: originEntities as EntityDescriptor<unknown>,
 
-  panels: {
-    [originSelection.panelKey]: OriginPropertiesPanel as unknown as PanelComponent,
-  },
+  // No selection-driven panels: the origin is edited in the Floor Layout surface, which
+  // highlights its Origin section when the marker is selected.
 
   surfaces: [FloorLayoutPanel, CutListPanel] as unknown as PanelComponent[],
 

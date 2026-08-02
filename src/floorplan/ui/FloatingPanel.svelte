@@ -11,6 +11,8 @@
   export let maxHeight: string = 'calc(100vh - 200px)';
   export let persistenceKey: string | null = null;
   export let draggable: boolean = true;
+  /** Tighter header/content padding for dense, control-heavy panels. */
+  export let compact: boolean = false;
   export let showCloseButton: boolean = false;
   export let onClose: (() => void) | null = null;
 
@@ -119,6 +121,7 @@
     class="floating-panel"
     class:dragging={isDragging}
     class:draggable
+    class:compact
     bind:this={panelElement}
     style:left={position.x >= 0 ? `${position.x}px` : undefined}
     style:top={position.y >= 0 ? `${position.y}px` : undefined}
@@ -219,6 +222,18 @@
     padding: var(--spacing-16);
     overflow-y: auto;
     flex: 1;
+  }
+
+  .floating-panel.compact .panel-header {
+    padding: 6px 10px;
+  }
+
+  .floating-panel.compact .panel-header h3 {
+    font-size: 12px;
+  }
+
+  .floating-panel.compact .panel-content {
+    padding: 8px 10px;
   }
 
   /* Scrollbar styling */

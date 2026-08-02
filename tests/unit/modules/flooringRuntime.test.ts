@@ -71,8 +71,8 @@ describe('the flooring runtime satisfies registration', () => {
     }
   });
 
-  it('keys its panels by SelectionKind.panelKey', () => {
-    expect(Object.keys(flooringRuntime.panels ?? {})).toEqual([originSelection.panelKey]);
+  it('registers no selection-driven panel — the origin is edited in the layout surface', () => {
+    expect(Object.keys(flooringRuntime.panels ?? {})).toEqual([]);
     expect(originSelection.panelKey).toBe('flooring.origin');
   });
 
@@ -198,7 +198,7 @@ describe('flooring activated through the registry', () => {
     setModuleScene(null);
   });
 
-  it('contributes layers, handlers, a tool, overlays, a panel and surfaces — and gives them back', async () => {
+  it('contributes layers, handlers, a tool, overlays and surfaces — and gives them back', async () => {
     await activateModule(FLOORING_MODULE_ID);
 
     const record = get(activeModule)!;
@@ -212,7 +212,7 @@ describe('flooring activated through the registry', () => {
     expect(record.tools.map((t) => t.id)).toEqual(['flooring.transition', 'flooring.divider']);
     expect(record.overlays.map((o) => o.id)).toContain('flooring.summary');
     expect(record.surfaces).toHaveLength(2);
-    expect(resolvePanel(originSelection.panelKey)).not.toBeNull();
+    expect(resolvePanel(originSelection.panelKey)).toBeNull();
     // The shell's count row, straight off the entity seam.
     expect(get(moduleEntitySummary)).toEqual({ label: 'Layout origin', count: 1 });
     expect(scene.children.length).toBeGreaterThan(0);
