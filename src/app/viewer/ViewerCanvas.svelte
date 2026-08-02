@@ -3,10 +3,13 @@
   import * as THREE from 'three';
   import { Scene } from '../../floorplan/core/Scene';
   import { EditorRenderer } from '../../floorplan/rendering/EditorRenderer';
-  import { HeatmapRenderer } from '../../modules/lighting/rendering/HeatmapRenderer';
-  import { ShadowRenderer } from '../../modules/lighting/rendering/ShadowRenderer';
+  import { createLightingLayers } from '../../modules/lighting/layers';
+  import { fixtureSelectionOf } from '../../modules/lighting/selection';
+  import { lightingData, fixtures } from '../../modules/lighting/store';
+  import { moduleViewOf } from '../../floorplan/types/moduleRuntime';
+  import type { ModuleView, SceneLayer } from '../../floorplan/types/moduleRuntime';
   import { roomBounds, roomStore } from '../../floorplan/stores/roomStore';
-  import { fixtures } from '../../modules/lighting/store';
+  import { displayPreferences } from '../../floorplan/stores/settingsStore';
   import { shouldFitCamera } from '../../floorplan/stores/appStore';
   import { selectedViewerLight } from './viewerStore';
   import type { BoundingBox, EditorDocument, ViewMode } from '../../floorplan/types';
@@ -21,8 +24,11 @@
   let container: HTMLDivElement;
   let scene: Scene;
   let editorRenderer: EditorRenderer;
-  let heatmapRenderer: HeatmapRenderer;
-  let shadowRenderer: ShadowRenderer;
+  /**
+   * The viewer has no editor session and therefore no activation registry, so it owns the
+   * lighting layers itself — it is the one place that builds a `ModuleView` by hand.
+   */
+  let lightingLayers: SceneLayer[] = [];
   let animationFrameId: number;
   let raycaster: THREE.Raycaster;
 
@@ -46,48 +52,17 @@
   $: currentRoomState = $roomStore;
   $: currentBounds = $roomBounds;
 
-  $: if (scene && viewMode) {
-    updateViewMode(viewMode);
-  }
+  // The viewer's own selection, not the editor session's, projected into the same shape a
+  // layer reads. Everything else about rendering is identical to the editor's.
+  $: viewerView = moduleViewOf(
+    currentRoomState,
+    $lightingData,
+    fixtureSelectionOf($selectedViewerLight ? [$selectedViewerLight.id] : []),
+    $displayPreferences,
+    viewMode
+  ) as ModuleView<unknown>;
 
-  // Update selected light IDs for visual feedback
-  $: selectedLightIds = $selectedViewerLight
-    ? new Set([$selectedViewerLight.id])
-    : new Set<string>();
-
-  $: if (editorRenderer && currentRoomState) {
-    editorRenderer.updateWalls(
-      currentRoomState.geometry.boundary.walls,
-      null,
-      null,
-      currentRoomState.geometry.doors
-    );
-    editorRenderer.updateLights($fixtures, currentRoomState.space.ceilingHeight, selectedLightIds);
-    editorRenderer.updateDoors(
-      currentRoomState.geometry.doors,
-      currentRoomState.geometry.boundary.walls,
-      null
-    );
-    editorRenderer.updateObstacles(currentRoomState.geometry.obstacles, null);
-  }
-
-  $: if (heatmapRenderer && currentRoomState && currentBounds) {
-    heatmapRenderer.updateBounds(currentBounds);
-    heatmapRenderer.updateWalls(currentRoomState.geometry.boundary.walls);
-    heatmapRenderer.updateObstacles(currentRoomState.geometry.obstacles);
-    heatmapRenderer.updateLights($fixtures, currentRoomState.space.ceilingHeight);
-  }
-
-  $: if (shadowRenderer && currentRoomState && currentBounds) {
-    shadowRenderer.updateShadows(
-      $fixtures,
-      currentRoomState.geometry.boundary.walls,
-      currentBounds,
-      currentRoomState.geometry.doors,
-      currentRoomState.geometry.obstacles,
-      currentRoomState.space.ceilingHeight
-    );
-  }
+  $: renderViewer(viewerView);
 
   $: if (
     $shouldFitCamera &&
@@ -99,12 +74,9 @@
     shouldFitCamera.set(false);
   }
 
-  function updateViewMode(mode: ViewMode): void {
-    if (!editorRenderer || !heatmapRenderer || !shadowRenderer) return;
-    editorRenderer.setVisible(mode === 'editor');
-    heatmapRenderer.setVisible(mode === 'heatmap');
-    shadowRenderer.setVisible(mode === 'shadow');
-    editorRenderer.setLightsVisible(mode === 'editor' || mode === 'shadow');
+  function renderViewer(view: ModuleView<unknown>): void {
+    // One loop over core and lighting layers; each decides its own visibility from `viewMode`.
+    editorRenderer?.render(view);
   }
 
   function animate(): void {
@@ -352,11 +324,8 @@
     }
 
     editorRenderer = new EditorRenderer(scene.scene);
-    heatmapRenderer = new HeatmapRenderer(scene.scene);
-    shadowRenderer = new ShadowRenderer(scene.scene);
-
-    heatmapRenderer.setVisible(false);
-    shadowRenderer.setVisible(false);
+    lightingLayers = createLightingLayers(scene.scene).layers;
+    editorRenderer.setModuleLayers(lightingLayers);
 
     animate();
   });
@@ -366,8 +335,8 @@
       cancelAnimationFrame(animationFrameId);
     }
     editorRenderer?.dispose();
-    heatmapRenderer?.dispose();
-    shadowRenderer?.dispose();
+    for (const layer of lightingLayers) layer.dispose();
+    lightingLayers = [];
     scene?.dispose();
   });
 </script>
