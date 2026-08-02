@@ -96,7 +96,8 @@
   title="Floor Layout"
   defaultX={16}
   defaultY={60}
-  minWidth="248px"
+  minWidth="204px"
+  maxWidth="228px"
   persistenceKey="flooring-layout-panel"
   showCloseButton={true}
   onClose={toggleLayoutPanel}
@@ -278,7 +279,7 @@
             {#if unattached.has(divider.id)}
               <span class="warn">not attached</span>
             {:else if !trimmedIds.has(divider.id)}
-              <span class="area-size">same floor both sides</span>
+              <span class="area-size">no trim needed</span>
             {/if}
           </span>
           <div class="input-group">
@@ -336,20 +337,27 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     margin-bottom: 6px;
     font-size: 12px;
     color: var(--text-secondary);
+    /* Labels wrap before they widen the panel; the controls keep their size. */
+    min-width: 0;
+  }
+
+  .control-row > span {
+    min-width: 0;
   }
 
   .input-group {
     display: flex;
     align-items: center;
     gap: 4px;
+    flex: none;
   }
 
   .input-group input {
-    width: 72px;
+    width: 56px;
   }
 
   .unit {
@@ -358,7 +366,10 @@
   }
 
   select {
-    max-width: 148px;
+    max-width: 112px;
+    /* Long option text truncates instead of pushing the panel wider. */
+    min-width: 0;
+    text-overflow: ellipsis;
   }
 
   .hint {

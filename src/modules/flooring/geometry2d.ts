@@ -70,6 +70,31 @@ export function intervalsAt(polygon: readonly Vector2[], y: number): Interval[] 
   return out;
 }
 
+/**
+ * The same scan turned on its side: spans of the polygon along the **vertical** line `x`.
+ *
+ * The horizontal scan gives a row its length; this gives a row its width. A row is laid across
+ * a band, and a clip edge running along the band — a divider parallel to the run — cuts the
+ * band without touching the row's ends, so the horizontal scan cannot see it at all.
+ */
+export function verticalIntervalsAt(polygon: readonly Vector2[], x: number): Interval[] {
+  const ys: number[] = [];
+  const n = polygon.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const a = polygon[j];
+    const b = polygon[i];
+    if (a.x > x !== b.x > x) {
+      ys.push(a.y + ((x - a.x) / (b.x - a.x)) * (b.y - a.y));
+    }
+  }
+  ys.sort((p, q) => p - q);
+  const out: Interval[] = [];
+  for (let i = 0; i + 1 < ys.length; i += 2) {
+    if (ys[i + 1] - ys[i] > EPS) out.push([ys[i], ys[i + 1]]);
+  }
+  return out;
+}
+
 // ============================================
 // Interval algebra
 // ============================================

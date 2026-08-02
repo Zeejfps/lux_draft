@@ -111,10 +111,10 @@ export interface SurfaceAssignment {
 export const DEFAULT_SURFACE: SurfaceKind = 'plank';
 
 export const SURFACE_LABELS: Readonly<Record<SurfaceKind, string>> = {
-  plank: 'This floor (plank)',
+  plank: 'This floor',
   carpet: 'Carpet',
   tile: 'Tile',
-  none: 'Not floored',
+  none: 'None',
 };
 
 /**
@@ -164,12 +164,13 @@ export const PLANK_PRESETS: readonly PlankSpec[] = [
   { widthIn: 2.25, lengthIn: 36, name: '2 1/4" strip oak' },
 ];
 
+/** Kept short enough to read whole in the panel's select rather than truncate. */
 export const STAGGER_LABELS: Readonly<Record<StaggerRule, string>> = {
-  none: 'Aligned (no stagger)',
-  half: 'Half offset (1/2)',
-  thirds: 'Third offset (1/3)',
-  pattern: 'Custom pattern',
-  random: 'Randomized',
+  none: 'Aligned',
+  half: 'Half (1/2)',
+  thirds: 'Third (1/3)',
+  pattern: 'Custom',
+  random: 'Random',
 };
 
 export const START_CORNER_LABELS: Readonly<Record<StartCorner, string>> = {

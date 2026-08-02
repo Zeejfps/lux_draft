@@ -47,7 +47,6 @@ export class InputManager {
 
     canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
     canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
-    canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
     canvas.addEventListener('dblclick', this.handleDoubleClick.bind(this));
     // passive: false is required because we call preventDefault() to handle zoom
     canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
@@ -58,6 +57,16 @@ export class InputManager {
     for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
       canvas.addEventListener(type, (e: Event) => e.preventDefault());
     }
+
+    // A gesture starts on the canvas but does not have to end there. The pointer routinely
+    // leaves it mid-drag — over a floating panel, over the toolbar, outside the window — and a
+    // `mouseup` bound to the canvas simply never arrives, leaving `isDragging` true forever:
+    // the next mouse move over the canvas then reads as a drag with no button held, and the
+    // wall follows the cursor with no way to put it down. The press is still canvas-only, so
+    // nothing outside the canvas can *begin* a gesture; only ending and continuing one are
+    // global, and both no-op unless a gesture is actually in flight.
+    window.addEventListener('mousemove', this.handleWindowMouseMove);
+    window.addEventListener('mouseup', this.handleWindowMouseUp);
 
     canvas.addEventListener('pointercancel', this.handleCancel);
     window.addEventListener('blur', this.handleCancel);
@@ -110,25 +119,44 @@ export class InputManager {
     }
   }
 
+  /**
+   * Hover, and only hover. Once a gesture is in flight `handleWindowMouseMove` owns the pointer,
+   * so this returns rather than emitting the same move twice.
+   */
   private handleMouseMove(e: MouseEvent): void {
+    if (this.isDragging || this.isPanning) return;
+    this.lastMousePos = { x: e.clientX, y: e.clientY };
+    this.emit('move', this.createEvent(e, 'move'));
+  }
+
+  /**
+   * A gesture in flight, wherever the pointer has wandered to.
+   *
+   * Deliberately silent when nothing is in flight: a plain mouse move over a panel is not a
+   * hover on the drawing, and emitting `move` for it would light up whatever happens to sit
+   * under the panel.
+   */
+  private handleWindowMouseMove = (e: MouseEvent): void => {
+    if (!this.isDragging && !this.isPanning) return;
+
     const dx = e.clientX - this.lastMousePos.x;
     const dy = e.clientY - this.lastMousePos.y;
-
     if (this.isPanning) {
       this.scene.pan(-dx, dy);
     }
-
     this.lastMousePos = { x: e.clientX, y: e.clientY };
 
-    const event = this.createEvent(e, this.isDragging ? 'drag' : 'move');
-    this.emit(this.isDragging ? 'drag' : 'move', event);
-  }
+    const type = this.isDragging ? 'drag' : 'move';
+    this.emit(type, this.createEvent(e, type));
+  };
 
-  private handleMouseUp(e: MouseEvent): void {
+  /** Ends the gesture wherever the button came up. Silent when there was nothing to end. */
+  private handleWindowMouseUp = (e: MouseEvent): void => {
+    if (!this.isDragging && !this.isPanning) return;
     this.isDragging = false;
     this.isPanning = false;
     this.emit('mouseup', this.createEvent(e, 'mouseup'));
-  }
+  };
 
   private handleDoubleClick(e: MouseEvent): void {
     this.emit('dblclick', this.createEvent(e, 'dblclick'));
@@ -234,6 +262,8 @@ export class InputManager {
   };
 
   dispose(): void {
+    window.removeEventListener('mousemove', this.handleWindowMouseMove);
+    window.removeEventListener('mouseup', this.handleWindowMouseUp);
     this.scene.domElement.removeEventListener('pointercancel', this.handleCancel);
     window.removeEventListener('blur', this.handleCancel);
     window.removeEventListener('keydown', this.handleKeyDown);

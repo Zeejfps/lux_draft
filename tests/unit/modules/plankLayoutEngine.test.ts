@@ -455,15 +455,10 @@ describe('laying over part of the room', () => {
     expect(clipped.planks.length).toBeGreaterThan(0);
     for (const plank of clipped.planks) expect(plank.center.y).toBeLessThanOrEqual(8);
 
-    // 160 sqft of area, and the engine reports a little over it — the same single-scanline
-    // approximation the whole engine is built on, now showing up at a region edge instead of a
-    // wall. The row whose band straddles y = 8 is sampled at its centreline, so it is laid at
-    // full width across the boundary rather than ripped at it. The error is bounded by one
-    // plank width along the edge and it over-reports here, where a wall would under-report,
-    // because a region edge does not clamp the band the way `minY`/`maxY` do.
-    const plankWidthFt = defaults.plank.widthIn / 12;
-    expect(clipped.coveredSqft).toBeGreaterThanOrEqual(160);
-    expect(clipped.coveredSqft).toBeLessThanOrEqual(160 + 20 * plankWidthFt);
+    // Exactly 160 sq ft: a region's edges break the row grid, so the band against y = 8 is
+    // ripped at it rather than laid across it. No part of the single-scanline approximation
+    // applies to an area edge that runs along the rows.
+    expect(clipped.coveredSqft).toBeCloseTo(160, 4);
   });
 
   it('lays nothing at all for an empty region list — which is not the same as null', () => {
@@ -483,16 +478,42 @@ describe('laying over part of the room', () => {
   });
 
   it('keeps the joint grid anchored to the origin, not to the region', () => {
-    // The point of indexing rows against the room: the rows either side of a transition line up
-    // rather than each restarting its stagger at its own edge.
+    // The point of indexing bands against the room's row grid: the rows either side of a
+    // transition line up rather than each restarting its stagger at its own edge. Compared by
+    // geometry rather than by id, because a region edge splits one row into two bands and the
+    // ids are per band.
+    const joints = (layout: ReturnType<typeof computePlankLayout>): Set<string> =>
+      new Set(layout.planks.map((p) => `${(p.center.x - p.length / 2).toFixed(6)}`));
+
     const whole = computePlankLayout(inputs({ layout: noGap }));
-    const clipped = computePlankLayout(inputs({ layout: noGap, regions: [top] }));
-    for (const plank of clipped.planks) {
-      const match = whole.planks.find((p) => p.id === plank.id);
-      expect(match).toBeDefined();
-      expect(match!.center.x).toBeCloseTo(plank.center.x, 6);
-      expect(match!.center.y).toBeCloseTo(plank.center.y, 6);
+    for (const region of [top, bottom]) {
+      const clipped = computePlankLayout(inputs({ layout: noGap, regions: [region] }));
+      // Every joint in the clipped floor falls on a joint of the unclipped one: the run was
+      // shortened, never re-anchored.
+      for (const joint of joints(clipped)) expect(joints(whole)).toContain(joint);
     }
+  });
+
+  it('rips the row at a region edge instead of laying it across', () => {
+    // The bug this guards: the band was clipped to the room but not to the region, so a row
+    // straddling the transition was laid whole. Which rows straddled depended on the row grid,
+    // and the grid is anchored at the origin — so dragging the origin marker swung the floor's
+    // edge either side of the transition and the expansion gap came and went with it.
+    const gapFt = defaults.layout.expansionGapIn / 12;
+    for (let i = 0; i < 12; i++) {
+      const layout = computePlankLayout(
+        inputs({ origin: { x: 0, y: Math.round(i * 0.13 * 1000) / 1000 }, regions: [bottom] })
+      );
+      const highest = Math.max(...layout.planks.map((p) => p.center.y + p.width / 2));
+      // The region tops out at y = 8; the floor stops one expansion gap short of it, whatever
+      // the origin. Before the fix this ranged over 7.71 … 8.23.
+      expect(highest).toBeCloseTo(8 - gapFt, 6);
+    }
+  });
+
+  it('counts the area of a clipped region exactly, now that the edge rows are ripped', () => {
+    const clipped = computePlankLayout(inputs({ layout: noGap, regions: [bottom] }));
+    expect(clipped.coveredSqft).toBeCloseTo(160, 4);
   });
 
   it('takes the expansion gap at a region edge too', () => {

@@ -9,6 +9,7 @@ import {
   signedArea,
   subtractIntervals,
   unionIntervals,
+  verticalIntervalsAt,
 } from './geometry2d';
 
 /**
@@ -39,20 +40,22 @@ import {
  * list wants piece *lengths* along the run, which is exactly what an interval gives.
  *
  * When `regions` is given the same scan is also intersected with the areas assigned to this
- * floor, so the run stops where the LVP stops and the carpet begins. Rows are still indexed
- * against the **room**, not the region, which is what keeps the stagger pattern and the joint
- * grid continuous across a transition instead of restarting on the far side of it.
+ * floor, so the run stops where the LVP stops and the carpet begins. Bands are still *indexed*
+ * against the room's row grid, which is what keeps the stagger pattern and the joint grid
+ * continuous across a transition instead of restarting on the far side of it — but they are
+ * **broken** at every height an area's outline turns, so no band ever straddles a transition.
+ * Without that break the edge row was laid whole across the boundary or dropped entirely
+ * depending on where the grid happened to fall, and since the grid is anchored at the layout
+ * origin, dragging the origin marker swung the floor's edge either side of the transition.
  *
  * The approximation this buys is named, not hidden. A row is sampled on **one** line, so where
- * the outline changes within a row's band — a diagonal wall, the inside step of an L, or a
- * region edge running parallel to the run — that row is laid as if the whole band looked like
- * its centreline. At a *wall* this under-reports, because the band is clamped to the room and
- * the last row is ripped; at a *region* edge it over-reports by up to one plank width along the
- * edge, because a row straddling a transition is laid whole rather than ripped at it. The error is bounded by
- * one plank width along the step and it under-reports rather than over-reports (an L-shaped
- * 300 sqft room comes out at 299.2). For a rectilinear room whose walls fall on row boundaries
- * — and for every obstacle this editor draws — the result is exact. Mitring against a diagonal
- * wall is the same story: the piece is cut square at the interval end.
+ * the outline changes *within* a band — a diagonal wall, the inside step of an L, a diagonal
+ * divider — that band is laid as if all of it looked like its centreline, and the error is
+ * bounded by one plank width along the step. It under-reports rather than over-reports (an
+ * L-shaped 300 sqft room comes out at 299.2). What is **not** approximate: a rectilinear room
+ * whose walls fall on row boundaries, every obstacle this editor draws, and any area edge that
+ * runs along the rows — the last of those because the band breaks there. Mitring against a
+ * diagonal wall is the same story: the piece is cut square at the interval end.
  */
 
 // ============================================
@@ -473,6 +476,41 @@ function buildCutList(cutLengthsFt: readonly number[]): CutListEntry[] {
     .sort((a, b) => b.lengthIn - a.lengthIn);
 }
 
+/**
+ * How far a row may extend across a **region** edge: not at all.
+ *
+ * The room clamps every band to `[minY, maxY]`, which is what rips the row against the far wall
+ * instead of letting it hang past it. A region has no such clamp — its edges are wherever the
+ * user drew a divider — so without this a row whose band straddles a transition is laid at full
+ * width straight across it. Worse, *which* rows straddle depends on the row grid, and the row
+ * grid is anchored at the layout origin: dragging the origin swings the floor's edge either side
+ * of the transition by up to half a plank width, so the expansion gap at the transition opens,
+ * closes and inverts as the marker moves.
+ *
+ * The vertical scan answers the question the horizontal one cannot: at this point along the run,
+ * how far does this area actually extend across the rows? The band is clipped to that, and the
+ * row is ripped at the transition exactly as it is ripped at a wall.
+ *
+ * Sampled at the span's midpoint, and only applied when the sample brackets the row's own
+ * centreline — an unreliable sample leaves the band alone rather than clipping it to something
+ * that is not there. It therefore only ever *narrows* a row, never widens one.
+ */
+function bandWithin(
+  clips: readonly (readonly Vector2[])[],
+  x: number,
+  centreY: number,
+  low: number,
+  high: number
+): { low: number; high: number } {
+  for (const clip of clips) {
+    for (const [spanLow, spanHigh] of verticalIntervalsAt(clip, x)) {
+      if (centreY < spanLow - EPS || centreY > spanHigh + EPS) continue;
+      return { low: Math.max(low, spanLow), high: Math.min(high, spanHigh) };
+    }
+  }
+  return { low, high };
+}
+
 // ============================================
 // The engine
 // ============================================
@@ -552,6 +590,38 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   if (rowCount <= 0 || rowCount > MAX_PLANKS)
     return { ...EMPTY_LAYOUT, key, truncated: rowCount > 0 };
 
+  /**
+   * Where one band stops and the next begins.
+   *
+   * The row grid `k * plankWidth` — anchored at the layout origin, which is what makes the
+   * origin marker move the joints — plus the room's own limits, plus **every height at which a
+   * region's outline turns**. That last set is what stops a transition from wandering.
+   *
+   * Without it a row is sampled on its centreline and laid whole: a band straddling the edge of
+   * an area either crosses it, or, if the centreline lands the other side, is dropped and leaves
+   * bare subfloor. Which of the two happens depends on where the grid falls, and the grid moves
+   * with the origin — so dragging the origin marker swung the floor's edge either side of the
+   * transition by up to half a plank width, opening and closing the expansion gap as it went.
+   * Breaking the band at those heights means no band ever straddles one: the row against a
+   * transition is ripped exactly as the row against a wall is.
+   *
+   * Sub-bands of one row keep that row's index, so they share its stagger offset and its joint
+   * grid; a region edge cuts a row's width, never its rhythm.
+   */
+  const boundaries = new Set<number>([minY, maxY]);
+  for (let row = firstRow; row <= lastRow; row++) {
+    const y = row * plankWidth;
+    if (y > minY + EPS && y < maxY - EPS) boundaries.add(y);
+  }
+  if (clips !== null) {
+    for (const clip of clips) {
+      for (const p of clip) {
+        if (p.y > minY + EPS && p.y < maxY - EPS) boundaries.add(p.y);
+      }
+    }
+  }
+  const bandEdges = [...boundaries].sort((a, b) => a - b);
+
   const planks: Plank[] = [];
   const demand: PieceDemand[] = [];
   const cutLengths: number[] = [];
@@ -559,21 +629,22 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   let fullPieces = 0;
   let truncated = false;
 
-  for (let row = firstRow; row < lastRow; row++) {
+  for (let band = 0; band + 1 < bandEdges.length; band++) {
     if (signal?.aborted) {
       truncated = true;
       break;
     }
-    // The band this row occupies, clipped to the room. The last row against a wall is
-    // **ripped** narrower rather than dropped — dropping it would silently leave a strip of
-    // bare subfloor and under-report the area by up to one plank width across the room.
-    // Its own width is what makes the rip show up as waste: a ripped board still costs a
-    // full-width one.
-    const bandLow = Math.max(row * plankWidth, minY);
-    const bandHigh = Math.min((row + 1) * plankWidth, maxY);
-    const rowWidth = bandHigh - bandLow;
-    if (rowWidth <= EPS) continue;
+    // The band, already clipped to the room and to every area edge by construction. A band
+    // against a wall or a transition is **ripped** narrower rather than dropped — dropping it
+    // would silently leave a strip of bare subfloor and under-report the area. Its own width is
+    // what makes the rip show up as waste: a ripped board still costs a full-width one.
+    const bandLow = bandEdges[band];
+    const bandHigh = bandEdges[band + 1];
+    if (bandHigh - bandLow <= EPS) continue;
     const centreY = (bandLow + bandHigh) / 2;
+    // The row this band belongs to. Two sub-bands of one row get the same offset and so the
+    // same joints, which is why a transition does not restart the stagger on its far side.
+    const row = Math.floor(centreY / plankWidth);
 
     // Room, then areas, then obstacles. The areas are unioned before they intersect, so two
     // adjacent plank areas read as one span rather than as a seam the row is cut at twice.
@@ -595,6 +666,16 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     for (const [start, end] of spans) {
       if (end - start <= EPS) continue;
 
+      // The band, ripped against whatever area this span falls in. Per span rather than per row,
+      // because one row can cross two areas that end at different places.
+      const band =
+        clips === null
+          ? { low: bandLow, high: bandHigh }
+          : bandWithin(clips, (start + end) / 2, centreY, bandLow, bandHigh);
+      const spanWidth = band.high - band.low;
+      if (spanWidth <= EPS) continue;
+      const spanCentreY = (band.low + band.high) / 2;
+
       const pieces = layRow([start, end], offset, plankLength, minEndCut);
       for (let index = 0; index < pieces.length; index++) {
         const piece = pieces[index];
@@ -604,20 +685,22 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
         }
         const length = piece.end - piece.start;
         if (length <= EPS) continue;
-        const cut = length < plankLength - EPS || rowWidth < plankWidth - EPS;
+        const cut = length < plankLength - EPS || spanWidth < plankWidth - EPS;
         planks.push({
-          id: `p${row}:${column}`,
+          // Band, not row: two sub-bands of one row are two strips of boards and need ids of
+          // their own.
+          id: `p${band}:${column}`,
           row,
           column,
-          center: toWorld(frame, { x: (piece.start + piece.end) / 2, y: centreY }),
+          center: toWorld(frame, { x: (piece.start + piece.end) / 2, y: spanCentreY }),
           length,
-          width: rowWidth,
+          width: spanWidth,
           cut,
         });
         // A ripped board consumes a full-width one, so demand is length-only; the rip shows up
         // as waste because `coveredSqft` counts the narrower installed strip.
         demand.push({ length, startsRun: index === 0 });
-        covered += length * rowWidth;
+        covered += length * spanWidth;
         if (length < plankLength - EPS) cutLengths.push(length);
         else fullPieces += 1;
         column += 1;
