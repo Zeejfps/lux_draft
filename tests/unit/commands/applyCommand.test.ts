@@ -1,11 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import type { EditorCommand, CommandType } from '../../../src/types/command';
-import type { EditorDocument } from '../../../src/types/document';
-import { MOVE_AND_SET_COMMAND_TYPES } from '../../../src/types/command';
-import { applyCommand, commandLabel, registeredCommandTypes } from '../../../src/commands';
+import type { EditorCommand, CommandType } from '../../../src/floorplan/types/command';
+import type { EditorDocument } from '../../../src/floorplan/types/document';
+import { MOVE_AND_SET_COMMAND_TYPES } from '../../../src/floorplan/types/command';
+import {
+  applyCommand,
+  commandLabel,
+  registeredCommandTypes,
+} from '../../../src/floorplan/commands';
 import { moveFixture } from '../../../src/modules/lighting/commands';
-import { valueEqual } from '../../../src/commands/serializable';
-import { DEFAULT_DISPLAY_PREFERENCES } from '../../../src/types/state';
+import { valueEqual } from '../../../src/floorplan/commands/serializable';
+import { DEFAULT_DISPLAY_PREFERENCES } from '../../../src/floorplan/types/state';
 import {
   makeDocument,
   makeDoor,

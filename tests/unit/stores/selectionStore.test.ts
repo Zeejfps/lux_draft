@@ -5,10 +5,10 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import * as selectionStore from '../../../src/stores/selectionStore';
-import { setActiveTool, activeTool } from '../../../src/stores/appStore';
-import { sessionStore } from '../../../src/stores/sessionStore';
-import { asLoadedDocument } from '../../../src/types/session';
+import * as selectionStore from '../../../src/floorplan/stores/selectionStore';
+import { setActiveTool, activeTool } from '../../../src/floorplan/stores/appStore';
+import { sessionStore } from '../../../src/floorplan/stores/sessionStore';
+import { asLoadedDocument } from '../../../src/floorplan/types/session';
 import {
   getSelectedDoorId,
   getSelectedObstacleId,
@@ -16,8 +16,8 @@ import {
   getSelectedVertexIndices,
   getSelectedWallId,
   isEmptySelection,
-} from '../../../src/types/selection';
-import { getSelectedFixtureIds } from '../../../src/lighting/selection';
+} from '../../../src/floorplan/types/selection';
+import { getSelectedFixtureIds } from '../../../src/modules/lighting/selection';
 import { squareRoom } from '../../helpers/documents';
 
 const read = () => get(selectionStore.selection);

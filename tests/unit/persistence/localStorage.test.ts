@@ -3,9 +3,9 @@ import {
   saveToLocalStorage,
   loadFromLocalStorage,
   clearLocalStorage,
-} from '../../../src/persistence/localStorage';
-import { createEmptyCarriedState } from '../../../src/types/session';
-import { geometryFingerprint } from '../../../src/persistence/documentCodec';
+} from '../../../src/floorplan/persistence/localStorage';
+import { createEmptyCarriedState } from '../../../src/floorplan/types/session';
+import { geometryFingerprint } from '../../../src/floorplan/persistence/documentCodec';
 import { lightsOf, makeDocument, makeLight } from '../../helpers/documents';
 
 /**

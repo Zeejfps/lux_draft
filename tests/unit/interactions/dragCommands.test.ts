@@ -1,24 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { EditorDocument } from '../../../src/types/document';
+import type { EditorDocument } from '../../../src/floorplan/types/document';
 import type {
   AxisLock,
   DragUpdateContext,
   IDragOperation,
   InputModifiers,
-} from '../../../src/types/interaction';
-import type { Selection } from '../../../src/types/selection';
-import { NO_SELECTION, combineSelection } from '../../../src/types/selection';
-import { fixtureSelectionOf } from '../../../src/lighting/selection';
-import type { EditorCommand } from '../../../src/types/command';
-import type { Vector2 } from '../../../src/types/geometry';
-import { SnapController } from '../../../src/controllers/SnapController';
-import { WallDragOperation } from '../../../src/interactions/operations/WallDragOperation';
-import { DoorDragOperation } from '../../../src/interactions/operations/DoorDragOperation';
-import { UnifiedDragOperation } from '../../../src/interactions/operations/UnifiedDragOperation';
-import { ObstacleDragOperation } from '../../../src/interactions/operations/ObstacleDragOperation';
-import { ObstacleVertexDragOperation } from '../../../src/interactions/operations/ObstacleVertexDragOperation';
-import { GrabModeDragOperation } from '../../../src/interactions/operations/GrabModeDragOperation';
-import { applyCommand } from '../../../src/commands';
+} from '../../../src/floorplan/types/interaction';
+import type { Selection } from '../../../src/floorplan/types/selection';
+import { NO_SELECTION, combineSelection } from '../../../src/floorplan/types/selection';
+import { fixtureSelectionOf } from '../../../src/modules/lighting/selection';
+import type { EditorCommand } from '../../../src/floorplan/types/command';
+import type { Vector2 } from '../../../src/floorplan/types/geometry';
+import { SnapController } from '../../../src/floorplan/controllers/SnapController';
+import { WallDragOperation } from '../../../src/floorplan/interactions/operations/WallDragOperation';
+import { DoorDragOperation } from '../../../src/floorplan/interactions/operations/DoorDragOperation';
+import { UnifiedDragOperation } from '../../../src/floorplan/interactions/operations/UnifiedDragOperation';
+import { ObstacleDragOperation } from '../../../src/floorplan/interactions/operations/ObstacleDragOperation';
+import { ObstacleVertexDragOperation } from '../../../src/floorplan/interactions/operations/ObstacleVertexDragOperation';
+import { GrabModeDragOperation } from '../../../src/floorplan/interactions/operations/GrabModeDragOperation';
+import { applyCommand } from '../../../src/floorplan/commands';
 import {
   lightsOf,
   makeDoor,

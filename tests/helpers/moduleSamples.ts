@@ -1,7 +1,7 @@
-import type { EditorDocument } from '../../src/types/document';
-import type { ModuleCodec } from '../../src/types/module';
-import { buildModuleSlices } from '../../src/types/module';
-import { createEmptyDocument } from '../../src/types/document';
+import type { EditorDocument } from '../../src/floorplan/types/document';
+import type { ModuleCodec } from '../../src/floorplan/types/module';
+import { buildModuleSlices } from '../../src/floorplan/types/module';
+import { createEmptyDocument } from '../../src/floorplan/types/document';
 import * as lighting from '../../src/modules/lighting/commands';
 
 /**

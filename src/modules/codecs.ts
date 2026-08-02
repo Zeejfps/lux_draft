@@ -1,5 +1,5 @@
-import type { ModuleDefinition } from '../types/moduleRegistry';
-import { registerModule } from '../types/moduleRegistry';
+import type { ModuleDefinition } from '../floorplan/types/moduleRegistry';
+import { registerModule } from '../floorplan/types/moduleRegistry';
 import type { LightingData } from './lighting/codec';
 import { lightingCodec } from './lighting/codec';
 import { lightingCommands } from './lighting/commands';
@@ -21,6 +21,13 @@ import { lightingCommands } from './lighting/commands';
 const lightingModule: ModuleDefinition<LightingData> = {
   codec: lightingCodec,
   commands: lightingCommands,
+  label: 'Lighting',
+  /**
+   * The lazy half. A dynamic `import()` is the shape `loadRuntime` exists for, so `runtime.ts`
+   * — and with it THREE, the IES parser, the heatmap shaders and every lighting panel — stays
+   * out of the eager chunk this barrel is in. Phase 5 routes on it and adds the bundle check.
+   */
+  // loadRuntime wired below (phase 4 WIP)
 };
 
 export function installModules(): void {

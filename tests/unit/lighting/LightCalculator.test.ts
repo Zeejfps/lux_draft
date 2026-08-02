@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LightCalculator } from '../../../src/lighting/LightCalculator';
-import type { LightFixture } from '../../../src/types';
+import { LightCalculator } from '../../../src/modules/lighting/LightCalculator';
+import type { LightFixture } from '../../../src/floorplan/types';
 
 describe('LightCalculator', () => {
   let calculator: LightCalculator;

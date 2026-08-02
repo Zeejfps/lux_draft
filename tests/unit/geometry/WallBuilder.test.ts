@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WallBuilder } from '../../../src/geometry/WallBuilder';
+import { WallBuilder } from '../../../src/floorplan/geometry/WallBuilder';
 
 describe('WallBuilder', () => {
   let builder: WallBuilder;

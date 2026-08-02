@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LightManager } from '../../src/lighting/LightManager';
-import { LightCalculator } from '../../src/lighting/LightCalculator';
-import { PolygonValidator } from '../../src/geometry/PolygonValidator';
-import type { WallSegment } from '../../src/types';
+import { LightManager } from '../../src/modules/lighting/LightManager';
+import { LightCalculator } from '../../src/modules/lighting/LightCalculator';
+import { PolygonValidator } from '../../src/floorplan/geometry/PolygonValidator';
+import type { WallSegment } from '../../src/floorplan/types';
 
 describe('Light Placement Integration', () => {
   let lightManager: LightManager;

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PolygonValidator } from '../../../src/geometry/PolygonValidator';
-import type { WallSegment } from '../../../src/types';
+import { PolygonValidator } from '../../../src/floorplan/geometry/PolygonValidator';
+import type { WallSegment } from '../../../src/floorplan/types';
 
 describe('PolygonValidator', () => {
   let validator: PolygonValidator;

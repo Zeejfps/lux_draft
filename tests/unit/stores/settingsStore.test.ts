@@ -13,10 +13,10 @@ import {
   toggleGridSnap,
   toggleUnitFormat,
   cycleLightRadiusVisibility,
-} from '../../../src/stores/settingsStore';
-import { sessionStore } from '../../../src/stores/sessionStore';
-import { asLoadedDocument } from '../../../src/types/session';
-import { DEFAULT_DISPLAY_PREFERENCES } from '../../../src/types';
+} from '../../../src/floorplan/stores/settingsStore';
+import { sessionStore } from '../../../src/floorplan/stores/sessionStore';
+import { asLoadedDocument } from '../../../src/floorplan/types/session';
+import { DEFAULT_DISPLAY_PREFERENCES } from '../../../src/floorplan/types';
 import { squareRoom } from '../../helpers/documents';
 
 describe('settings projections', () => {

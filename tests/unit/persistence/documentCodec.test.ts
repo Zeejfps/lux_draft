@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { LightingData } from '../../../src/modules/lighting/codec';
-import type { LoadedDocument } from '../../../src/types/session';
+import type { LoadedDocument } from '../../../src/floorplan/types/session';
 import { lightingCodec, resolveDefinition } from '../../../src/modules/lighting/codec';
 import { installModules } from '../../../src/modules/codecs';
-import { clearModuleRegistry } from '../../../src/types/moduleRegistry';
-import { hasModuleSlice, readModule } from '../../../src/types/module';
-import { decodeDocument, encodeDocument } from '../../../src/persistence/documentCodec';
-import { toEnvelopeV3 } from '../../../src/persistence/envelope';
-import { ValidationError } from '../../../src/persistence/ValidationError';
-import { valueEqual } from '../../../src/commands/serializable';
-import { applyCommand } from '../../../src/commands';
-import { DEFAULT_RAFTER_CONFIG } from '../../../src/types/state';
+import { clearModuleRegistry } from '../../../src/floorplan/types/moduleRegistry';
+import { hasModuleSlice, readModule } from '../../../src/floorplan/types/module';
+import { decodeDocument, encodeDocument } from '../../../src/floorplan/persistence/documentCodec';
+import { toEnvelopeV3 } from '../../../src/floorplan/persistence/envelope';
+import { ValidationError } from '../../../src/floorplan/persistence/ValidationError';
+import { valueEqual } from '../../../src/floorplan/commands/serializable';
+import { applyCommand } from '../../../src/floorplan/commands';
+import { DEFAULT_RAFTER_CONFIG } from '../../../src/floorplan/types/state';
 import { loadFixture } from '../../fixtures/load';
 
 /**

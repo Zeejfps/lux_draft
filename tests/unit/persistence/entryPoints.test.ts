@@ -2,19 +2,22 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { LightingData } from '../../../src/modules/lighting/codec';
 import { LIGHTING_MODULE_ID, lightingCodec } from '../../../src/modules/lighting/codec';
-import { moduleSliceIds, readModule } from '../../../src/types/module';
-import type { EditorDocument } from '../../../src/types/document';
-import type { LoadedDocument, SaveInput } from '../../../src/types/session';
-import { importFromString } from '../../../src/persistence/jsonImport';
-import { getJSONString } from '../../../src/persistence/jsonExport';
-import { decodeShareData, generateShareUrl } from '../../../src/persistence/shareUrl';
-import { loadFromLocalStorage, saveToLocalStorage } from '../../../src/persistence/localStorage';
-import { sessionStore, saveInput } from '../../../src/stores/sessionStore';
-import { openLoaded } from '../../../src/stores/roomStore';
-import { fixtures, rafterConfig, toggleRafters } from '../../../src/stores/lightingStore';
-import { lightDefinitions } from '../../../src/stores/lightDefinitionsStore';
-import { adoptIncomingDefinitions } from '../../../src/stores/lightingStore';
-import { DEFAULT_LIGHT_DEFINITIONS } from '../../../src/types/lighting';
+import { moduleSliceIds, readModule } from '../../../src/floorplan/types/module';
+import type { EditorDocument } from '../../../src/floorplan/types/document';
+import type { LoadedDocument, SaveInput } from '../../../src/floorplan/types/session';
+import { importFromString } from '../../../src/floorplan/persistence/jsonImport';
+import { getJSONString } from '../../../src/floorplan/persistence/jsonExport';
+import { decodeShareData, generateShareUrl } from '../../../src/floorplan/persistence/shareUrl';
+import {
+  loadFromLocalStorage,
+  saveToLocalStorage,
+} from '../../../src/floorplan/persistence/localStorage';
+import { sessionStore, saveInput } from '../../../src/floorplan/stores/sessionStore';
+import { openLoaded } from '../../../src/floorplan/stores/roomStore';
+import { fixtures, rafterConfig, toggleRafters } from '../../../src/modules/lighting/store';
+import { lightDefinitions } from '../../../src/modules/lighting/definitionsStore';
+import { adoptIncomingDefinitions } from '../../../src/modules/lighting/store';
+import { DEFAULT_LIGHT_DEFINITIONS } from '../../../src/modules/lighting/types';
 import { loadFixture } from '../../fixtures/load';
 
 /**

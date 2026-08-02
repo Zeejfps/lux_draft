@@ -6,7 +6,7 @@ import {
   insertVertexOnWall,
   deleteVertex,
   getVertices,
-} from '../../../src/stores/roomStore';
+} from '../../../src/floorplan/stores/roomStore';
 import { makeDocument, rectWalls } from '../../helpers/documents';
 
 describe('roomStore vertex operations', () => {

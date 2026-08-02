@@ -12,8 +12,8 @@ import {
   selection,
   history,
   diagnostics,
-} from '../../../src/stores/sessionStore';
-import { asLoadedDocument } from '../../../src/types/session';
+} from '../../../src/floorplan/stores/sessionStore';
+import { asLoadedDocument } from '../../../src/floorplan/types/session';
 import { squareRoom, makeLight } from '../../helpers/documents';
 import { addFixture } from '../../../src/modules/lighting/commands';
 

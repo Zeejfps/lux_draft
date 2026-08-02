@@ -1,13 +1,8 @@
-import type {
-  LightDefinition,
-  LightFixture,
-  DeadZoneConfig,
-  SpacingConfig,
-} from '../../types/lighting';
-import type { RafterConfig } from '../../types/state';
-import type { Vector2 } from '../../types/geometry';
-import type { CommandKind, RegisteredCommand } from '../../types/module';
-import { defineCommand } from '../../types/module';
+import type { LightDefinition, LightFixture, DeadZoneConfig, SpacingConfig } from './types';
+import type { RafterConfig } from '../../floorplan/types/state';
+import type { Vector2 } from '../../floorplan/types/geometry';
+import type { CommandKind, RegisteredCommand } from '../../floorplan/types/module';
+import { defineCommand } from '../../floorplan/types/module';
 import type { LightingData } from './codec';
 import { lightingCodec, referencedDefinitions } from './codec';
 

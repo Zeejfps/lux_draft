@@ -3,8 +3,8 @@
  * one action, so the whole state machine is testable as a function.
  */
 import { describe, it, expect } from 'vitest';
-import type { Session } from '../../../src/types/session';
-import type { EditorCommand } from '../../../src/types/command';
+import type { Session } from '../../../src/floorplan/types/session';
+import type { EditorCommand } from '../../../src/floorplan/types/command';
 import {
   asLoadedDocument,
   canRedo,
@@ -12,8 +12,12 @@ import {
   createEmptySession,
   redoLabel,
   undoLabel,
-} from '../../../src/types/session';
-import { reduceSession, MAX_HISTORY, type SessionAction } from '../../../src/stores/reduceSession';
+} from '../../../src/floorplan/types/session';
+import {
+  reduceSession,
+  MAX_HISTORY,
+  type SessionAction,
+} from '../../../src/floorplan/stores/reduceSession';
 import { lightsOf, makeDocument, makeLight, rectWalls, squareRoom } from '../../helpers/documents';
 import { addFixture, moveFixture } from '../../../src/modules/lighting/commands';
 

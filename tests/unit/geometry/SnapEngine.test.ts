@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SnapEngine } from '../../../src/geometry/SnapEngine';
+import { SnapEngine } from '../../../src/floorplan/geometry/SnapEngine';
 
 describe('SnapEngine', () => {
   let snapEngine: SnapEngine;

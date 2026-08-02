@@ -16,7 +16,7 @@ import {
   radToDeg,
   lineSegmentsIntersect,
   raySegmentIntersect,
-} from '../../../src/utils/math';
+} from '../../../src/floorplan/utils/math';
 
 describe('Vector Math', () => {
   describe('vectorAdd', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatImperial, parseImperial, kelvinToRGB } from '../../../src/utils/format';
+import { formatImperial, parseImperial, kelvinToRGB } from '../../../src/floorplan/utils/format';
 
 describe('Imperial Formatting', () => {
   describe('formatImperial', () => {

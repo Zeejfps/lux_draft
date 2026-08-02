@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WallBuilder } from '../../src/geometry/WallBuilder';
-import { PolygonValidator } from '../../src/geometry/PolygonValidator';
-import { SnapEngine } from '../../src/geometry/SnapEngine';
-import type { Vector2 } from '../../src/types';
+import { WallBuilder } from '../../src/floorplan/geometry/WallBuilder';
+import { PolygonValidator } from '../../src/floorplan/geometry/PolygonValidator';
+import { SnapEngine } from '../../src/floorplan/geometry/SnapEngine';
+import type { Vector2 } from '../../src/floorplan/types';
 
 describe('Room Drawing Integration', () => {
   let wallBuilder: WallBuilder;

@@ -5,16 +5,16 @@ import {
   committedDocument,
   dispatch,
   openDocument,
-} from '../../../src/stores/roomStore';
-import { addLight } from '../../../src/stores/lightingStore';
+} from '../../../src/floorplan/stores/roomStore';
+import { addLight } from '../../../src/modules/lighting/store';
 import { moveFixture } from '../../../src/modules/lighting/commands';
-import { sessionStore, history } from '../../../src/stores/sessionStore';
+import { sessionStore, history } from '../../../src/floorplan/stores/sessionStore';
 import {
   canUndo as historyCanUndo,
   canRedo as historyCanRedo,
   undoLabel,
   redoLabel,
-} from '../../../src/types/session';
+} from '../../../src/floorplan/types/session';
 import { lightsOf, makeDocument, makeLight, rectWalls } from '../../helpers/documents';
 
 /** History is a slice of the session now; these read it exactly as the toolbar does. */

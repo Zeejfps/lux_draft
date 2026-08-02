@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WallBuilder } from '../../src/geometry/WallBuilder';
-import type { Vector2 } from '../../src/types';
+import { WallBuilder } from '../../src/floorplan/geometry/WallBuilder';
+import type { Vector2 } from '../../src/floorplan/types';
 
 /**
  * Regression test for wall drawing event handling bug.

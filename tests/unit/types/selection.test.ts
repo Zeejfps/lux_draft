@@ -20,8 +20,8 @@ import {
   selectionParts,
   toggleMember,
   type Selection,
-} from '../../../src/types/selection';
-import { fixtureSelection, getSelectedFixtureIds } from '../../../src/lighting/selection';
+} from '../../../src/floorplan/types/selection';
+import { fixtureSelection, getSelectedFixtureIds } from '../../../src/modules/lighting/selection';
 
 interface Plank {
   ids: string[];

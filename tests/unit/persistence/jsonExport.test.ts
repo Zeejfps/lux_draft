@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { getJSONString } from '../../../src/persistence/jsonExport';
-import { ValidationError, importFromString } from '../../../src/persistence/jsonImport';
-import { createEmptyCarriedState } from '../../../src/types/session';
-import { geometryFingerprint } from '../../../src/persistence/documentCodec';
+import { getJSONString } from '../../../src/floorplan/persistence/jsonExport';
+import { ValidationError, importFromString } from '../../../src/floorplan/persistence/jsonImport';
+import { createEmptyCarriedState } from '../../../src/floorplan/types/session';
+import { geometryFingerprint } from '../../../src/floorplan/persistence/documentCodec';
 import { lightsOf, makeDocument, makeLight, rectWalls } from '../../helpers/documents';
 
 /**

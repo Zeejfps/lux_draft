@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import type { EditorDocument } from '../../../src/types/document';
-import type { EditorCommand } from '../../../src/types/command';
+import type { EditorDocument } from '../../../src/floorplan/types/document';
+import type { EditorCommand } from '../../../src/floorplan/types/command';
 import {
   roomStore,
   committedDocument,
@@ -11,12 +11,12 @@ import {
   previewCommand,
   commitInteraction,
   cancelInteraction,
-} from '../../../src/stores/roomStore';
-import { sessionStore, history } from '../../../src/stores/sessionStore';
-import { canUndo as historyCanUndo } from '../../../src/types/session';
-import { DragManager } from '../../../src/interactions/DragManager';
-import { WallDragOperation } from '../../../src/interactions/operations/WallDragOperation';
-import { SnapController } from '../../../src/controllers/SnapController';
+} from '../../../src/floorplan/stores/roomStore';
+import { sessionStore, history } from '../../../src/floorplan/stores/sessionStore';
+import { canUndo as historyCanUndo } from '../../../src/floorplan/types/session';
+import { DragManager } from '../../../src/floorplan/interactions/DragManager';
+import { WallDragOperation } from '../../../src/floorplan/interactions/operations/WallDragOperation';
+import { SnapController } from '../../../src/floorplan/controllers/SnapController';
 import { squareRoom } from '../../helpers/documents';
 
 const NO_MODIFIERS = { shiftKey: false, ctrlKey: false, altKey: false };

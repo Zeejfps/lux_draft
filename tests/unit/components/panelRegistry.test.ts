@@ -10,9 +10,13 @@ import {
   registerPanels,
   resolvePanel,
   type PanelComponent,
-} from '../../../src/components/panelRegistry';
-import { combineSelection, NO_SELECTION, type Selection } from '../../../src/types/selection';
-import { fixtureSelection } from '../../../src/lighting/selection';
+} from '../../../src/floorplan/ui/panelRegistry';
+import {
+  combineSelection,
+  NO_SELECTION,
+  type Selection,
+} from '../../../src/floorplan/types/selection';
+import { fixtureSelection } from '../../../src/modules/lighting/selection';
 
 // The registry only stores and hands back components; nothing here renders one.
 const panel = (name: string) => ({ name }) as unknown as PanelComponent;

@@ -1,14 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { ModuleCodec } from '../../../src/types/module';
-import { defineCommand, readModule, withModule, hasModuleSlice } from '../../../src/types/module';
+import type { ModuleCodec } from '../../../src/floorplan/types/module';
+import {
+  defineCommand,
+  readModule,
+  withModule,
+  hasModuleSlice,
+} from '../../../src/floorplan/types/module';
 import {
   clearModuleRegistry,
   registerModule,
   registeredCodecs,
   registeredModuleCommands,
-} from '../../../src/types/moduleRegistry';
-import { applyCommand, commandLabel, registeredCommandTypes } from '../../../src/commands';
-import { assertCommandIsSerializable, valueEqual } from '../../../src/commands/serializable';
+} from '../../../src/floorplan/types/moduleRegistry';
+import {
+  applyCommand,
+  commandLabel,
+  registeredCommandTypes,
+} from '../../../src/floorplan/commands';
+import {
+  assertCommandIsSerializable,
+  valueEqual,
+} from '../../../src/floorplan/commands/serializable';
 import { installModules } from '../../../src/modules/codecs';
 import { lightingCodec } from '../../../src/modules/lighting/codec';
 import { lightingCommands } from '../../../src/modules/lighting/commands';
@@ -133,9 +145,9 @@ describe('registry contract: registration validates and fails fast', () => {
   });
 
   it('rejects a duplicate module id', () => {
-    expect(() => registerModule({ codec: stubCodec('lighting'), commands: [] })).toThrow(
-      /Duplicate module id/
-    );
+    expect(() =>
+      registerModule({ codec: stubCodec('lighting'), commands: [], label: 'Stub' })
+    ).toThrow(/Duplicate module id/);
   });
 
   it('re-running the eager barrel is a no-op, not a duplicate', () => {
@@ -152,7 +164,7 @@ describe('registry contract: registration validates and fails fast', () => {
       label: () => 'oops',
       apply: (_d, _p, prev) => prev,
     });
-    expect(() => registerModule({ codec, commands: [stray] })).toThrow(/moduleId/);
+    expect(() => registerModule({ codec, commands: [stray], label: 'Stub' })).toThrow(/moduleId/);
   });
 
   it('rejects a duplicate command type', () => {
@@ -165,11 +177,13 @@ describe('registry contract: registration validates and fails fast', () => {
       label: () => 'thing again',
       apply: (_d, _p, prev) => prev,
     });
-    expect(() => registerModule({ codec, commands: [one, two] })).toThrow(/Duplicate command type/);
+    expect(() => registerModule({ codec, commands: [one, two], label: 'Stub' })).toThrow(
+      /Duplicate command type/
+    );
   });
 
   it('rejects an id containing a dot, which would make command namespacing ambiguous', () => {
-    expect(() => registerModule({ codec: stubCodec('a.b'), commands: [] })).toThrow(
+    expect(() => registerModule({ codec: stubCodec('a.b'), commands: [], label: 'Stub' })).toThrow(
       /Invalid module id/
     );
   });

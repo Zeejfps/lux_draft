@@ -1,8 +1,8 @@
-import type { EditorDocument } from '../../src/types/document';
-import type { WallSegment, Vector2, Door, Obstacle } from '../../src/types/geometry';
-import type { LightDefinition, LightFixture } from '../../src/types/lighting';
-import { createEmptyDocument } from '../../src/types/document';
-import { buildModuleSlices, readModule } from '../../src/types/module';
+import type { EditorDocument } from '../../src/floorplan/types/document';
+import type { WallSegment, Vector2, Door, Obstacle } from '../../src/floorplan/types/geometry';
+import type { LightDefinition, LightFixture } from '../../src/modules/lighting/types';
+import { createEmptyDocument } from '../../src/floorplan/types/document';
+import { buildModuleSlices, readModule } from '../../src/floorplan/types/module';
 import { defaultLightingData, lightingCodec } from '../../src/modules/lighting/codec';
 import type { LightingData } from '../../src/modules/lighting/codec';
 

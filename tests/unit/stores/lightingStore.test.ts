@@ -15,14 +15,14 @@ import {
   toggleDeadZones,
   toggleRafters,
   toggleSpacingWarnings,
-} from '../../../src/stores/lightingStore';
-import { lightDefinitions } from '../../../src/stores/lightDefinitionsStore';
-import { sessionStore } from '../../../src/stores/sessionStore';
-import { openDocument } from '../../../src/stores/roomStore';
+} from '../../../src/modules/lighting/store';
+import { lightDefinitions } from '../../../src/modules/lighting/definitionsStore';
+import { sessionStore } from '../../../src/floorplan/stores/sessionStore';
+import { openDocument } from '../../../src/floorplan/stores/roomStore';
 import { moveFixture } from '../../../src/modules/lighting/commands';
 import { lightingCodec } from '../../../src/modules/lighting/codec';
-import { DEFAULT_LIGHT_DEFINITIONS } from '../../../src/types/lighting';
-import { DEFAULT_RAFTER_CONFIG } from '../../../src/types/state';
+import { DEFAULT_LIGHT_DEFINITIONS } from '../../../src/modules/lighting/types';
+import { DEFAULT_RAFTER_CONFIG } from '../../../src/floorplan/types/state';
 import { makeLight, squareRoom } from '../../helpers/documents';
 
 /**
