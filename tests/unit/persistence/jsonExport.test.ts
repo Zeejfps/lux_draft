@@ -1,181 +1,115 @@
 import { describe, it, expect } from 'vitest';
 import { getJSONString } from '../../../src/persistence/jsonExport';
-import {
-  validateRoomState,
-  ValidationError,
-  importFromString,
-} from '../../../src/persistence/jsonImport';
-import { makeDocument, makeLight } from '../../helpers/documents';
+import { ValidationError, importFromString } from '../../../src/persistence/jsonImport';
+import { createEmptyCarriedState } from '../../../src/types/session';
+import { geometryFingerprint } from '../../../src/persistence/documentCodec';
+import { lightsOf, makeDocument, makeLight, rectWalls } from '../../helpers/documents';
+
+/**
+ * Export and import both go through the one document codec. The old `ExportData` wrapper
+ * (`{ version: 1 | 2, roomState, lightDefinitions }`) is gone from the write path and
+ * permanent on the read path.
+ */
+const saveInputOf = (document: ReturnType<typeof makeDocument>) => ({
+  document,
+  carried: {
+    ...createEmptyCarriedState(),
+    geometryFingerprint: geometryFingerprint(document.geometry),
+  },
+});
 
 describe('JSON Export/Import', () => {
   describe('getJSONString', () => {
-    it('exports valid JSON structure with version and roomState', () => {
+    it('exports a v3 envelope with the lighting slice at its own schema version', () => {
       const doc = makeDocument({
+        walls: rectWalls(10, 10),
         lights: [makeLight('1', { x: 5, y: 5 })],
         isClosed: true,
       });
 
-      const json = getJSONString(doc);
-      const parsed = JSON.parse(json);
+      const parsed = JSON.parse(getJSONString(saveInputOf(doc)));
 
-      expect(parsed.version).toBe(2);
-      expect(parsed.roomState.lights[0].properties.lumen).toBe(800);
-      expect(parsed.roomState.ceilingHeight).toBe(8);
-      expect(parsed.lightDefinitions).toEqual([]);
+      expect(parsed.version).toBe(3);
+      expect(parsed.modules.lighting.v).toBe(1);
+      expect(parsed.modules.lighting.data.fixtures[0].properties.lumen).toBe(800);
+      expect(parsed.space.ceilingHeight).toBe(8);
+    });
+
+    it('omits a slice equal to a freshly allocated default', () => {
+      const parsed = JSON.parse(getJSONString(saveInputOf(makeDocument())));
+      expect(parsed.modules).toEqual({});
     });
 
     it('produces formatted output', () => {
-      const json = getJSONString(makeDocument());
+      const json = getJSONString(saveInputOf(makeDocument()));
 
       expect(json).toContain('\n');
       expect(json).toContain('  ');
     });
   });
 
-  describe('validateRoomState', () => {
-    it('validates complete room state', () => {
-      const data = {
-        ceilingHeight: 8,
-        walls: [{ id: '1', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, length: 10 }],
-        lights: [
-          {
-            id: '1',
-            position: { x: 5, y: 5 },
-            properties: { lumen: 800, beamAngle: 60, warmth: 2700 },
-          },
-        ],
-        isClosed: true,
-      };
-
-      const result = validateRoomState(data);
-
-      expect(result.ceilingHeight).toBe(8);
-      expect(result.walls).toHaveLength(1);
-      expect(result.lights).toHaveLength(1);
-    });
-
-    it('rejects invalid ceiling height', () => {
-      const data = { ceilingHeight: 'invalid', walls: [], lights: [], isClosed: true };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects negative ceiling height', () => {
-      const data = { ceilingHeight: -5, walls: [], lights: [], isClosed: true };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects missing walls array', () => {
-      const data = { ceilingHeight: 8, lights: [], isClosed: true };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects missing lights array', () => {
-      const data = { ceilingHeight: 8, walls: [], isClosed: true };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects missing isClosed', () => {
-      const data = { ceilingHeight: 8, walls: [], lights: [] };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects invalid wall segment', () => {
-      const data = {
-        ceilingHeight: 8,
-        walls: [{ id: 123, start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, length: 10 }],
-        lights: [],
-        isClosed: true,
-      };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects invalid light fixture', () => {
-      const data = {
-        ceilingHeight: 8,
-        walls: [],
-        lights: [
-          {
-            id: '1',
-            position: { x: 5, y: 5 },
-            properties: { lumen: -100, beamAngle: 60, warmth: 2700 },
-          },
-        ],
-        isClosed: true,
-      };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects beam angle out of range', () => {
-      const data = {
-        ceilingHeight: 8,
-        walls: [],
-        lights: [
-          {
-            id: '1',
-            position: { x: 5, y: 5 },
-            properties: { lumen: 800, beamAngle: 200, warmth: 2700 },
-          },
-        ],
-        isClosed: true,
-      };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-
-    it('rejects warmth out of range', () => {
-      const data = {
-        ceilingHeight: 8,
-        walls: [],
-        lights: [
-          {
-            id: '1',
-            position: { x: 5, y: 5 },
-            properties: { lumen: 800, beamAngle: 60, warmth: 500 },
-          },
-        ],
-        isClosed: true,
-      };
-      expect(() => validateRoomState(data)).toThrow(ValidationError);
-    });
-  });
-
   describe('importFromString', () => {
-    it('imports legacy format (direct RoomState)', () => {
-      const json = JSON.stringify({
-        ceilingHeight: 10,
-        walls: [],
-        lights: [],
-        isClosed: false,
-      });
+    it('imports the legacy flat RoomState', () => {
+      const result = importFromString(
+        JSON.stringify({ ceilingHeight: 10, walls: [], lights: [], isClosed: false })
+      );
 
-      const result = importFromString(json);
-
-      expect(result.space.ceilingHeight).toBe(10);
+      expect(result.document.space.ceilingHeight).toBe(10);
     });
 
-    it('imports new format with version and roomState', () => {
-      const json = JSON.stringify({
-        version: 1,
-        roomState: {
-          ceilingHeight: 12,
-          walls: [],
-          lights: [],
-          isClosed: true,
-        },
-        lightDefinitions: [],
+    it('imports the versioned wrapper, lifting lights into the module slice', () => {
+      const result = importFromString(
+        JSON.stringify({
+          version: 1,
+          roomState: {
+            ceilingHeight: 12,
+            walls: [],
+            lights: [makeLight('1', { x: 1, y: 1 })],
+            isClosed: true,
+          },
+          lightDefinitions: [],
+        })
+      );
+
+      expect(result.document.space.ceilingHeight).toBe(12);
+      expect(result.document.geometry.boundary.isClosed).toBe(true);
+      expect(lightsOf(result.document)).toHaveLength(1);
+    });
+
+    it('round-trips an exported file value-identically', () => {
+      const doc = makeDocument({
+        walls: rectWalls(10, 10),
+        lights: [makeLight('1', { x: 5, y: 5 })],
+        isClosed: true,
       });
 
-      const result = importFromString(json);
+      const reloaded = importFromString(getJSONString(saveInputOf(doc)));
 
-      expect(result.space.ceilingHeight).toBe(12);
-      expect(result.geometry.boundary.isClosed).toBe(true);
+      expect(reloaded.document).toEqual(doc);
     });
 
     it('throws on invalid JSON', () => {
       expect(() => importFromString('not json')).toThrow(ValidationError);
     });
 
-    it('throws on invalid structure', () => {
+    it('throws on a document with no usable geometry', () => {
       expect(() => importFromString('{"invalid": true}')).toThrow(ValidationError);
+    });
+
+    it('quarantines a broken lights array instead of rejecting the geometry', () => {
+      // Deliberate behaviour change from phase 3a: geometry is the shared asset, and one
+      // module's undecodable blob may not block it (invariant 8).
+      const result = importFromString(
+        JSON.stringify({
+          ceilingHeight: 8,
+          walls: [],
+          lights: [{ id: '1', position: { x: 5, y: 5 }, properties: { lumen: -100 } }],
+          isClosed: true,
+        })
+      );
+
+      expect(result.document.space.ceilingHeight).toBe(8);
+      expect(result.carried.quarantined.lighting?.reason).toBe('invalid');
     });
   });
 });

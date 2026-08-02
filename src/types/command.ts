@@ -1,6 +1,5 @@
 import type { Vector2, WallSegment, Door, Obstacle } from './geometry';
-import type { LightFixture } from './lighting';
-import type { DisplayPreferences, RafterConfig } from './state';
+import type { DisplayPreferences } from './state';
 import type { EditorDocument } from './document';
 
 /**
@@ -12,8 +11,8 @@ import type { EditorDocument } from './document';
  * The **move and set family** carries absolute targets, never deltas, because those are the
  * commands re-applied to the committed base on every frame of a drag: `wall.move`,
  * `wall.setLength`, `vertex.move`, `door.move`, `door.set`, `obstacle.move`,
- * `obstacle.vertex.move`, `obstacle.set`, `light.move`, `light.set`,
- * `space.setCeilingHeight`, `document.setDisplayPreferences`, `lighting.setRafterConfig`.
+ * `obstacle.vertex.move`, `obstacle.set`, `space.setCeilingHeight`,
+ * `document.setDisplayPreferences`, and every module command declared `absolute`.
  * Applying one of those twice equals applying it once.
  *
  * `*.add`, `vertex.insert`, and `*.remove` are produced by discrete clicks, are never previewed
@@ -41,19 +40,12 @@ export type CoreCommand =
   // --- space / document ---------------------------------------------------
   | { type: 'space.setCeilingHeight'; height: number }
   | { type: 'document.setDisplayPreferences'; preferences: DisplayPreferences }
-  // --- lighting (legacy; becomes `lighting.*` module commands in phase 3b) --
-  | { type: 'light.add'; light: LightFixture }
-  | { type: 'light.move'; lightId: string; position: Vector2 }
-  | { type: 'light.set'; lightId: string; changes: LightChanges }
-  | { type: 'light.remove'; lightId: string }
-  | { type: 'lighting.setRafterConfig'; config: RafterConfig }
   // --- composition --------------------------------------------------------
   /** One user intent, several entities. Applied in order; still one history entry. */
   | { type: 'compound'; label: string; commands: EditorCommand[] };
 
 export type DoorChanges = Partial<Omit<Door, 'id'>>;
 export type ObstacleChanges = Partial<Omit<Obstacle, 'id' | 'walls'>>;
-export type LightChanges = Partial<Omit<LightFixture, 'id'>>;
 
 /**
  * A module's command. Modules contribute their own; the core never names them.
@@ -96,9 +88,6 @@ export const MOVE_AND_SET_COMMAND_TYPES: readonly CommandType[] = [
   'obstacle.move',
   'obstacle.vertex.move',
   'obstacle.set',
-  'light.move',
-  'light.set',
   'space.setCeilingHeight',
   'document.setDisplayPreferences',
-  'lighting.setRafterConfig',
 ];

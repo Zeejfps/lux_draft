@@ -1,9 +1,15 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
-import { get } from 'svelte/store';
-import type { EditorDocument } from '../types/document';
-import { toLegacyRoomState } from './legacyDocumentAdapter';
-import { lightDefinitions } from '../stores/lightDefinitionsStore';
-import { importFromString } from './jsonImport';
+import type { LoadedDocument, SaveInput } from '../types/session';
+import { decodeDocument, encodeDocument } from './documentCodec';
+
+/**
+ * Share links. The payload is a v3 envelope built for `{ kind: 'share', moduleId }`: the
+ * target module's slice compacted by its own `compactForShare`, every other live slice and
+ * every quarantined blob omitted. A share link is a single-module view.
+ *
+ * The module id is a parameter rather than a constant, because core names no module; phase 5
+ * puts it in the URL path (`#/{moduleId}/viewer`) as well. `#/viewer` stays a permanent alias.
+ */
 
 export interface ShareResult {
   url: string;
@@ -11,50 +17,9 @@ export interface ShareResult {
   warning?: string;
 }
 
-function createSharePayload(doc: EditorDocument): object {
-  const state = toLegacyRoomState(doc);
-  // Strip fields that aren't needed for viewing
-  const stripped: Record<string, unknown> = {
-    ceilingHeight: state.ceilingHeight,
-    walls: state.walls,
-    lights: state.lights,
-    isClosed: state.isClosed,
-  };
-
-  // Only include doors/obstacles if non-empty
-  if (state.doors.length > 0) {
-    stripped.doors = state.doors;
-  }
-  if (state.obstacles.length > 0) {
-    stripped.obstacles = state.obstacles;
-  }
-
-  // Check if any custom light definitions are in use
-  const allDefinitions = get(lightDefinitions);
-  const usedDefinitionIds = new Set(
-    state.lights
-      .map((light) => light.definitionId)
-      .filter((id): id is string => id !== undefined && id.startsWith('custom-'))
-  );
-  const usedCustomDefinitions = allDefinitions.filter((def) => usedDefinitionIds.has(def.id));
-
-  // Wrap in versioned format only if custom definitions are used
-  if (usedCustomDefinitions.length > 0) {
-    return {
-      version: 2,
-      roomState: stripped,
-      lightDefinitions: usedCustomDefinitions,
-    };
-  }
-
-  // Raw RoomState — processImportData handles both formats
-  return stripped;
-}
-
-export function generateShareUrl(doc: EditorDocument): ShareResult {
-  const payload = createSharePayload(doc);
-  const json = JSON.stringify(payload);
-  const compressed = compressToEncodedURIComponent(json);
+export function generateShareUrl({ document, carried }: SaveInput, moduleId: string): ShareResult {
+  const payload = encodeDocument(document, carried, { kind: 'share', moduleId });
+  const compressed = compressToEncodedURIComponent(JSON.stringify(payload));
 
   const base = `${window.location.origin}${window.location.pathname}`;
   const url = `${base}#/viewer?d=${compressed}`;
@@ -72,10 +37,20 @@ export function generateShareUrl(doc: EditorDocument): ShareResult {
   return { url, length, warning };
 }
 
-export function decodeShareData(compressed: string): EditorDocument {
+/**
+ * Links in the wild encode envelope 1 and 2 as well as 3, so this goes through the same
+ * permanent readers as every other entry point.
+ */
+export function decodeShareData(compressed: string): LoadedDocument {
   const json = decompressFromEncodedURIComponent(compressed);
   if (!json) {
     throw new Error('Failed to decompress shared data. The URL may be corrupted.');
   }
-  return importFromString(json);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    throw new Error('Failed to read shared data. The URL may be corrupted.');
+  }
+  return decodeDocument(raw);
 }

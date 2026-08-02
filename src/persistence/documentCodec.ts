@@ -136,10 +136,6 @@ export function decodeDocument(raw: unknown): LoadedDocument {
     geometry,
     space,
     modules: buildModuleSlices(slices),
-    // LEGACY. Lighting still reads fixtures from the document root in phase 3a, but decode
-    // already puts them in `modules.lighting`. Phase 3b deletes this field from
-    // `EditorDocument` and the two lines that keep it here.
-    lights: [],
   };
   if (displayPreferences) document.displayPreferences = displayPreferences;
 

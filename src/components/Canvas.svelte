@@ -26,8 +26,6 @@
     addDoor,
     removeDoor,
     addObstacle,
-    addLight,
-    removeLights,
     removeObstacle,
     previewCommand,
     commitInteraction,
@@ -66,14 +64,18 @@
   import { getSelectedFixtureIds } from '../lighting/selection';
   import { sessionStore } from '../stores/sessionStore';
   import { getDoorPlacementSettings } from '../stores/doorStore';
+  import { displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
   import {
-    displayPreferences,
+    addLight,
+    deadZoneConfig,
+    fixtures,
+    pickerDefinitions,
     rafterConfig,
-    toggleUnitFormat,
+    removeLights,
+    spacingConfig,
+    spacingWarnings,
     toggleRafters,
-  } from '../stores/settingsStore';
-  import { deadZoneConfig } from '../stores/deadZoneStore';
-  import { spacingConfig, spacingWarnings } from '../stores/spacingStore';
+  } from '../stores/lightingStore';
   import { toggleLightingStats } from '../stores/lightingStatsStore';
   import { selectedDefinitionId } from '../stores/lightDefinitionsStore';
   import { isMeasuring } from '../stores/measurementStore';
@@ -84,6 +86,7 @@
     DisplayPreferences,
     EditorDocument,
     InteractionContext,
+    LightFixture,
     RafterConfig,
     SpacingConfig,
     SpacingWarning,
@@ -172,6 +175,7 @@
   let currentObstacles: import('../types').Obstacle[] = [];
   let currentViewMode: ViewMode = 'editor';
   let currentRoomState: EditorDocument;
+  let currentFixtures: LightFixture[] = [];
   let currentBounds: BoundingBox;
   let currentRafterConfig: RafterConfig;
   let currentDisplayPrefs: DisplayPreferences;
@@ -253,6 +257,9 @@
       getSelectedObstacleVertexIndices(currentSelection)
     );
   }
+  // Lighting's fixtures come out of `modules.lighting`, off the *live* document, so a drag
+  // previews exactly as it used to when fixtures lived at the root.
+  $: currentFixtures = $fixtures;
   $: currentRafterConfig = $rafterConfig;
   $: currentDisplayPrefs = $displayPreferences;
   $: currentDeadZoneConfig = $deadZoneConfig;
@@ -275,7 +282,7 @@
       currentDoors
     );
     editorRenderer.updateLights(
-      currentRoomState.lights,
+      currentFixtures,
       currentRoomState.space.ceilingHeight,
       currentSelectedLightIds
     );
@@ -285,19 +292,19 @@
       currentSelectedObstacleId,
       currentSelectedObstacleVertexIndices
     );
-    lightManager?.setLights(currentRoomState.lights);
+    lightManager?.setLights(currentFixtures);
   }
 
   $: if (heatmapRenderer && currentRoomState && currentBounds) {
     heatmapRenderer.updateBounds(currentBounds);
     heatmapRenderer.updateWalls(currentWalls);
     heatmapRenderer.updateObstacles(currentObstacles);
-    heatmapRenderer.updateLights(currentRoomState.lights, currentRoomState.space.ceilingHeight);
+    heatmapRenderer.updateLights(currentFixtures, currentRoomState.space.ceilingHeight);
   }
 
   $: if (shadowRenderer && currentRoomState && currentBounds) {
     shadowRenderer.updateShadows(
-      currentRoomState.lights,
+      currentFixtures,
       currentWalls,
       currentBounds,
       currentDoors,
@@ -318,7 +325,7 @@
 
   $: if (deadZoneRenderer && currentRoomState && currentBounds) {
     deadZoneRenderer.updateBounds(currentBounds);
-    deadZoneRenderer.updateLights(currentRoomState.lights, currentRoomState.space.ceilingHeight);
+    deadZoneRenderer.updateLights(currentFixtures, currentRoomState.space.ceilingHeight);
   }
 
   $: if (deadZoneRenderer && currentDeadZoneConfig) {
@@ -375,6 +382,7 @@
   function buildInteractionContext(): InteractionContext {
     return {
       document: currentRoomState,
+      fixtures: currentFixtures,
       selection: liveSelection(),
       isDrawingEnabled: isDrawing,
       isPlacingLights: isPlacingLights,
@@ -482,7 +490,7 @@
 
     // Update source position if it's a light
     if (source?.type === 'light') {
-      const light = currentRoomState.lights.find((l) => l.id === source.id);
+      const light = currentFixtures.find((l) => l.id === source.id);
       if (light) {
         measurementController.updateSourcePosition(light.position, currentWalls);
       }
@@ -498,7 +506,7 @@
 
     // Update target position if it's a light
     if (target?.type === 'light') {
-      const light = currentRoomState.lights.find((l) => l.id === target.id);
+      const light = currentFixtures.find((l) => l.id === target.id);
       if (light) {
         measurementController.updateTargetPosition(light.position);
       }
@@ -533,7 +541,7 @@
 
     // Start from light
     if (currentSelectedLightId) {
-      const light = currentRoomState.lights.find((l) => l.id === currentSelectedLightId);
+      const light = currentFixtures.find((l) => l.id === currentSelectedLightId);
       if (light) {
         measurementHandler.startFromLight(currentSelectedLightId, light.position);
         isMeasuring.set(true);
@@ -722,7 +730,14 @@
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
       },
       {
-        onLightPlaced: (light) => addLight(light),
+        onLightPlaced: (light) => {
+          // Pass the picker's definition so a custom one is adopted into the document's
+          // closure by the same command that adds the fixture.
+          const definition = light.definitionId
+            ? get(pickerDefinitions).find((d) => d.id === light.definitionId)
+            : undefined;
+          addLight(light, definition);
+        },
         onSetPreviewLight: (pos, isValid) => editorRenderer.setPreviewLight(pos, isValid),
       }
     );
@@ -825,7 +840,7 @@
               getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
               getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
               getVertices: () => getVertices(currentRoomState),
-              getLights: () => currentRoomState.lights,
+              getLights: () => currentFixtures,
               getWalls: () => currentWalls,
               getWallById: (id) => currentWalls.find((w) => w.id === id),
               getDoors: () => currentDoors,
@@ -843,7 +858,7 @@
         getSelection: () => liveSelection(),
         getCurrentMousePos: () => currentMousePos,
         getVertices: () => getVertices(currentRoomState),
-        getLights: () => currentRoomState.lights,
+        getLights: () => currentFixtures,
         getWalls: () => currentWalls,
         getDoors: () => currentDoors,
         getDoorById: (id) => currentDoors.find((d) => d.id === id),
@@ -915,8 +930,8 @@
     deadZoneRenderer.setVisible(false);
     spacingWarningRenderer.setVisible(false);
 
-    if (currentRoomState.lights.length > 0) {
-      lightManager.setLights(currentRoomState.lights);
+    if (currentFixtures.length > 0) {
+      lightManager.setLights(currentFixtures);
     }
 
     animate();
@@ -930,7 +945,7 @@
         getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
         getVertices: () => getVertices(currentRoomState),
-        getLights: () => currentRoomState.lights,
+        getLights: () => currentFixtures,
         getWalls: () => currentWalls,
         isRoomClosed: () => currentRoomState.geometry.boundary.isClosed,
       },

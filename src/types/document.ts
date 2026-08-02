@@ -1,6 +1,6 @@
 import type { WallSegment, Door, Obstacle } from './geometry';
-import type { LightFixture } from './lighting';
-import type { DisplayPreferences, RafterConfig } from './state';
+import type { DisplayPreferences } from './state';
+import { defaultModuleSlices } from './moduleRegistry';
 
 export interface WallLoop {
   walls: WallSegment[];
@@ -23,33 +23,33 @@ export interface SpaceMetadata {
  * Per-module document slices.
  *
  * Deliberately opaque: no index signature is exported, so the only doors into it are
- * `readModule` / `withModule`, which phase 3a adds. Phase 1b starts it as an empty map so no
- * later phase has to thread a new document field through the reducer and every codec.
+ * `readModule` / `withModule` / `buildModuleSlices` in `types/module.ts`.
  */
 export type ModuleSlices = Record<never, never>;
 
 /**
  * Editable, undoable, persisted. Nothing else belongs here.
  *
- * Phase 1a shape: `geometry` and `space` are nested as in the target model, but the lighting
- * fields (`lights`, `rafterConfig`) still sit at the document root. Phase 3b moves them into
- * `modules.lighting` and deletes them from here.
+ * Geometry is nested so `boundary: WallLoop` can become `boundaries: WallLoop[]` without
+ * rewriting modules — they read through views, not through the document root. Every module's
+ * data lives in `modules`; since phase 3b there are no domain fields at the root at all.
  */
 export interface EditorDocument {
   geometry: FloorplanGeometry;
   space: SpaceMetadata;
   displayPreferences?: DisplayPreferences;
-  /** Opaque; reachable only via readModule / withModule (phase 3a). Empty until phase 3b. */
+  /** Opaque; reachable only via readModule / withModule. */
   modules: ModuleSlices;
-  /** LEGACY (phase 3b moves this into `modules.lighting`). */
-  lights: LightFixture[];
-  /** LEGACY (phase 3b moves this into `modules.lighting`). */
-  rafterConfig?: RafterConfig;
 }
 
 export const DEFAULT_CEILING_HEIGHT = 8.0;
 
-/** Freshly allocated every call — never share a document literal. */
+/**
+ * Freshly allocated every call — never share a document literal.
+ *
+ * Module slices are normalized to their defaults exactly as `decodeDocument` does, so a new
+ * project and a loaded one are the same shape and a module command works on either.
+ */
 export function createEmptyDocument(): EditorDocument {
   return {
     geometry: {
@@ -58,7 +58,6 @@ export function createEmptyDocument(): EditorDocument {
       obstacles: [],
     },
     space: { ceilingHeight: DEFAULT_CEILING_HEIGHT },
-    modules: {},
-    lights: [],
+    modules: defaultModuleSlices(),
   };
 }

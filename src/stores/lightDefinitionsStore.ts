@@ -3,6 +3,15 @@ import type { LightDefinition } from '../types';
 import { DEFAULT_LIGHT_DEFINITIONS } from '../types';
 import type { IESData } from '../lighting/IESParser';
 
+/**
+ * The fixture **picker library**: what the user can choose from, persisted under its own
+ * local-storage key and never part of a document.
+ *
+ * Since phase 3b a document carries the closure of definitions its fixtures reference
+ * (`LightingData.definitions`) and that copy is authoritative for rendering, so importing no
+ * longer merges anything into this store as a side effect of decoding. `adoptIncomingDefinitions`
+ * in `lightingStore.ts` is the explicit post-`open` step that offers unknown incoming ids here.
+ */
 const STORAGE_KEY = 'lumen2d_light_definitions';
 
 function loadCustomDefinitions(): LightDefinition[] {
@@ -100,12 +109,4 @@ export function deleteLightDefinition(id: string): void {
 
 export function setSelectedDefinition(id: string): void {
   selectedDefinitionId.set(id);
-}
-
-export function mergeLightDefinitions(definitions: LightDefinition[]): void {
-  lightDefinitions.update((existingDefs) => {
-    const existingIds = new Set(existingDefs.map((d) => d.id));
-    const newDefs = definitions.filter((d) => !existingIds.has(d.id));
-    return [...existingDefs, ...newDefs];
-  });
 }

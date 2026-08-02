@@ -2,6 +2,7 @@ import { derived } from 'svelte/store';
 import type { WallSegment, Vector2, Door, Obstacle } from '../types/geometry';
 import type { EditorDocument } from '../types/document';
 import type { EditorCommand, DoorChanges, ObstacleChanges } from '../types/command';
+import type { LoadedDocument } from '../types/session';
 import { createEmptyDocument } from '../types/document';
 import { asLoadedDocument } from '../types/session';
 import { sessionStore, roomStore } from './sessionStore';
@@ -33,7 +34,16 @@ export function dispatch(command: EditorCommand): void {
   sessionStore.dispatch(command);
 }
 
-/** Replace the whole document — load, import, share link, reset. Not a command, not undoable. */
+/**
+ * Replace the whole session from a decoded load (invariant 9). **Every** entry point —
+ * local storage, file import, share link — ends here with a real `LoadedDocument`, carrying
+ * the quarantined blobs and warnings decode produced.
+ */
+export function openLoaded(loaded: LoadedDocument): void {
+  sessionStore.open(loaded);
+}
+
+/** A document nothing decoded: a new project. Not a command, not undoable. */
 export function openDocument(doc: EditorDocument): void {
   sessionStore.open(asLoadedDocument(doc));
 }
@@ -175,21 +185,4 @@ export function updateObstacle(id: string, changes: ObstacleChanges): void {
 
 export function removeObstacle(id: string): void {
   dispatch({ type: 'obstacle.remove', obstacleId: id });
-}
-
-// --- lights (legacy; becomes `lighting.*` in phase 3b) ---
-
-export function addLight(light: import('../types/lighting').LightFixture): void {
-  dispatch({ type: 'light.add', light });
-}
-
-export function removeLights(ids: Iterable<string>): void {
-  const commands: EditorCommand[] = [];
-  for (const id of ids) commands.push({ type: 'light.remove', lightId: id });
-  if (commands.length === 0) return;
-  if (commands.length === 1) {
-    dispatch(commands[0]);
-    return;
-  }
-  dispatch({ type: 'compound', label: 'Delete lights', commands });
 }

@@ -1,18 +1,27 @@
-import { get } from 'svelte/store';
-import type { RoomState, LightDefinition } from '../types';
-import type { EditorDocument } from '../types/document';
-import { lightDefinitions } from '../stores/lightDefinitionsStore';
-import { toLegacyRoomState } from './legacyDocumentAdapter';
+import type { SaveInput } from '../types/session';
+import type { DocumentEnvelopeV3 } from './envelope';
+import { encodeDocument } from './documentCodec';
 
-export interface ExportData {
-  version: 1 | 2;
-  roomState: RoomState;
-  lightDefinitions: LightDefinition[];
+/**
+ * File export. `createExportData` folded into `encodeDocument` (invariant 9): the envelope is
+ * the one on-disk shape, it carries every module's slice at that module's own schema version,
+ * and it merges quarantined blobs back verbatim so exporting never drops data this build could
+ * not read.
+ *
+ * The old `ExportData` wrapper (`{ version: 1 | 2, roomState, lightDefinitions }`) is gone from
+ * the write path; `toEnvelopeV3` still **reads** it, permanently.
+ */
+
+export function createExportData({ document, carried }: SaveInput): DocumentEnvelopeV3 {
+  return encodeDocument(document, carried, { kind: 'file' });
 }
 
-export function exportToJSON(doc: EditorDocument): void {
-  const exportData = createExportData(doc);
-  const json = JSON.stringify(exportData, null, 2);
+export function getJSONString(input: SaveInput): string {
+  return JSON.stringify(createExportData(input), null, 2);
+}
+
+export function exportToJSON(input: SaveInput): void {
+  const json = getJSONString(input);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
 
@@ -23,30 +32,4 @@ export function exportToJSON(doc: EditorDocument): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-export function getJSONString(doc: EditorDocument): string {
-  const exportData = createExportData(doc);
-  return JSON.stringify(exportData, null, 2);
-}
-
-function createExportData(doc: EditorDocument): ExportData {
-  // Get all current light definitions
-  const allDefinitions = get(lightDefinitions);
-
-  // Find which custom definitions are actually used by lights in this room
-  const usedDefinitionIds = new Set(
-    doc.lights
-      .map((light) => light.definitionId)
-      .filter((id): id is string => id !== undefined && id.startsWith('custom-'))
-  );
-
-  // Only include custom definitions that are used
-  const usedCustomDefinitions = allDefinitions.filter((def) => usedDefinitionIds.has(def.id));
-
-  return {
-    version: 2,
-    roomState: toLegacyRoomState(doc),
-    lightDefinitions: usedCustomDefinitions,
-  };
 }

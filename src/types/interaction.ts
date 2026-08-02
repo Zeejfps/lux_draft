@@ -1,4 +1,5 @@
 import type { Vector2 } from './geometry';
+import type { LightFixture } from './lighting';
 import type { EditorDocument } from './document';
 import type { EditorCommand } from './command';
 import type { Selection } from './selection';
@@ -92,6 +93,14 @@ export interface IDragOperation {
 
 export interface InteractionContext {
   document: EditorDocument;
+  /**
+   * The lighting module's fixtures, read out of `modules.lighting` by the caller.
+   *
+   * Lighting data is no longer at the document root, and core handlers may not reach into a
+   * module's slice. This is the seam phase 4 replaces with a `ModuleView` handed to the
+   * module's own handlers.
+   */
+  fixtures: LightFixture[];
   selection: Selection;
   isDrawingEnabled: boolean;
   isPlacingLights: boolean;

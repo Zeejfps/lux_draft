@@ -1,7 +1,10 @@
 import type { EditorDocument } from '../../src/types/document';
 import type { WallSegment, Vector2, Door, Obstacle } from '../../src/types/geometry';
-import type { LightFixture } from '../../src/types/lighting';
+import type { LightDefinition, LightFixture } from '../../src/types/lighting';
 import { createEmptyDocument } from '../../src/types/document';
+import { buildModuleSlices, readModule } from '../../src/types/module';
+import { defaultLightingData, lightingCodec } from '../../src/modules/lighting/codec';
+import type { LightingData } from '../../src/modules/lighting/codec';
 
 export interface DocumentParts {
   walls?: WallSegment[];
@@ -9,7 +12,18 @@ export interface DocumentParts {
   doors?: Door[];
   obstacles?: Obstacle[];
   lights?: LightFixture[];
+  definitions?: LightDefinition[];
   ceilingHeight?: number;
+}
+
+/** The lighting slice of a document built by these helpers. */
+export function lightingOf(doc: EditorDocument): Readonly<LightingData> {
+  return readModule(doc, lightingCodec);
+}
+
+/** Fixtures live in `modules.lighting`, not at the document root, since phase 3b. */
+export function lightsOf(doc: EditorDocument): LightFixture[] {
+  return lightingOf(doc).fixtures;
 }
 
 export function makeDocument(parts: DocumentParts = {}): EditorDocument {
@@ -24,8 +38,13 @@ export function makeDocument(parts: DocumentParts = {}): EditorDocument {
       obstacles: parts.obstacles ?? [],
     },
     space: { ceilingHeight: parts.ceilingHeight ?? doc.space.ceilingHeight },
-    modules: {},
-    lights: parts.lights ?? [],
+    modules: buildModuleSlices({
+      [lightingCodec.id]: {
+        ...defaultLightingData(),
+        fixtures: parts.lights ?? [],
+        definitions: parts.definitions ?? [],
+      },
+    }),
   };
 }
 

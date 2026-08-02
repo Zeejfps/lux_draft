@@ -3,8 +3,9 @@ import type { EditorCommand, CommandType } from '../../../src/types/command';
 import type { EditorDocument } from '../../../src/types/document';
 import { MOVE_AND_SET_COMMAND_TYPES } from '../../../src/types/command';
 import { applyCommand, commandLabel, registeredCommandTypes } from '../../../src/commands';
+import { moveFixture } from '../../../src/modules/lighting/commands';
 import { valueEqual } from '../../../src/commands/serializable';
-import { DEFAULT_DISPLAY_PREFERENCES, DEFAULT_RAFTER_CONFIG } from '../../../src/types/state';
+import { DEFAULT_DISPLAY_PREFERENCES } from '../../../src/types/state';
 import {
   makeDocument,
   makeDoor,
@@ -272,51 +273,6 @@ const cases: Case[] = [
     expect: (next) => expect(next.displayPreferences?.gridSnapEnabled).toBe(true),
   },
   {
-    name: 'light.add appends the fixture',
-    type: 'light.add',
-    before: squareRoom,
-    command: { type: 'light.add', light: makeLight('light-9', { x: 1, y: 1 }) },
-    expect: (next) => expect(next.lights.map((l) => l.id)).toEqual(['light-9']),
-  },
-  {
-    name: 'light.move sets an absolute position',
-    type: 'light.move',
-    before: roomWithEverything,
-    command: { type: 'light.move', lightId: 'light-1', position: { x: 2, y: 8 } },
-    expect: (next) => expect(next.lights[0].position).toEqual({ x: 2, y: 8 }),
-  },
-  {
-    name: 'light.set applies the given fields only',
-    type: 'light.set',
-    before: roomWithEverything,
-    command: {
-      type: 'light.set',
-      lightId: 'light-1',
-      changes: { definitionId: 'led-flood' },
-    },
-    expect: (next) => {
-      expect(next.lights[0].definitionId).toBe('led-flood');
-      expect(next.lights[0].position).toEqual({ x: 5, y: 5 });
-    },
-  },
-  {
-    name: 'light.remove drops the fixture',
-    type: 'light.remove',
-    before: roomWithEverything,
-    command: { type: 'light.remove', lightId: 'light-1' },
-    expect: (next) => expect(next.lights).toHaveLength(0),
-  },
-  {
-    name: 'lighting.setRafterConfig replaces the config',
-    type: 'lighting.setRafterConfig',
-    before: squareRoom,
-    command: {
-      type: 'lighting.setRafterConfig',
-      config: { ...DEFAULT_RAFTER_CONFIG, visible: true },
-    },
-    expect: (next) => expect(next.rafterConfig?.visible).toBe(true),
-  },
-  {
     name: 'compound applies its members in order',
     type: 'compound',
     before: squareRoom,
@@ -408,7 +364,7 @@ describe('the move and set family is idempotent', () => {
       label: 'Move selection',
       commands: [
         { type: 'vertex.move', index: 0, position: { x: -1, y: -1 } },
-        { type: 'light.move', lightId: 'light-1', position: { x: 6, y: 6 } },
+        moveFixture.make({ fixtureId: 'light-1', position: { x: 6, y: 6 } }),
       ],
     };
     const once = applyCommand(roomWithEverything(), command);

@@ -5,7 +5,8 @@
   import ViewerCanvas from './ViewerCanvas.svelte';
   import ViewerStatsPanel from './ViewerStatsPanel.svelte';
   import LightInfoBottomSheet from './LightInfoBottomSheet.svelte';
-  import { openDocument } from '../stores/roomStore';
+  import { openLoaded } from '../stores/roomStore';
+  import { adoptIncomingDefinitions, committedLightingData } from '../stores/lightingStore';
   import { requestCameraFit } from '../stores/appStore';
   import { lightingStatsConfig } from '../stores/lightingStatsStore';
   import { importFromJSON, ValidationError } from '../persistence/jsonImport';
@@ -22,11 +23,12 @@
     const params = get(routeParams);
     if (params.d) {
       try {
-        const doc = decodeShareData(params.d);
-        openDocument(doc);
+        const loaded = decodeShareData(params.d);
+        openLoaded(loaded);
+        adoptIncomingDefinitions(loaded.document);
         hasProject = true;
 
-        if (doc.lights.length > 0) {
+        if ($committedLightingData.fixtures.length > 0) {
           lightingStatsConfig.update((c) => ({ ...c, visible: true }));
         }
 
@@ -49,12 +51,13 @@
     errorMessage = '';
 
     try {
-      const doc = await importFromJSON(e.detail.file);
-      openDocument(doc);
+      const loaded = await importFromJSON(e.detail.file);
+      openLoaded(loaded);
+      adoptIncomingDefinitions(loaded.document);
       hasProject = true;
 
       // Enable lighting stats if there are lights
-      if (doc.lights.length > 0) {
+      if ($committedLightingData.fixtures.length > 0) {
         lightingStatsConfig.update((c) => ({ ...c, visible: true }));
       }
 

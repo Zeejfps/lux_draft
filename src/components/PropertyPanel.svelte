@@ -2,6 +2,7 @@
   import { roomStore, dispatch } from '../stores/roomStore';
   import { formatImperial, parseImperial } from '../utils/format';
   import { displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
+  import { committedLightingData } from '../stores/lightingStore';
   import { propertiesPanelConfig, togglePropertiesPanel } from '../stores/propertiesPanelStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { EditorDocument, PropertiesPanelConfig } from '../types';
@@ -76,7 +77,7 @@
     </div>
     <div class="property-row info">
       <span>Lights</span>
-      <span class="light-count">{currentRoom.lights.length}</span>
+      <span class="light-count">{$committedLightingData.fixtures.length}</span>
     </div>
     <div class="property-row info">
       <span>Doors</span>

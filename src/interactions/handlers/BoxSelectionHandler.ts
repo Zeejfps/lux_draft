@@ -78,7 +78,7 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
 
     // Find items in box
     const vertices = context.vertices;
-    const lights = context.document.lights;
+    const lights = context.fixtures;
     const indicesInBox = findVerticesInBox(vertices, state.startPosition, state.currentPosition);
     const lightIdsInBox = findLightsInBox(lights, state.startPosition, state.currentPosition);
 

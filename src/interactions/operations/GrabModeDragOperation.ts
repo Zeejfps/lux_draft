@@ -5,6 +5,7 @@ import type { DragOperationCallbacks } from '../DragManager';
 import type { BaseDragConfig, RoomStateWithDoors } from '../types';
 import { BaseDragOperation } from '../DragOperation';
 import { doorPositioningService } from '../../services';
+import { moveFixture } from '../../modules/lighting/commands';
 import {
   calculateGrabOffset,
   applyGrabOffset,
@@ -181,7 +182,7 @@ export class GrabModeDragOperation extends BaseDragOperation {
       for (const [lightId, originalPos] of this.originalLightPositions) {
         const position = applyDelta(originalPos, delta);
         if (!isClosed || checkPointInRoom(position, walls)) {
-          commands.push({ type: 'light.move', lightId, position });
+          commands.push(moveFixture.make({ fixtureId: lightId, position }));
         }
       }
     }

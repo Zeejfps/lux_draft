@@ -499,7 +499,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     return getSelectionOriginFromRoomState(
       selection,
       context.vertices,
-      context.document.lights,
+      context.fixtures,
       context.document.geometry.boundary.walls,
       context.document.geometry.doors
     );

@@ -10,21 +10,28 @@
     canDrawObstacles,
     committedDocument,
     resetRoom,
-    openDocument,
+    openLoaded,
   } from '../stores/roomStore';
-  import { sessionStore, history } from '../stores/sessionStore';
+  import { sessionStore, history, saveInput } from '../stores/sessionStore';
   import { canUndo, canRedo, undoLabel, redoLabel } from '../types/session';
   import {
-    toggleRafters,
-    rafterConfig,
     displayPreferences,
     toggleGridSnap,
     cycleLightRadiusVisibility,
   } from '../stores/settingsStore';
+  import {
+    adoptIncomingDefinitions,
+    committedLightingData,
+    deadZoneConfig,
+    rafterConfig,
+    spacingConfig,
+    toggleDeadZones,
+    toggleRafters,
+    toggleSpacingWarnings,
+  } from '../stores/lightingStore';
+  import { LIGHTING_MODULE_ID } from '../modules/lighting/codec';
   import { toggleLightingStats, lightingStatsConfig } from '../stores/lightingStatsStore';
   import { togglePropertiesPanel, propertiesPanelConfig } from '../stores/propertiesPanelStore';
-  import { toggleDeadZones, deadZoneConfig } from '../stores/deadZoneStore';
-  import { toggleSpacingWarnings, spacingConfig } from '../stores/spacingStore';
   import { isMeasuring } from '../stores/measurementStore';
   import { exportToJSON } from '../persistence/jsonExport';
   import { importFromJSON } from '../persistence/jsonImport';
@@ -107,7 +114,10 @@
   }
 
   function handleNew(): void {
-    if (currentRoom.geometry.boundary.walls.length > 0 || currentRoom.lights.length > 0) {
+    if (
+      currentRoom.geometry.boundary.walls.length > 0 ||
+      $committedLightingData.fixtures.length > 0
+    ) {
       if (!confirm('Start a new project? Unsaved changes will be lost.')) {
         return;
       }
@@ -119,7 +129,7 @@
   }
 
   function handleSave(): void {
-    saveNow(currentRoom);
+    saveNow($saveInput);
     saveSuccess = true;
     setTimeout(() => {
       saveSuccess = false;
@@ -127,11 +137,11 @@
   }
 
   function handleExport(): void {
-    exportToJSON(currentRoom);
+    exportToJSON($saveInput);
   }
 
   async function handleShare(): Promise<void> {
-    const result = generateShareUrl(currentRoom);
+    const result = generateShareUrl($saveInput, LIGHTING_MODULE_ID);
     await navigator.clipboard.writeText(result.url);
     shareSuccess = true;
     setTimeout(() => {
@@ -152,8 +162,9 @@
     if (!file) return;
 
     try {
-      const imported = await importFromJSON(file);
-      openDocument(imported);
+      const loaded = await importFromJSON(file);
+      openLoaded(loaded);
+      adoptIncomingDefinitions(loaded.document);
       clearSelection();
     } catch (err) {
       alert(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { navigate } from '../stores/routerStore';
-  import { roomStore } from '../stores/roomStore';
+  import { saveInput } from '../stores/sessionStore';
   import { generateShareUrl } from '../persistence/shareUrl';
+  import { LIGHTING_MODULE_ID } from '../modules/lighting/codec';
   import type { ViewMode } from '../types';
 
   export let viewMode: ViewMode = 'editor';
@@ -39,7 +40,7 @@
   }
 
   async function handleShare(): Promise<void> {
-    const result = generateShareUrl($roomStore);
+    const result = generateShareUrl($saveInput, LIGHTING_MODULE_ID);
     await navigator.clipboard.writeText(result.url);
     shareCopied = true;
     setTimeout(() => {

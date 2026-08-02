@@ -120,7 +120,19 @@ export interface LoadedDocument {
   diagnostics: Diagnostics;
 }
 
-/** Wrap a bare document as a load result. Phase 3b replaces every call with a real decode. */
+/**
+ * What every save path needs: the committed document plus the carried quarantine state.
+ *
+ * `encodeDocument` takes `carried` as a required positional parameter, so threading the two
+ * together is what makes "forgot the quarantined blobs" a compile error rather than silent
+ * data loss on the next save.
+ */
+export interface SaveInput {
+  document: EditorDocument;
+  carried: CarriedState;
+}
+
+/** Wrap a bare document as a load result — a new project, not a decoded one. */
 export function asLoadedDocument(document: EditorDocument): LoadedDocument {
   return {
     document,

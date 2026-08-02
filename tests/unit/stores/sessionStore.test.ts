@@ -15,6 +15,7 @@ import {
 } from '../../../src/stores/sessionStore';
 import { asLoadedDocument } from '../../../src/types/session';
 import { squareRoom, makeLight } from '../../helpers/documents';
+import { addFixture } from '../../../src/modules/lighting/commands';
 
 /** Counts emissions after the initial one every Svelte store delivers on subscribe. */
 function countEmissions<T>(store: Readable<T>, run: () => void): number {
@@ -122,7 +123,7 @@ describe('sessionStore', () => {
 
     it('a document edit does not wake selection, history labels aside', () => {
       const emissions = countEmissions(selection, () => {
-        sessionStore.dispatch({ type: 'light.add', light: makeLight('l1', { x: 1, y: 1 }) });
+        sessionStore.dispatch(addFixture.make({ fixture: makeLight('l1', { x: 1, y: 1 }) }));
       });
       expect(emissions).toBe(0);
     });

@@ -4,7 +4,7 @@
     setRafterOrientation,
     setRafterSpacing,
     updateRafterConfig,
-  } from '../stores/settingsStore';
+  } from '../stores/lightingStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { RafterConfig } from '../types';
 

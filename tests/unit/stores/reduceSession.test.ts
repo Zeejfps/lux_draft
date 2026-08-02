@@ -14,7 +14,8 @@ import {
   undoLabel,
 } from '../../../src/types/session';
 import { reduceSession, MAX_HISTORY, type SessionAction } from '../../../src/stores/reduceSession';
-import { makeDocument, makeLight, rectWalls, squareRoom } from '../../helpers/documents';
+import { lightsOf, makeDocument, makeLight, rectWalls, squareRoom } from '../../helpers/documents';
+import { addFixture, moveFixture } from '../../../src/modules/lighting/commands';
 
 const setCeiling = (height: number): EditorCommand => ({ type: 'space.setCeilingHeight', height });
 const moveWall = (y: number): EditorCommand => ({
@@ -188,20 +189,20 @@ describe('reduceSession', () => {
       // resolve against the wrong entity, so it must be dropped in the same emission.
       const added = reduceSession(
         sessionWith(squareRoom()),
-        dispatch({ type: 'light.add', light: makeLight('light-1', { x: 5, y: 5 }) })
+        dispatch(addFixture.make({ fixture: makeLight('light-1', { x: 5, y: 5 }) }))
       );
       const dragging = reduceSession(added, {
         type: 'interaction.set',
         interaction: {
           kind: 'commandPreview',
-          command: { type: 'light.move', lightId: 'light-1', position: { x: 7, y: 7 } },
+          command: moveFixture.make({ fixtureId: 'light-1', position: { x: 7, y: 7 } }),
         },
       });
 
       const undone = reduceSession(dragging, UNDO);
 
       expect(undone.interaction).toEqual({ kind: 'idle' });
-      expect(undone.document.lights).toHaveLength(0);
+      expect(lightsOf(undone.document)).toHaveLength(0);
     });
   });
 

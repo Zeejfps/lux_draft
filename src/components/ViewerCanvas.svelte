@@ -6,9 +6,10 @@
   import { HeatmapRenderer } from '../rendering/HeatmapRenderer';
   import { ShadowRenderer } from '../rendering/ShadowRenderer';
   import { roomBounds, roomStore } from '../stores/roomStore';
+  import { fixtures } from '../stores/lightingStore';
   import { shouldFitCamera } from '../stores/appStore';
   import { selectedViewerLight } from '../stores/viewerStore';
-  import type { BoundingBox, EditorDocument, ViewMode, LightFixture } from '../types';
+  import type { BoundingBox, EditorDocument, ViewMode } from '../types';
   import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, PINCH_ZOOM_SENSITIVITY } from '../constants/editor';
 
   export let viewMode: ViewMode = 'editor';
@@ -57,11 +58,7 @@
       null,
       currentRoomState.geometry.doors
     );
-    editorRenderer.updateLights(
-      currentRoomState.lights,
-      currentRoomState.space.ceilingHeight,
-      selectedLightIds
-    );
+    editorRenderer.updateLights($fixtures, currentRoomState.space.ceilingHeight, selectedLightIds);
     editorRenderer.updateDoors(
       currentRoomState.geometry.doors,
       currentRoomState.geometry.boundary.walls,
@@ -74,12 +71,12 @@
     heatmapRenderer.updateBounds(currentBounds);
     heatmapRenderer.updateWalls(currentRoomState.geometry.boundary.walls);
     heatmapRenderer.updateObstacles(currentRoomState.geometry.obstacles);
-    heatmapRenderer.updateLights(currentRoomState.lights, currentRoomState.space.ceilingHeight);
+    heatmapRenderer.updateLights($fixtures, currentRoomState.space.ceilingHeight);
   }
 
   $: if (shadowRenderer && currentRoomState && currentBounds) {
     shadowRenderer.updateShadows(
-      currentRoomState.lights,
+      $fixtures,
       currentRoomState.geometry.boundary.walls,
       currentBounds,
       currentRoomState.geometry.doors,
@@ -203,7 +200,7 @@
       const lightId = intersect.object.userData.lightId;
       if (lightId) {
         // Find the light in the room state
-        const light = $roomStore.lights.find((l) => l.id === lightId);
+        const light = $fixtures.find((l) => l.id === lightId);
         if (light) {
           selectedViewerLight.set(light);
           return;

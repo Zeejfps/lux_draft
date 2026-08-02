@@ -2,11 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import { activeTool, setActiveTool } from '../stores/appStore';
   import { canPlaceLights } from '../stores/roomStore';
-  import {
-    lightDefinitions,
-    selectedDefinitionId,
-    setSelectedDefinition,
-  } from '../stores/lightDefinitionsStore';
+  import { selectedDefinitionId, setSelectedDefinition } from '../stores/lightDefinitionsStore';
+  import { pickerDefinitions } from '../stores/lightingStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { LightDefinition } from '../types';
 
@@ -17,7 +14,7 @@
   let currentTool: string;
   let canPlace: boolean;
 
-  $: definitions = $lightDefinitions;
+  $: definitions = $pickerDefinitions;
   $: currentDefinitionId = $selectedDefinitionId;
   $: currentTool = $activeTool;
   $: canPlace = $canPlaceLights;

@@ -39,7 +39,9 @@
   import LightingStatsPanel from './components/LightingStatsPanel.svelte';
   import LightDefinitionManager from './components/LightDefinitionManager.svelte';
   import ViewerPage from './components/ViewerPage.svelte';
-  import { committedDocument, openDocument } from './stores/roomStore';
+  import { openLoaded } from './stores/roomStore';
+  import { saveInput } from './stores/sessionStore';
+  import { adoptIncomingDefinitions } from './stores/lightingStore';
   import { activeTool, setActiveTool, requestCameraFit } from './stores/appStore';
   import { selection } from './stores/selectionStore';
   import { panelsForSelection } from './components/panelRegistry';
@@ -143,15 +145,17 @@
   onMount(() => {
     // Only initialize editor features when on the editor route
     if (get(currentRoute) === 'editor') {
-      const savedDocument = loadFromLocalStorage();
-      if (savedDocument) {
-        openDocument(savedDocument);
-        // Rafter and display preferences are read straight off the document now.
+      // Every load path ends in one `open` with a real decode result (invariant 9), then the
+      // explicit definition-adoption step that replaced decode's old global side effect.
+      const loaded = loadFromLocalStorage();
+      if (loaded) {
+        openLoaded(loaded);
+        adoptIncomingDefinitions(loaded.document);
         // Fit camera to the loaded project
         requestCameraFit();
       }
 
-      cleanupAutoSave = setupAutoSave(committedDocument);
+      cleanupAutoSave = setupAutoSave(saveInput);
       window.addEventListener('keydown', handleGlobalKeydown);
     }
   });

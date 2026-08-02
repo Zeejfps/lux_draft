@@ -1,17 +1,3 @@
-import type { WallSegment, Door, Obstacle } from './geometry';
-import type { LightFixture } from './lighting';
-
-export interface RoomState {
-  ceilingHeight: number;
-  walls: WallSegment[];
-  lights: LightFixture[];
-  doors: Door[];
-  obstacles: Obstacle[];
-  isClosed: boolean;
-  rafterConfig?: RafterConfig;
-  displayPreferences?: DisplayPreferences;
-}
-
 export type AppMode = 'drafting' | 'viewing';
 export type ViewMode = 'editor' | 'shadow' | 'heatmap';
 export type Tool = 'select' | 'draw' | 'light' | 'door' | 'obstacle';
@@ -52,15 +38,6 @@ export interface PropertiesPanelConfig {
   visible: boolean;
   position: { x: number; y: number };
 }
-
-export const DEFAULT_ROOM_STATE: RoomState = {
-  ceilingHeight: 8.0,
-  walls: [],
-  lights: [],
-  doors: [],
-  obstacles: [],
-  isClosed: false,
-};
 
 export const DEFAULT_RAFTER_CONFIG: RafterConfig = {
   orientation: 'horizontal',

@@ -1,13 +1,10 @@
 import type { Readable } from 'svelte/store';
-import type { RafterConfig, DisplayPreferences, LightRadiusVisibility } from '../types';
+import type { DisplayPreferences, LightRadiusVisibility } from '../types';
 import type { EditorDocument } from '../types/document';
-import {
-  DEFAULT_RAFTER_CONFIG,
-  DEFAULT_DISPLAY_PREFERENCES,
-  migrateLightRadiusVisibility,
-} from '../types';
+import { DEFAULT_DISPLAY_PREFERENCES, migrateLightRadiusVisibility } from '../types';
 import { valueEqual } from '../commands';
 import { sessionStore, committedDocument } from './sessionStore';
+import { documentSlice } from './documentSlice';
 
 /**
  * Rafter and display preferences are **document data**, not store data.
@@ -17,66 +14,33 @@ import { sessionStore, committedDocument } from './sessionStore';
  * source of truth, and the flag was the tell. They are now read-only projections of the
  * committed document, and every setter is one command like any other edit.
  *
- * (Phase 3b moves `rafterConfig` into `modules.lighting`; only the selectors below and the
- * `lighting.setRafterConfig` handler have to follow it.)
+ * Phase 3b moved `rafterConfig` out of here and into `modules.lighting`; it lives in
+ * `lightingStore.ts` with the rest of the lighting module's settings. What is left is
+ * genuinely core: display preferences are a document field no module owns.
  */
-function projection<T>(select: (doc: EditorDocument) => T): Readable<T> {
-  return {
-    subscribe(run, invalidate) {
-      let last: T;
-      let started = false;
-      return committedDocument.subscribe((doc) => {
-        const next = select(doc);
-        // Defaults are merged on read, so the selector allocates; without this guard every
-        // geometry edit would look like a settings change to every panel and renderer.
-        if (started && valueEqual(next, last)) return;
-        started = true;
-        last = next;
-        run(next);
-      }, invalidate);
-    },
-  };
-}
 
 /** Merged with defaults on read, so a document written by an older build is not a special case. */
-function readRafterConfig(doc: EditorDocument): RafterConfig {
-  return { ...DEFAULT_RAFTER_CONFIG, ...doc.rafterConfig };
-}
-
 function readDisplayPreferences(doc: EditorDocument): DisplayPreferences {
   const merged = { ...DEFAULT_DISPLAY_PREFERENCES, ...doc.displayPreferences };
   merged.lightRadiusVisibility = migrateLightRadiusVisibility(merged.lightRadiusVisibility);
   return merged;
 }
 
-export const rafterConfig: Readable<RafterConfig> = projection(readRafterConfig);
-
-export const displayPreferences: Readable<DisplayPreferences> = projection(readDisplayPreferences);
+// Defaults are merged on read, so the selector allocates; `valueEqual` rather than reference
+// equality is what keeps a geometry edit from looking like a settings change to every panel.
+export const displayPreferences: Readable<DisplayPreferences> = documentSlice(
+  committedDocument,
+  readDisplayPreferences,
+  valueEqual
+);
 
 // ============================================
 // Setters — one command each
 // ============================================
 
-export function updateRafterConfig(changes: Partial<RafterConfig>): void {
-  const config = { ...readRafterConfig(sessionStore.current().document), ...changes };
-  sessionStore.dispatch({ type: 'lighting.setRafterConfig', config });
-}
-
 export function updateDisplayPreferences(changes: Partial<DisplayPreferences>): void {
   const preferences = { ...readDisplayPreferences(sessionStore.current().document), ...changes };
   sessionStore.dispatch({ type: 'document.setDisplayPreferences', preferences });
-}
-
-export function toggleRafters(): void {
-  updateRafterConfig({ visible: !readRafterConfig(sessionStore.current().document).visible });
-}
-
-export function setRafterOrientation(orientation: 'horizontal' | 'vertical'): void {
-  updateRafterConfig({ orientation });
-}
-
-export function setRafterSpacing(spacing: number): void {
-  updateRafterConfig({ spacing });
 }
 
 export function toggleUnitFormat(): void {

@@ -1,20 +1,22 @@
 <script lang="ts">
-  import { roomStore, dispatch, removeLights } from '../stores/roomStore';
   import { selection, clearSelection } from '../stores/selectionStore';
   import { getSelectedFixtureIds } from '../lighting/selection';
-  import { lightDefinitions, getDefinitionById } from '../stores/lightDefinitionsStore';
+  import {
+    applyDefinitionToFixtures,
+    lightingData,
+    pickerDefinitions,
+    removeLights,
+  } from '../stores/lightingStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { LightFixture, EditorDocument, EditorCommand, LightDefinition } from '../types';
+  import type { LightFixture, LightDefinition } from '../types';
 
-  let currentRoom: EditorDocument;
   let currentSelectedLightIds: Set<string> = new Set();
   let selectedLights: LightFixture[] = [];
   let definitions: LightDefinition[] = [];
 
-  $: currentRoom = $roomStore;
   $: currentSelectedLightIds = new Set(getSelectedFixtureIds($selection));
-  $: definitions = $lightDefinitions;
-  $: selectedLights = currentRoom.lights.filter((l) => currentSelectedLightIds.has(l.id));
+  $: definitions = $pickerDefinitions;
+  $: selectedLights = $lightingData.fixtures.filter((l) => currentSelectedLightIds.has(l.id));
   $: visible = selectedLights.length > 0;
 
   // Check if all selected lights share the same definition
@@ -27,28 +29,14 @@
 
   function updateLightDefinition(e: Event): void {
     const newDefinitionId = (e.target as HTMLSelectElement).value;
-    const definition = getDefinitionById(newDefinitionId);
+    const definition = definitions.find((d) => d.id === newDefinitionId);
     if (!definition) return;
 
-    const commands: EditorCommand[] = [];
-    for (const light of currentRoom.lights) {
-      if (!currentSelectedLightIds.has(light.id)) continue;
-      commands.push({
-        type: 'light.set',
-        lightId: light.id,
-        changes: {
-          definitionId: newDefinitionId,
-          properties: {
-            lumen: definition.lumen,
-            beamAngle: definition.beamAngle,
-            warmth: definition.warmth,
-          },
-        },
-      });
-    }
-    if (commands.length === 0) return;
-    dispatch(
-      commands.length === 1 ? commands[0] : { type: 'compound', label: 'Change lights', commands }
+    // One command: the fixtures change *and* a custom definition is adopted into the
+    // document's closure, so the document stays self-contained for export and share.
+    applyDefinitionToFixtures(
+      selectedLights.map((l) => l.id),
+      definition
     );
   }
 
@@ -95,7 +83,7 @@
         </select>
       </label>
       {#if commonDefinitionId}
-        {@const def = getDefinitionById(commonDefinitionId)}
+        {@const def = definitions.find((d) => d.id === commonDefinitionId)}
         {#if def}
           <div class="panel-info-box">
             <div class="panel-info-row">

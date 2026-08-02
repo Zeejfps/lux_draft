@@ -9,6 +9,7 @@ import type {
   History,
   LoadedDocument,
   ModuleRuntimeStatus,
+  SaveInput,
   Session,
 } from '../types/session';
 import { createEmptySession } from '../types/session';
@@ -169,3 +170,27 @@ export const history: Readable<History> = slice((s) => s.history);
 export const diagnostics: Readable<Diagnostics> = slice((s) => s.diagnostics);
 
 export const carried: Readable<CarriedState> = slice((s) => s.carried);
+
+// `saveInput` allocates its pair, so it is memoized on its two parts: autosave, export and
+// share all subscribe to it and must not see a new object on every selection change.
+let savedFrom: { document: EditorDocument; carried: CarriedState } | null = null;
+let saved: SaveInput | null = null;
+
+function saveInputOf(session: Session): SaveInput {
+  if (
+    saved === null ||
+    savedFrom === null ||
+    savedFrom.document !== session.document ||
+    savedFrom.carried !== session.carried
+  ) {
+    savedFrom = { document: session.document, carried: session.carried };
+    saved = { document: session.document, carried: session.carried };
+  }
+  return saved;
+}
+
+/**
+ * What autosave, export and share read: the **committed** document paired with the carried
+ * quarantine state `encodeDocument` requires. Never includes a preview.
+ */
+export const saveInput: Readable<SaveInput> = slice(saveInputOf);

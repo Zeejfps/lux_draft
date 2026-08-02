@@ -1,5 +1,7 @@
 import type { CommandHandler, ModuleCommandEnvelope } from './command';
+import type { ModuleSlices } from './document';
 import type { ModuleCodec, RegisteredCommand } from './module';
+import { buildModuleSlices } from './module';
 
 /**
  * The installed-module table. Core owns it and names no module; `src/modules/codecs.ts` — the
@@ -74,6 +76,22 @@ export function registeredCodecs(): readonly ModuleCodec<unknown>[] {
 
 export function codecFor(moduleId: string): ModuleCodec<unknown> | undefined {
   return definitions.get(moduleId)?.codec;
+}
+
+/**
+ * A freshly allocated default slice for every installed module — the same normalization
+ * `decodeDocument` performs on load, for the documents nothing decoded (a new project, a
+ * hand-built test fixture).
+ *
+ * An absent slice is how a *quarantined* module is represented, so a document that simply has
+ * no data yet must still carry a materialized default or its commands would silently no-op.
+ */
+export function defaultModuleSlices(): ModuleSlices {
+  const slices: Record<string, unknown> = {};
+  for (const [id, definition] of definitions) {
+    slices[id] = definition.codec.defaultData();
+  }
+  return buildModuleSlices(slices);
 }
 
 export function registeredModuleCommands(): readonly RegisteredCommand[] {

@@ -2,6 +2,7 @@ import { writable, derived, type Readable } from 'svelte/store';
 import type { LightingStatsConfig, LightingMetrics, RoomType } from '../types';
 import { DEFAULT_LIGHTING_STATS_CONFIG } from '../types';
 import { roomStore, roomBounds } from './roomStore';
+import { fixtures } from './lightingStore';
 import { LightingStatsCalculator } from '../lighting/LightingStatsCalculator';
 
 export const lightingStatsConfig = writable<LightingStatsConfig>({
@@ -37,9 +38,9 @@ function debounce<T>(store: Readable<T>, delay: number): Readable<T> {
 
 // Combined store for inputs that affect metrics
 const metricsInputs = derived(
-  [roomStore, roomBounds, lightingStatsConfig],
-  ([$room, $bounds, $config]) => ({
-    lights: $room.lights,
+  [roomStore, fixtures, roomBounds, lightingStatsConfig],
+  ([$room, $fixtures, $bounds, $config]) => ({
+    lights: $fixtures,
     walls: $room.geometry.boundary.walls,
     obstacles: $room.geometry.obstacles,
     ceilingHeight: $room.space.ceilingHeight,

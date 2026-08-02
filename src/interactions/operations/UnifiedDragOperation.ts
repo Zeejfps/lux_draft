@@ -2,6 +2,7 @@ import type { Vector2, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import { getSelectedVertexIndices, type Selection } from '../../types/selection';
 import { getSelectedFixtureIds } from '../../lighting/selection';
+import { moveFixture } from '../../modules/lighting/commands';
 import type { DragOperationCallbacks } from '../DragManager';
 import type { BaseDragConfig } from '../types';
 import { BaseDragOperation } from '../DragOperation';
@@ -168,7 +169,7 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
       // Only move if inside room (when room is closed)
       if (!isClosed || checkPointInRoom(position, walls)) {
-        commands.push({ type: 'light.move', lightId, position });
+        commands.push(moveFixture.make({ fixtureId: lightId, position }));
       }
     }
 

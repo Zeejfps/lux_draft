@@ -5,8 +5,9 @@ import {
   committedDocument,
   dispatch,
   openDocument,
-  addLight,
 } from '../../../src/stores/roomStore';
+import { addLight } from '../../../src/stores/lightingStore';
+import { moveFixture } from '../../../src/modules/lighting/commands';
 import { sessionStore, history } from '../../../src/stores/sessionStore';
 import {
   canUndo as historyCanUndo,
@@ -14,7 +15,7 @@ import {
   undoLabel,
   redoLabel,
 } from '../../../src/types/session';
-import { makeDocument, makeLight, rectWalls } from '../../helpers/documents';
+import { lightsOf, makeDocument, makeLight, rectWalls } from '../../helpers/documents';
 
 /** History is a slice of the session now; these read it exactly as the toolbar does. */
 function canUndo(): boolean {
@@ -188,13 +189,13 @@ describe('session history', () => {
 
     it('handles undo/redo of light changes', () => {
       addLight(makeLight('light-1', { x: 5, y: 5 }));
-      expect(get(roomStore).lights.length).toBe(1);
+      expect(lightsOf(get(roomStore)).length).toBe(1);
 
       sessionStore.undo();
-      expect(get(roomStore).lights.length).toBe(0);
+      expect(lightsOf(get(roomStore)).length).toBe(0);
 
       sessionStore.redo();
-      expect(get(roomStore).lights.length).toBe(1);
+      expect(lightsOf(get(roomStore)).length).toBe(1);
     });
 
     it('records one entry for a compound command', () => {
@@ -237,12 +238,12 @@ describe('session history', () => {
       addLight(light);
 
       const before = get(committedDocument);
-      dispatch({ type: 'light.move', lightId: 'light-1', position: { x: 5, y: 5 } });
+      dispatch(moveFixture.make({ fixtureId: 'light-1', position: { x: 5, y: 5 } }));
 
       expect(get(committedDocument)).toBe(before);
 
       sessionStore.undo();
-      expect(get(roomStore).lights.length).toBe(0);
+      expect(lightsOf(get(roomStore)).length).toBe(0);
       expect(canUndo()).toBe(false);
     });
   });
@@ -362,14 +363,14 @@ describe('session history', () => {
     it('handles nested object changes', () => {
       addLight(makeLight('light-1', { x: 5, y: 5 }));
 
-      dispatch({ type: 'light.move', lightId: 'light-1', position: { x: 10, y: 5 } });
-      expect(get(roomStore).lights[0].position.x).toBe(10);
+      dispatch(moveFixture.make({ fixtureId: 'light-1', position: { x: 10, y: 5 } }));
+      expect(lightsOf(get(roomStore))[0].position.x).toBe(10);
 
       sessionStore.undo();
-      expect(get(roomStore).lights[0].position.x).toBe(5);
+      expect(lightsOf(get(roomStore))[0].position.x).toBe(5);
 
       sessionStore.undo();
-      expect(get(roomStore).lights.length).toBe(0);
+      expect(lightsOf(get(roomStore)).length).toBe(0);
     });
   });
 

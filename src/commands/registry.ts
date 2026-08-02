@@ -16,13 +16,6 @@ import {
   spaceSetCeilingHeightHandler,
   documentSetDisplayPreferencesHandler,
 } from './spaceCommands';
-import {
-  lightAddHandler,
-  lightMoveHandler,
-  lightSetHandler,
-  lightRemoveHandler,
-  lightingSetRafterConfigHandler,
-} from './lightCommands';
 
 type HandlerMap = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,11 +51,6 @@ const handlers: HandlerMap = {
   'obstacle.remove': obstacleRemoveHandler,
   'space.setCeilingHeight': spaceSetCeilingHeightHandler,
   'document.setDisplayPreferences': documentSetDisplayPreferencesHandler,
-  'light.add': lightAddHandler,
-  'light.move': lightMoveHandler,
-  'light.set': lightSetHandler,
-  'light.remove': lightRemoveHandler,
-  'lighting.setRafterConfig': lightingSetRafterConfigHandler,
   compound: compoundHandler,
 };
 

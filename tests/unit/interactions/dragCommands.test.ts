@@ -19,7 +19,15 @@ import { ObstacleDragOperation } from '../../../src/interactions/operations/Obst
 import { ObstacleVertexDragOperation } from '../../../src/interactions/operations/ObstacleVertexDragOperation';
 import { GrabModeDragOperation } from '../../../src/interactions/operations/GrabModeDragOperation';
 import { applyCommand } from '../../../src/commands';
-import { makeDoor, makeLight, makeObstacle, rectWalls, squareRoom } from '../../helpers/documents';
+import {
+  lightsOf,
+  makeDoor,
+  makeLight,
+  makeObstacle,
+  rectWalls,
+  squareRoom,
+} from '../../helpers/documents';
+import { moveFixture } from '../../../src/modules/lighting/commands';
 
 /**
  * Per drag kind: a `(pointer sequence) => command` table.
@@ -56,7 +64,7 @@ const roomConfig = () => ({
   getVertices: () => doc.geometry.boundary.walls.map((w) => ({ ...w.start })),
   getWalls: () => doc.geometry.boundary.walls,
   getWallById: (id: string) => doc.geometry.boundary.walls.find((w) => w.id === id),
-  getLights: () => doc.lights,
+  getLights: () => lightsOf(doc),
   getDoors: () => doc.geometry.doors,
   getDoorById: (id: string) => doc.geometry.doors.find((d) => d.id === id),
   getDoorsByWallId: (wallId: string) => doc.geometry.doors.filter((d) => d.wallId === wallId),
@@ -222,7 +230,7 @@ describe('UnifiedDragOperation', () => {
       commands: [
         { type: 'vertex.move', index: 0, position: { x: 1, y: 1 } },
         { type: 'vertex.move', index: 1, position: { x: 11, y: 1 } },
-        { type: 'light.move', lightId: 'light-1', position: { x: 6, y: 6 } },
+        moveFixture.make({ fixtureId: 'light-1', position: { x: 6, y: 6 } }),
       ],
     });
   });
@@ -415,7 +423,7 @@ describe('GrabModeDragOperation', () => {
       label: 'Move selection',
       commands: [
         { type: 'vertex.move', index: 0, position: { x: 1, y: 1 } },
-        { type: 'light.move', lightId: 'light-1', position: { x: 6, y: 6 } },
+        moveFixture.make({ fixtureId: 'light-1', position: { x: 6, y: 6 } }),
       ],
     });
   });
