@@ -5,7 +5,7 @@ domain (LVP flooring layout) can be built on top of it without forking or duplic
 
 **Status:** proposed, not started.
 **Created:** 2026-08-02
-**Revised:** 2026-08-02 — rev 2, after design review. See §10 for what changed.
+**Revised:** 2026-08-02 — rev 3, after two design reviews. See §10 for what changed.
 
 ---
 
@@ -86,7 +86,8 @@ src/
     geometry/         # SnapEngine, PolygonValidator, WallBuilder, DimensionLabel
     interactions/     # DragManager, InteractionManager, generic handlers + drag ops
     rendering/        # Wall, Door, Obstacle, DrawingPreview, Overlay, Measurement
-    stores/           # roomStore, historyStore, settingsStore, selectionStore, themeStore
+    stores/           # roomStore, historyStore, settingsStore, selectionStore, themeStore,
+                      #   quarantineStore (session-scoped, outside history)
     persistence/      # documentCodec, localStorage, json, shareUrl (module-agnostic)
     types/            # geometry, state, interaction, selection
     ui/               # FloatingPanel, LengthInput, StatusBar, PropertyPanel primitives
@@ -231,6 +232,7 @@ both read `state.lights` directly to find used light definitions, and `DEFAULT_R
 Target:
 
 ```ts
+/** The editable document. Everything here is undoable, autosaved, and diffed. */
 export interface RoomState {
   ceilingHeight: number;
   walls: WallSegment[];
@@ -241,18 +243,35 @@ export interface RoomState {
 
   /** Decoded, live module slices, keyed by module id. */
   modules: Record<string, unknown>;
+}
 
-  /**
-   * Blobs that could not be decoded (unknown module id, future schema, or corrupt).
-   * Never read, never mutated, written back verbatim on save. Not part of history.
-   */
-  readonly quarantined: Readonly<Record<string, ModuleBlob>>;
+/** What a load produces. Only `room` is editable state. */
+export interface LoadedDocument {
+  room: RoomState;
+  /** Blobs that could not be decoded. Never read, never mutated, written back on save. */
+  quarantined: Readonly<Record<string, ModuleBlob>>;
+  warnings: DocumentWarning[];
+  disabledModules: string[];
 }
 ```
 
-`quarantined` is what makes round-tripping actually work. Without a separate field, a preserved-but-
-undecodable blob would sit in `modules` where module code and history would both treat it as live
-state, and the first save from a build that lacks that module would silently drop or corrupt it.
+**Quarantine lives outside `RoomState`, not inside it.** An earlier draft put it on the document
+with a `readonly` marker and a comment saying it was excluded from history — that was wrong.
+`readonly` is erased at compile time; `historyStore` `structuredClone`s and `JSON.stringify`s the
+whole object, so the field would have been cloned into all 50 snapshots and would have made every
+undo comparison sensitive to data the user cannot edit.
+
+The boundary is now structural: `RoomState` is _editable state only_, and anything that is carried
+but not edited lives in the wrapper. Quarantined blobs go in a session-scoped `quarantineStore` that
+history never sees, set on load and read on save.
+
+`encodeDocument` takes quarantine as an explicit parameter rather than reaching for the store, so
+the type system forces every save path to account for it and the function stays testable in
+isolation (§6.1).
+
+Without this separation, a preserved-but-undecodable blob would sit in `modules` where module code
+and history would both treat it as live state, and the first save from a build lacking that module
+would silently drop it.
 
 `rafterConfig` moves into the lighting slice — a ceiling-joist concept with no meaning for flooring.
 `ceilingHeight` stays on the core document (it is a room property), but note it is only _consumed_
@@ -286,17 +305,31 @@ export const selection = writable<Selection>({ kind: 'none' });
 ```
 
 Core variants keep their natural types — `vertex` carries real `number[]`, never stringified
-indices. Modules declare their own payload types and narrow through a helper, so a module's own code
-is fully typed even though the core sees `unknown`:
+indices. Modules declare their own payload types and narrow through a **validating** guard:
 
 ```ts
 // modules/lighting/selection.ts
-export type LightingSelection = { type: 'fixture'; ids: string[] };
+export type FixtureSelection = { ids: string[] };
 
-export function asLighting(s: Selection): LightingSelection | null {
-  return s.kind === 'module' && s.moduleId === 'lighting' ? (s.payload as LightingSelection) : null;
+export function asFixtureSelection(s: Selection): FixtureSelection | null {
+  if (s.kind !== 'module' || s.moduleId !== 'lighting' || s.type !== 'fixture') return null;
+  const p = s.payload;
+  if (!p || typeof p !== 'object') return null;
+  const { ids } = p as Record<string, unknown>;
+  if (!Array.isArray(ids) || !ids.every((i) => typeof i === 'string')) return null;
+  return { ids };
 }
 ```
+
+The guard checks `type` and validates the payload shape rather than asserting it. A bare
+`s.payload as LightingSelection` would accept any payload from any `type` — and the resulting
+`undefined.ids` would surface as a render crash far from the miswrite.
+
+To be precise about what this buys: selection is transient in-memory state, never persisted and
+never parsed from untrusted input, so this is not a security boundary. The failure it actually
+catches is a module-id or `type` string drifting during a refactor — exactly the class of bug a
+stringly-typed extension point invites. Cheap guard, correct failure mode (`null`, handled by the
+caller, instead of a crash).
 
 Panel dispatch key: `s.kind === 'module' ? \`${s.moduleId}.${s.type}\` : s.kind`.
 
@@ -338,25 +371,63 @@ All three converge on one module:
 
 ```ts
 // src/floorplan/persistence/documentCodec.ts
-export function decodeDocument(raw: unknown): DecodedDocument;
-export function encodeDocument(doc: RoomState, target: 'file' | 'local' | 'share'): unknown;
+export function decodeDocument(raw: unknown): LoadedDocument;
 
-export interface DecodedDocument {
-  doc: RoomState;
-  /** Non-fatal problems to surface in the UI. */
-  warnings: DocumentWarning[];
-  /** Modules present in the file that could not be activated. */
-  disabledModules: string[];
-}
+export function encodeDocument(
+  room: RoomState,
+  quarantined: Readonly<Record<string, ModuleBlob>>,
+  target: EncodeTarget
+): unknown;
+
+export type EncodeTarget =
+  | { kind: 'file' }
+  | { kind: 'local' }
+  /** Single-module view; see §6.5. */
+  | { kind: 'share'; moduleId: string };
 ```
 
 `decodeDocument` stays **synchronous** — it only touches eagerly-imported codecs (§4.1). Nothing in
 the load path awaits a dynamic import, so `importFromString()` and `decodeShareData()` keep their
 current signatures and no caller changes.
 
-`encodeDocument` merges `quarantined` blobs back in verbatim and must be the only writer of the
-envelope. `jsonExport.createExportData` is folded into it — today it independently reads
-`state.lights` and owns its own version constant.
+`encodeDocument` must be the only writer of the envelope. `jsonExport.createExportData` is folded
+into it — today it independently reads `state.lights` and owns its own version constant. Taking
+`quarantined` as a required positional parameter (rather than reading a store) means a save path
+that forgets it fails to compile.
+
+**Merge precedence — `quarantined` vs. live `modules`:**
+
+| Rule                                     | Behavior                                                                                            |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `target: 'file'` / `'local'`             | Live slices encoded at `codec.schemaVersion`; quarantined blobs merged back verbatim.               |
+| `target: 'share'`                        | **Quarantined blobs are omitted entirely**, along with all non-target live slices.                  |
+| Same id in both maps                     | **Live wins.** Also a bug — assert in dev builds; `decodeDocument` puts each id in exactly one map. |
+| Target module is disabled or quarantined | **Not shareable.** The share UI blocks it; `encodeDocument` throws if asked.                        |
+
+That last rule matters: a quarantined blob is by definition one this build could not decode, so it
+cannot be compacted, validated, or meaningfully rendered by a viewer. Emitting a share link for it
+would produce a URL that fails on open.
+
+### 6.1a Reading and writing module slices
+
+Absent slices resolve to `defaultData()` at read time (§6.4c), which raises the question of when a
+default becomes real. Two helpers, and module code uses nothing else:
+
+```ts
+/** Never writes. Returns the live slice, or the codec default if absent. */
+export function readModuleData<T>(room: RoomState, moduleId: string): T;
+
+/**
+ * Materializes the default if absent, applies the update, and commits once —
+ * exactly one store emission, therefore exactly one history entry.
+ */
+export function updateModuleData<T>(moduleId: string, update: (prev: T) => T, label: string): void;
+```
+
+Without a central write path, a caller that does `read → mutate → set` on an absent slice either
+mutates a throwaway default object (the edit vanishes) or produces two store emissions — one
+materializing the default and one applying the edit — which lands as two history entries where the
+user performed one action. The `label` feeds the undo description from §6.4(b).
 
 ### 6.2 Failure policy
 
@@ -414,6 +485,10 @@ be undone. Revisit only if cross-mode undo confusion shows up in real use.
 `defaultData()` **at read time**; activation never writes. Without this, switching to flooring for
 the first time would push a history entry, dirty the autosave, and make an empty mode visit look like
 an edit. Same rule for the module's own lazy initialization.
+
+Materialization happens on the first real edit, through `updateModuleData` (§6.1a), which resolves
+the default and applies the change in a single commit — one store emission, one history entry. All
+module writes go through that helper; `roomStore.update` is not called directly from module code.
 
 **Follow-up, not a blocker:** the `JSON.stringify` equality check runs on every `roomStore` emission
 and is already O(document). It gets worse as slices grow. Replace with a dirty-flag or structural
@@ -474,7 +549,11 @@ Phases 2 and 3 divide cleanly: **phase 2 is the data plane, phase 3 is the UI pl
 - Enforce §6.4(c): absent slices resolve to `defaultData()` at read time.
 - **Test first**, before changing any types: fixtures for envelope v1, v2, a future-version module
   blob, a corrupt module blob, and an unknown module id — asserting the migrated shape, the
-  quarantine behavior, and byte-identical round-trip of quarantined blobs.
+  quarantine behavior, and **value-identical** round-trip of quarantined blobs (deep equality after
+  a decode → encode → decode cycle). Not byte-identical: the blob has already been through
+  `JSON.parse`, so key order, whitespace, string escapes, and numeric spelling are free to change.
+  Preserving the JSON _value_ is the actual requirement and is what a future build needs to decode
+  its own data successfully.
 - **Risk:** share URLs in the wild encode envelope 1 and 2. Those readers are permanent.
 
 ### Phase 3 — runtime manifest + move lighting (4–5 days)
@@ -514,9 +593,9 @@ Phases 2 and 3 divide cleanly: **phase 2 is the data plane, phase 3 is the UI pl
 
 | Risk                                                                 | Mitigation                                                                                     |
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Big-bang refactor stalls mid-way                                     | Six independently shippable phases; phases 1 and 2 have standalone value.                      |
+| Big-bang refactor stalls mid-way                                     | Five implementation phases plus scaffolding, each shippable; phases 1 and 2 stand alone.       |
 | Existing share URLs break                                            | Envelope 1/2 readers are permanent; fixture tests land before the type change.                 |
-| Undecodable module data silently lost on save                        | `quarantined` field + byte-identical round-trip test in phase 2.                               |
+| Undecodable module data silently lost on save                        | Quarantine held outside `RoomState`; value-identical round-trip test in phase 2.               |
 | Codec bundle bloat defeats lazy loading                              | Lint rule bans `three` / `*.svelte` / `runtime.ts` imports from `codec.ts`; bundle check in 4. |
 | `Canvas.svelte` (1052 lines) is a merge-conflict magnet              | Do phases 1–3 on short-lived branches; avoid parallel feature work in that file.               |
 | Module contract is wrong                                             | Phase 3 validates it against lighting (known-good, tested) before flooring exists.             |
@@ -538,7 +617,29 @@ Phases 2 and 3 divide cleanly: **phase 2 is the data plane, phase 3 is the UI pl
 
 ## 10. Revision log
 
-**Rev 2 (2026-08-02)** — design review. Changes:
+**Rev 3 (2026-08-02)** — second design review. Changes:
+
+1. **Quarantine moved out of `RoomState`** into a `LoadedDocument` wrapper and a session-scoped
+   `quarantineStore` (§5A). Rev 2 put it on the document with `readonly` and a comment claiming it
+   was excluded from history — incorrect, since `readonly` is erased at compile time while
+   `historyStore` clones and `JSON.stringify`s the whole object at runtime. `RoomState` now means
+   _editable state only_, which makes the exclusion structural rather than aspirational.
+2. **`encodeDocument` takes `quarantined` as a required parameter** (§6.1) instead of reading a
+   store, so a save path that ignores it fails to compile. Added the merge-precedence table:
+   quarantine omitted from shares, live wins on id collision (with a dev assert), disabled/
+   quarantined modules are not shareable at all.
+3. **Added `readModuleData` / `updateModuleData`** (§6.1a). Rev 2 specified read-time defaults but
+   left materialization undefined; without a central write path, editing an absent slice either
+   mutates a throwaway default or emits twice, landing one user action as two undo steps.
+4. **"Byte-identical" corrected to "value-identical"** (§7 phase 2, §8). After `JSON.parse`, key
+   order, whitespace, escapes, and numeric spelling are not recoverable. Deep equality is the real
+   requirement and is sufficient — a future build needs its _value_ back, not its bytes.
+5. **`asLighting` replaced with a validating guard** (§5B). The rev-2 version cast `payload` without
+   checking `type` or shape. Also dropped the overstated "fully typed" claim and named the failure
+   it actually prevents: id/type drift during refactors, not untrusted input.
+6. **Phase count wording** — "five implementation phases plus scaffolding" (§8).
+
+**Rev 2 (2026-08-02)** — first design review. Changes:
 
 1. **Manifest split into eager `ModuleCodec` + lazy `ModuleRuntime`** (§4). Resolves the conflict
    between lazy module loading and synchronous `importFromString` / `decodeShareData`. Decode is
