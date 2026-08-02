@@ -15,6 +15,7 @@ import {
   polygonArea,
   segmentIntersectionParam,
   segmentNormal,
+  signedArea,
 } from './geometry2d';
 
 /**
@@ -389,7 +390,182 @@ function transitionsOf(
 export function plankRings(solution: RegionSolution): readonly (readonly Vector2[])[] | null {
   if (solution.regions.length === 0) return null;
   if (solution.regions.every((region) => region.surface === DEFAULT_SURFACE)) return null;
-  return solution.regions
-    .filter((region) => region.surface === DEFAULT_SURFACE)
-    .map((region) => region.ring);
+  return mergeRings(
+    solution.regions.filter((region) => region.surface === DEFAULT_SURFACE).map((r) => r.ring)
+  );
+}
+
+/**
+ * The union of a set of faces of one subdivision, as one ring per connected area.
+ *
+ * Faces are handed to the engine **merged**, not one per divider, because the engine takes the
+ * expansion gap out of every ring it is given. A divider with plank on both sides is not a
+ * transition — the module's own definition, see `TransitionSegment` — but two abutting rings each
+ * inset by the gap left a bare stripe two gaps wide down the middle of one continuous floor, and
+ * a row break along it that ripped boards lengthwise for no visible reason. Merging first is what
+ * makes "same surface on both sides" mean nothing at all, which is what it is supposed to mean.
+ *
+ * The union is by **half-edge cancellation**, which is exact here rather than approximate: every
+ * ring is a face of one planar subdivision, so an edge interior to the union appears exactly
+ * twice — once in each direction, on the two faces that share it — and the boundary of the union
+ * is what is left once those pairs are dropped. That is the whole algorithm; there is no
+ * intersection test in it, and so no tolerance to tune beyond deciding when two vertices are the
+ * same vertex.
+ *
+ * Two details earn their keep:
+ *
+ * - **Rings are normalised to CCW** first. Cancellation needs the shared edge to appear in
+ *   opposite directions, which holds for consistently wound faces and fails silently otherwise.
+ * - **Edges are split at every vertex lying on them.** A T-junction leaves one face with a long
+ *   edge and its two neighbours with two short ones; without the split the long edge has no
+ *   partner and survives into the result as a slit.
+ *
+ * Faces of the chord model always touch the room's boundary — a chord splits one face into two,
+ * and each half keeps a piece of its parent's ring — so no union of them can enclose a hole, and
+ * a ring is the whole answer.
+ */
+export function mergeRings(rings: readonly (readonly Vector2[])[]): readonly Vector2[][] {
+  if (rings.length === 0) return [];
+
+  // One canonical `Vector2` per distinct position, so "the same vertex" is `===` on a key from
+  // here on. The quantum is the one `cleanRing` already treats as coincident.
+  const canonical = new Map<string, Vector2>();
+  const keyOf = (p: Vector2): string => {
+    const key = `${Math.round(p.x * 1e6)}:${Math.round(p.y * 1e6)}`;
+    if (!canonical.has(key)) canonical.set(key, p);
+    return key;
+  };
+
+  const ccw = rings
+    .map((ring) => cleanRing(ring))
+    .filter((ring) => ring.length >= 3 && polygonArea(ring) > EPS)
+    .map((ring) => (signedArea(ring) < 0 ? [...ring].reverse() : ring));
+  if (ccw.length === 0) return [];
+  if (ccw.length === 1) return [dropCollinear(ccw[0])];
+
+  const vertices = [...new Set(ccw.flatMap((ring) => ring.map(keyOf)))].map(
+    (key) => canonical.get(key) as Vector2
+  );
+
+  // Directed edges, each already split at every vertex that lies on it.
+  const edges: { from: string; to: string }[] = [];
+  for (const ring of ccw) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const cuts = vertices
+        .map((v) => ({ v, t: nearestOnSegment(a, b, v) }))
+        .filter(({ t }) => t.distance <= VERTEX_TOLERANCE_FT && t.t > EPS && t.t < 1 - EPS)
+        .sort((p, q) => p.t.t - q.t.t)
+        .map(({ v }) => v);
+      let previous = a;
+      for (const cut of [...cuts, b]) {
+        const from = keyOf(previous);
+        const to = keyOf(cut);
+        if (from !== to) edges.push({ from, to });
+        previous = cut;
+      }
+    }
+  }
+
+  // Cancel the interior: an edge with a twin bounds two faces of the union, not the union.
+  const present = new Map<string, number>();
+  for (const { from, to } of edges) {
+    const id = `${from}>${to}`;
+    present.set(id, (present.get(id) ?? 0) + 1);
+  }
+  const outgoing = new Map<string, string[]>();
+  for (const { from, to } of edges) {
+    const twin = present.get(`${to}>${from}`) ?? 0;
+    if (twin > 0) continue;
+    const list = outgoing.get(from);
+    if (list) list.push(to);
+    else outgoing.set(from, [to]);
+  }
+
+  // Walk what is left. Every surviving edge is used exactly once, so the walk terminates; the
+  // guard is a backstop against a malformed input, not an expected exit.
+  const out: Vector2[][] = [];
+  const remaining = new Map([...outgoing].map(([from, tos]) => [from, [...tos]]));
+  const at = (key: string): Vector2 => canonical.get(key) as Vector2;
+  let guard = edges.length + 1;
+  for (const start of outgoing.keys()) {
+    while ((remaining.get(start) ?? []).length > 0 && guard > 0) {
+      const ring: Vector2[] = [];
+      let from = start;
+      let to = (remaining.get(from) as string[]).shift() as string;
+      ring.push(at(from));
+      while (to !== start && guard-- > 0) {
+        const choices = remaining.get(to) ?? [];
+        // Nowhere to go: the input was not a set of faces of one subdivision. Drop the walk
+        // rather than close it across open space and pave somewhere there is no floor.
+        if (choices.length === 0) {
+          ring.length = 0;
+          break;
+        }
+        // At a vertex where two areas meet at a point the walk has a choice, and the most
+        // clockwise turn is the one that stays on the area it arrived on.
+        const index = choices.length === 1 ? 0 : mostClockwise(at(from), at(to), choices.map(at));
+        const next = choices[index];
+        choices.splice(index, 1);
+        ring.push(at(to));
+        from = to;
+        to = next;
+      }
+      if (ring.length >= 3) out.push(dropCollinear(ring));
+    }
+  }
+  return out.filter((ring) => ring.length >= 3 && polygonArea(ring) > EPS);
+}
+
+/** Two vertices this close are one vertex — the tolerance `cleanRing` already works to. */
+const VERTEX_TOLERANCE_FT = 1e-6;
+
+/**
+ * The candidate that turns furthest clockwise from the direction of arrival.
+ *
+ * Only reached where three or more boundary edges meet at one vertex — two areas of this floor
+ * touching at a corner and nowhere else. Keeping right there keeps the walk on the lobe it came
+ * in on, so the two lobes come out as two rings instead of one figure-eight whose scan line is
+ * nonsense.
+ */
+function mostClockwise(previous: Vector2, vertex: Vector2, candidates: readonly Vector2[]): number {
+  const inX = vertex.x - previous.x;
+  const inY = vertex.y - previous.y;
+  let best = 0;
+  let bestAngle = Infinity;
+  for (let i = 0; i < candidates.length; i++) {
+    const outX = candidates[i].x - vertex.x;
+    const outY = candidates[i].y - vertex.y;
+    // Clockwise is negative, so the smallest turn is the hardest right.
+    const angle = Math.atan2(inX * outY - inY * outX, inX * outX + inY * outY);
+    if (angle < bestAngle) {
+      bestAngle = angle;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Drop vertices that lie on the line between their neighbours.
+ *
+ * Splitting every edge at every vertex leaves a straight run of collinear points wherever a
+ * divider dead-ends on a wall inside a merged area. They are geometrically harmless — the
+ * engine's inset mitres a 180° corner exactly — but they inflate `layoutKey`, so the cache
+ * would miss on a document that only looked different.
+ */
+function dropCollinear(ring: readonly Vector2[]): Vector2[] {
+  const out: Vector2[] = [];
+  const size = ring.length;
+  for (let i = 0; i < size; i++) {
+    const a = ring[(i + size - 1) % size];
+    const b = ring[i];
+    const c = ring[(i + 1) % size];
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    const scale = Math.hypot(b.x - a.x, b.y - a.y) + Math.hypot(c.x - b.x, c.y - b.y);
+    if (scale > EPS && Math.abs(cross) / scale <= VERTEX_TOLERANCE_FT) continue;
+    out.push(b);
+  }
+  return out.length >= 3 ? out : [...ring];
 }

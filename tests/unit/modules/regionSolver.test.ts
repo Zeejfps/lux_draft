@@ -331,3 +331,76 @@ describe('the structural key', () => {
     expect(regionInputsKey(painted)).not.toBe(regionInputsKey(base));
   });
 });
+
+describe('what the engine consumes', () => {
+  /** An explicit assignment, so a face does not merely inherit its parent's surface. */
+  const plank = (seed: Vector2): SurfaceAssignment => ({ seed, surface: 'plank' });
+
+  /**
+   * The engine takes the expansion gap out of every ring it is handed, so a floor handed over as
+   * two abutting rings comes back with a bare stripe two gaps wide down the middle of it and a
+   * row break along the seam. A divider with the same surface on both sides is not a transition —
+   * that is this module's own definition of one — so it must not reach the engine as a seam.
+   */
+  it('merges same-surface areas into one ring', () => {
+    // Two dividers, three faces: plank | plank | carpet. The first divider is not a transition.
+    const solution = solveRegions(
+      inputs({
+        dividers: [
+          divider('d1', { x: 0, y: 8 }, { x: 20, y: 8 }),
+          divider('d2', { x: 0, y: 14 }, { x: 20, y: 14 }),
+        ],
+        surfaces: [carpet({ x: 10, y: 17 }), plank({ x: 10, y: 11 })],
+      })
+    );
+    expect(solution.regions).toHaveLength(3);
+    expect(solution.regions.filter((r) => r.surface === 'plank')).toHaveLength(2);
+
+    const rings = plankRings(solution)!;
+    expect(rings).toHaveLength(1);
+    // One rectangle from the floor to the carpet, with no vertices left behind on the seam.
+    expect(rings[0]).toHaveLength(4);
+    expect(pointInPolygon(rings[0], { x: 10, y: 4 })).toBe(true);
+    expect(pointInPolygon(rings[0], { x: 10, y: 8 })).toBe(true);
+    expect(pointInPolygon(rings[0], { x: 10, y: 12 })).toBe(true);
+    expect(pointInPolygon(rings[0], { x: 10, y: 17 })).toBe(false);
+  });
+
+  it('merges across a T-junction, where one face meets two', () => {
+    // A spine at y=8 and a stem above it, so the lower face meets two upper ones along a single
+    // long edge. Only the far corner is carpet.
+    const solution = solveRegions(
+      inputs({
+        dividers: [
+          divider('d1', { x: 0, y: 8 }, { x: 20, y: 8 }),
+          divider('d2', { x: 10, y: 8 }, { x: 10, y: 20 }),
+        ],
+        surfaces: [carpet({ x: 15, y: 14 }), plank({ x: 5, y: 14 })],
+      })
+    );
+    const rings = plankRings(solution)!;
+    expect(rings).toHaveLength(1);
+    expect(pointInPolygon(rings[0], { x: 5, y: 4 })).toBe(true);
+    expect(pointInPolygon(rings[0], { x: 15, y: 4 })).toBe(true);
+    expect(pointInPolygon(rings[0], { x: 5, y: 14 })).toBe(true);
+    expect(pointInPolygon(rings[0], { x: 15, y: 14 })).toBe(false);
+  });
+
+  it('leaves genuinely separate areas separate', () => {
+    // Carpet through the middle: the plank either side of it is two floors, not one.
+    const solution = solveRegions(
+      inputs({
+        dividers: [
+          divider('d1', { x: 0, y: 8 }, { x: 20, y: 8 }),
+          divider('d2', { x: 0, y: 12 }, { x: 20, y: 12 }),
+        ],
+        surfaces: [carpet({ x: 10, y: 10 }), plank({ x: 10, y: 16 })],
+      })
+    );
+    const rings = plankRings(solution)!;
+    expect(rings).toHaveLength(2);
+    expect(rings.filter((ring) => pointInPolygon(ring, { x: 10, y: 4 }))).toHaveLength(1);
+    expect(rings.filter((ring) => pointInPolygon(ring, { x: 10, y: 16 }))).toHaveLength(1);
+    expect(rings.some((ring) => pointInPolygon(ring, { x: 10, y: 10 }))).toBe(false);
+  });
+});

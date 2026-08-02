@@ -225,6 +225,72 @@ describe('the expansion gap', () => {
   });
 });
 
+describe('the origin against the expansion gap', () => {
+  /**
+   * The origin is the corner the installer measures from — a corner of the *room*. The floor
+   * starts one gap in from it, so a grid anchored at the raw origin put the first row's edge one
+   * gap behind the floor: the row against the start wall came out `plankWidth - gap` wide and the
+   * first board `plankLength - gap` long, and dragging the origin swept that sliver through every
+   * width from nothing to a full board.
+   */
+  const GAP_IN = 3;
+
+  const startCorner = (over: Partial<LayoutConfig> = {}) => {
+    const layout = layoutOf({ expansionGapIn: GAP_IN, stagger: 'none', ...over });
+    const first = [...layout.planks].sort(
+      (a, b) => a.center.y - b.center.y || a.center.x - b.center.x
+    )[0];
+    return {
+      width: first.width * 12,
+      length: first.length * 12,
+      left: (first.center.x - first.length / 2) * 12,
+      bottom: (first.center.y - first.width / 2) * 12,
+    };
+  };
+
+  it('starts the grid one gap in from the origin, so the first board is a whole one', () => {
+    // Origin on the room corner (0,0): gap, then a full board, in both directions.
+    const first = startCorner();
+    expect(first.left).toBeCloseTo(GAP_IN, 6);
+    expect(first.bottom).toBeCloseTo(GAP_IN, 6);
+    expect(first.width).toBeCloseTo(defaults.plank.widthIn, 6);
+    expect(first.length).toBeCloseTo(defaults.plank.lengthIn, 6);
+  });
+
+  it('still leaves the gap when the origin is nowhere near a corner', () => {
+    const layout = layoutOf({ expansionGapIn: GAP_IN }, { origin: { x: 6.3, y: 4.1 } });
+    const gap = GAP_IN / 12;
+    for (const plank of layout.planks) {
+      expect(plank.center.x - plank.length / 2).toBeGreaterThanOrEqual(gap - 1e-6);
+      expect(plank.center.x + plank.length / 2).toBeLessThanOrEqual(20 - gap + 1e-6);
+      expect(plank.center.y - plank.width / 2).toBeGreaterThanOrEqual(gap - 1e-6);
+      expect(plank.center.y + plank.width / 2).toBeLessThanOrEqual(20 - gap + 1e-6);
+    }
+  });
+
+  it('still moves every joint when the origin moves', () => {
+    const a = layoutOf({ expansionGapIn: GAP_IN, stagger: 'none' });
+    const b = computePlankLayout(
+      inputs({
+        layout: { ...defaults.layout, expansionGapIn: GAP_IN, stagger: 'none' },
+        origin: { x: 0.7, y: 0.3 },
+      })
+    );
+    expect(a.key).not.toBe(b.key);
+    const jointsOf = (layout: typeof a) =>
+      new Set(layout.planks.map((p) => (p.center.x + p.length / 2).toFixed(4)));
+    expect([...jointsOf(a)]).not.toEqual([...jointsOf(b)]);
+  });
+
+  it('holds the gap whichever corner the run starts from', () => {
+    for (const corner of ['bottomLeft', 'bottomRight', 'topLeft', 'topRight'] as const) {
+      const first = startCorner({ startCorner: corner });
+      expect(first.width).toBeCloseTo(defaults.plank.widthIn, 6);
+      expect(first.length).toBeCloseTo(defaults.plank.lengthIn, 6);
+    }
+  });
+});
+
 describe('stagger', () => {
   const startsOfRow = (config: Partial<LayoutConfig>): Map<number, number> => {
     const layout = layoutOf(config);
@@ -591,9 +657,13 @@ describe('a wall that runs along the rows is not a transition', () => {
         expect(edges.length).toBeGreaterThan(3);
         // Every interior boundary lands on the grid the origin anchors — no stray one at the
         // notch wall (x = -1), and none anywhere else the room merely turns a corner.
+        //
+        // Every origin here is inside the room, where there is no wall to measure a gap from, so
+        // the grid runs through the origin itself — see `anchorOf` in the engine.
         const step = widthIn / 12;
+        const anchor = origin.x;
         for (const edge of edges) {
-          const offGrid = Math.abs(edge - origin.x - Math.round((edge - origin.x) / step) * step);
+          const offGrid = Math.abs(edge - anchor - Math.round((edge - anchor) / step) * step);
           expect(offGrid).toBeLessThan(1e-6);
         }
       }

@@ -354,7 +354,9 @@ interface Piece {
  * Cut one interval into pieces against the joint grid `offset + k * length`.
  *
  * The grid is anchored at the layout **origin**, not at the room's bounding box, so moving the
- * origin visibly shifts every joint — which is the whole point of it being draggable.
+ * origin visibly shifts every joint — which is the whole point of it being draggable. `offset`
+ * carries the expansion gap with it, so "the origin" means the corner the installer measures
+ * from, not the corner the first board's edge lands on; see `anchorOf` at the call site.
  */
 function cutInterval(span: Interval, offset: number, length: number): Piece[] {
   const [a, b] = span;
@@ -601,16 +603,47 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
           .filter((ring) => ring.length >= 3);
   if (clips !== null && clips.length === 0) return { ...EMPTY_LAYOUT, key };
 
+  let minX = Infinity;
+  let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
   for (const p of room) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
     if (p.y < minY) minY = p.y;
     if (p.y > maxY) maxY = p.y;
   }
   if (!Number.isFinite(minY) || maxY - minY <= EPS) return { ...EMPTY_LAYOUT, key };
 
-  const firstRow = Math.floor(minY / plankWidth);
-  const lastRow = Math.ceil(maxY / plankWidth);
+  /**
+   * Where the grid starts, measured from the layout origin along one local axis.
+   *
+   * The origin is the corner the installer stands in — a corner of the *room*. The floor, though,
+   * starts one expansion gap inside that corner, because the gap was taken out of the geometry
+   * above. Anchoring the grid at the raw origin therefore put the grid one gap *behind* the
+   * floor: the row against the start wall came out `plankWidth - gap` wide and the first board
+   * `plankLength - gap` long — a 7" board ripped to 4" and a 48" board cut to 45" for a 3" gap —
+   * and dragging the origin swept that sliver through every width from nothing to a full board.
+   *
+   * One gap **into the room** instead means what the corner promises: gap, then a full board,
+   * then the grid. Into the room and not simply `+gap`, because the local frame is mirrored for
+   * two of the four start corners: leave the origin at the far corner and the room lies on the
+   * negative side of it, where `+gap` would push the grid the wrong way and take the gap twice.
+   *
+   * The origin is still what every joint is measured from, so dragging it still moves every
+   * joint; it now measures from the wall rather than from the edge of the first board.
+   *
+   * Dragged *inside* the room the origin has no wall to measure from, so the grid runs through
+   * it, which is what it always did. The quarter-inch of phase that shifts as the marker crosses
+   * the outline is the meaning changing, not the floor moving.
+   */
+  const anchorOf = (low: number, high: number): number =>
+    low >= -EPS ? gap : high <= EPS ? -gap : 0;
+  const ANCHOR_X = anchorOf(minX, maxX);
+  const ANCHOR_Y = anchorOf(minY, maxY);
+
+  const firstRow = Math.floor((minY - ANCHOR_Y) / plankWidth);
+  const lastRow = Math.ceil((maxY - ANCHOR_Y) / plankWidth);
   const rowCount = lastRow - firstRow;
   if (rowCount <= 0 || rowCount > MAX_PLANKS)
     return { ...EMPTY_LAYOUT, key, truncated: rowCount > 0 };
@@ -618,8 +651,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   /**
    * Where one band stops and the next begins.
    *
-   * The row grid `k * plankWidth` — anchored at the layout origin, which is what makes the
-   * origin marker move the joints — plus the room's own limits, plus **every height at which a
+   * The row grid `ANCHOR_Y + k * plankWidth` — anchored at the layout origin, which is what makes
+   * the origin marker move the joints — plus the room's own limits, plus **every height at which a
    * region's outline turns**. That last set is what stops a transition from wandering.
    *
    * Without it a row is sampled on its centreline and laid whole: a band straddling the edge of
@@ -635,7 +668,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
    */
   const boundaries = new Set<number>([minY, maxY]);
   for (let row = firstRow; row <= lastRow; row++) {
-    const y = row * plankWidth;
+    const y = ANCHOR_Y + row * plankWidth;
     if (y > minY + EPS && y < maxY - EPS) boundaries.add(y);
   }
   if (clips !== null) {
@@ -667,7 +700,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     const centreY = (bandLow + bandHigh) / 2;
     // The row this band belongs to. Two sub-bands of one row get the same offset and so the
     // same joints, which is why a transition does not restart the stagger on its far side.
-    const row = Math.floor(centreY / plankWidth);
+    const row = Math.floor((centreY - ANCHOR_Y) / plankWidth);
 
     // Room, then areas, then obstacles. The areas are unioned before they intersect, so two
     // adjacent plank areas read as one span rather than as a seam the row is cut at twice.
@@ -683,7 +716,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       holes.flatMap((hole) => intervalsAt(hole, centreY))
     ).sort((a, b) => a[0] - b[0]);
 
-    const offset = rowOffset(row, layout, plankLength);
+    const offset = ANCHOR_X + rowOffset(row, layout, plankLength);
     let column = 0;
 
     for (const [start, end] of spans) {
