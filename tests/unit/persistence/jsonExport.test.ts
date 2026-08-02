@@ -5,27 +5,17 @@ import {
   ValidationError,
   importFromString,
 } from '../../../src/persistence/jsonImport';
-import type { RoomState } from '../../../src/types';
+import { makeDocument, makeLight } from '../../helpers/documents';
 
 describe('JSON Export/Import', () => {
   describe('getJSONString', () => {
     it('exports valid JSON structure with version and roomState', () => {
-      const state: RoomState = {
-        ceilingHeight: 8,
-        walls: [],
-        lights: [
-          {
-            id: '1',
-            position: { x: 5, y: 5 },
-            properties: { lumen: 800, beamAngle: 60, warmth: 2700 },
-          },
-        ],
-        doors: [],
-        obstacles: [],
+      const doc = makeDocument({
+        lights: [makeLight('1', { x: 5, y: 5 })],
         isClosed: true,
-      };
+      });
 
-      const json = getJSONString(state);
+      const json = getJSONString(doc);
       const parsed = JSON.parse(json);
 
       expect(parsed.version).toBe(2);
@@ -35,16 +25,7 @@ describe('JSON Export/Import', () => {
     });
 
     it('produces formatted output', () => {
-      const state: RoomState = {
-        ceilingHeight: 8,
-        walls: [],
-        lights: [],
-        doors: [],
-        obstacles: [],
-        isClosed: false,
-      };
-
-      const json = getJSONString(state);
+      const json = getJSONString(makeDocument());
 
       expect(json).toContain('\n');
       expect(json).toContain('  ');
@@ -168,7 +149,7 @@ describe('JSON Export/Import', () => {
 
       const result = importFromString(json);
 
-      expect(result.ceilingHeight).toBe(10);
+      expect(result.space.ceilingHeight).toBe(10);
     });
 
     it('imports new format with version and roomState', () => {
@@ -185,8 +166,8 @@ describe('JSON Export/Import', () => {
 
       const result = importFromString(json);
 
-      expect(result.ceilingHeight).toBe(12);
-      expect(result.isClosed).toBe(true);
+      expect(result.space.ceilingHeight).toBe(12);
+      expect(result.geometry.boundary.isClosed).toBe(true);
     });
 
     it('throws on invalid JSON', () => {

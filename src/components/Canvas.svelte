@@ -17,21 +17,22 @@
   import {
     canPlaceLights,
     canPlaceDoors,
+    closeRoom,
     deleteVertex,
     getVertices,
     getDoorsByWallId,
     insertVertexOnWall,
-    moveWall,
     roomBounds,
     roomStore,
-    updateVertexPosition,
-    updateObstacleVertexPosition,
-    updateDoor,
     addDoor,
     removeDoor,
     addObstacle,
+    addLight,
+    removeLights,
     removeObstacle,
-    moveObstacle,
+    previewCommand,
+    commitInteraction,
+    cancelInteraction,
   } from '../stores/roomStore';
   import {
     clearLightSelection,
@@ -72,9 +73,9 @@
     BoxSelectionState,
     DeadZoneConfig,
     DisplayPreferences,
+    EditorDocument,
     InteractionContext,
     RafterConfig,
-    RoomState,
     SpacingConfig,
     SpacingWarning,
     Vector2,
@@ -157,8 +158,11 @@
   // ============================================
 
   let currentMousePos: Vector2 = { x: 0, y: 0 };
+  let currentWalls: import('../types').WallSegment[] = [];
+  let currentDoors: import('../types').Door[] = [];
+  let currentObstacles: import('../types').Obstacle[] = [];
   let currentViewMode: ViewMode = 'editor';
-  let currentRoomState: RoomState;
+  let currentRoomState: EditorDocument;
   let currentBounds: BoundingBox;
   let currentRafterConfig: RafterConfig;
   let currentDisplayPrefs: DisplayPreferences;
@@ -192,6 +196,9 @@
 
   $: currentViewMode = $viewMode;
   $: currentRoomState = $roomStore;
+  $: currentWalls = currentRoomState.geometry.boundary.walls;
+  $: currentDoors = currentRoomState.geometry.doors;
+  $: currentObstacles = currentRoomState.geometry.obstacles;
   $: currentBounds = $roomBounds;
   $: isDrawing = $isDrawingEnabled;
   $: isPlacingLights = $isLightPlacementEnabled;
@@ -242,23 +249,19 @@
 
   $: if (editorRenderer && currentRoomState) {
     editorRenderer.updateWalls(
-      currentRoomState.walls,
+      currentWalls,
       currentSelectedWallId,
       currentSelectedVertexIndices,
-      currentRoomState.doors ?? []
+      currentDoors
     );
     editorRenderer.updateLights(
       currentRoomState.lights,
-      currentRoomState.ceilingHeight,
+      currentRoomState.space.ceilingHeight,
       currentSelectedLightIds
     );
-    editorRenderer.updateDoors(
-      currentRoomState.doors ?? [],
-      currentRoomState.walls,
-      currentSelectedDoorId
-    );
+    editorRenderer.updateDoors(currentDoors, currentWalls, currentSelectedDoorId);
     editorRenderer.updateObstacles(
-      currentRoomState.obstacles ?? [],
+      currentObstacles,
       currentSelectedObstacleId,
       currentSelectedObstacleVertexIndices
     );
@@ -267,19 +270,19 @@
 
   $: if (heatmapRenderer && currentRoomState && currentBounds) {
     heatmapRenderer.updateBounds(currentBounds);
-    heatmapRenderer.updateWalls(currentRoomState.walls);
-    heatmapRenderer.updateObstacles(currentRoomState.obstacles ?? []);
-    heatmapRenderer.updateLights(currentRoomState.lights, currentRoomState.ceilingHeight);
+    heatmapRenderer.updateWalls(currentWalls);
+    heatmapRenderer.updateObstacles(currentObstacles);
+    heatmapRenderer.updateLights(currentRoomState.lights, currentRoomState.space.ceilingHeight);
   }
 
   $: if (shadowRenderer && currentRoomState && currentBounds) {
     shadowRenderer.updateShadows(
       currentRoomState.lights,
-      currentRoomState.walls,
+      currentWalls,
       currentBounds,
-      currentRoomState.doors ?? [],
-      currentRoomState.obstacles ?? [],
-      currentRoomState.ceilingHeight
+      currentDoors,
+      currentObstacles,
+      currentRoomState.space.ceilingHeight
     );
   }
 
@@ -295,7 +298,7 @@
 
   $: if (deadZoneRenderer && currentRoomState && currentBounds) {
     deadZoneRenderer.updateBounds(currentBounds);
-    deadZoneRenderer.updateLights(currentRoomState.lights, currentRoomState.ceilingHeight);
+    deadZoneRenderer.updateLights(currentRoomState.lights, currentRoomState.space.ceilingHeight);
   }
 
   $: if (deadZoneRenderer && currentDeadZoneConfig) {
@@ -312,7 +315,7 @@
   }
 
   // Fit camera to room bounds only when explicitly requested (project load/import)
-  $: if ($shouldFitCamera && scene && currentBounds && currentRoomState.walls.length > 0) {
+  $: if ($shouldFitCamera && scene && currentBounds && currentWalls.length > 0) {
     scene.fitToBounds(currentBounds);
     shouldFitCamera.set(false);
   }
@@ -341,7 +344,7 @@
 
   function buildInteractionContext(): InteractionContext {
     return {
-      roomState: currentRoomState,
+      document: currentRoomState,
       selection: {
         selectedVertexIndices: currentSelectedVertexIndices,
         selectedLightIds: currentSelectedLightIds,
@@ -410,6 +413,21 @@
     }
   }
 
+  /**
+   * The gesture was taken away (pointercancel, window blur). Discard the candidate command;
+   * the committed document was never touched.
+   */
+  function handleInputCancel(): void {
+    if (dragManager?.isActive) {
+      dragManager.cancelDrag();
+    } else {
+      cancelInteraction();
+    }
+    if (isGrabMode) {
+      isGrabMode = false;
+    }
+  }
+
   function handleKeyDown(event: InputEvent): void {
     if (!event.key) return;
 
@@ -443,7 +461,7 @@
     if (source?.type === 'light') {
       const light = currentRoomState.lights.find((l) => l.id === source.id);
       if (light) {
-        measurementController.updateSourcePosition(light.position, currentRoomState.walls);
+        measurementController.updateSourcePosition(light.position, currentWalls);
       }
     }
 
@@ -541,8 +559,7 @@
 
   function handleSelectAllObstacleVertices(): void {
     if (!currentSelectedObstacleId) return;
-    const obstacles = currentRoomState.obstacles ?? [];
-    const obstacle = obstacles.find((o) => o.id === currentSelectedObstacleId);
+    const obstacle = currentObstacles.find((o) => o.id === currentSelectedObstacleId);
     if (!obstacle) return;
 
     const allIndices = new SvelteSet<number>();
@@ -553,10 +570,10 @@
   }
 
   function handleDelete(): void {
-    if (currentSelectedVertexIndices.size > 0 && currentRoomState.walls.length > 3) {
+    if (currentSelectedVertexIndices.size > 0 && currentWalls.length > 3) {
       const sortedIndices = Array.from(currentSelectedVertexIndices).sort((a, b) => b - a);
       for (const idx of sortedIndices) {
-        if (currentRoomState.walls.length > 3) {
+        if (currentRoomState.geometry.boundary.walls.length > 3) {
           deleteVertex(idx);
         }
       }
@@ -571,10 +588,7 @@
       for (const id of currentSelectedLightIds) {
         lightManager.removeLight(id);
       }
-      roomStore.update((state) => ({
-        ...state,
-        lights: state.lights.filter((l) => !currentSelectedLightIds.has(l.id)),
-      }));
+      removeLights(currentSelectedLightIds);
       clearLightSelection();
     }
   }
@@ -611,24 +625,10 @@
 
     // Initialize drag manager
     dragManager = new DragManager({
-      onUpdateVertexPosition: (idx, pos) => updateVertexPosition(idx, pos),
-      onUpdateLightPositions: (updates) => {
-        roomStore.update((state) => ({
-          ...state,
-          lights: state.lights.map((light) => {
-            const newPos = updates.get(light.id);
-            return newPos ? { ...light, position: newPos } : light;
-          }),
-        }));
-      },
-      onMoveWall: (wallId, newStart, newEnd) => moveWall(wallId, newStart, newEnd),
-      onUpdateDoorPosition: (doorId, position) => updateDoor(doorId, { position }),
-      onUpdateObstacleVertexPosition: (obstacleId, vertexIndex, position) =>
-        updateObstacleVertexPosition(obstacleId, vertexIndex, position),
-      onMoveObstacle: (obstacleId, vertexPositions) => moveObstacle(obstacleId, vertexPositions),
       onSetSnapGuides: (guides) => editorRenderer?.setSnapGuides(guides),
-      onPauseHistory: () => historyStore.pauseRecording(),
-      onResumeHistory: () => historyStore.resumeRecording(),
+      onPreviewCommand: (command) => previewCommand(command),
+      onCommitCommand: () => commitInteraction(),
+      onCancelCommand: () => cancelInteraction(),
     });
 
     // Initialize interaction manager
@@ -664,7 +664,7 @@
         onUpdateDrawingVertices: (vertices) => editorRenderer.updateDrawingVertices(vertices),
         onSetPhantomLine: (from, to) => editorRenderer.setPhantomLine(from, to),
         onSetPreviewVertex: (pos) => editorRenderer.setPreviewVertex(pos),
-        onCloseRoom: (walls) => roomStore.update((state) => ({ ...state, walls, isClosed: true })),
+        onCloseRoom: (walls) => closeRoom(walls),
         onSnapChange: (snapType) => dispatch('snapChange', { snapType }),
       }
     );
@@ -685,7 +685,7 @@
           const obstacle = {
             id: `obstacle-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             walls,
-            height: currentRoomState.ceilingHeight,
+            height: currentRoomState.space.ceilingHeight,
           };
           addObstacle(obstacle);
         },
@@ -700,21 +700,20 @@
         snapController,
         getSelectedDefinitionId: () => get(selectedDefinitionId),
         canPlaceLights: () => get(canPlaceLights),
-        getWalls: () => currentRoomState.walls,
+        getWalls: () => currentWalls,
         getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
       },
       {
-        onLightPlaced: (light) =>
-          roomStore.update((state) => ({ ...state, lights: [...state.lights, light] })),
+        onLightPlaced: (light) => addLight(light),
         onSetPreviewLight: (pos, isValid) => editorRenderer.setPreviewLight(pos, isValid),
       }
     );
 
     doorPlacementHandler = new DoorPlacementHandler(
       {
-        getWalls: () => currentRoomState.walls,
-        getDoors: () => currentRoomState.doors ?? [],
+        getWalls: () => currentWalls,
+        getDoors: () => currentDoors,
         getWallAtPosition: (pos, walls, tolerance) =>
           editorRenderer.getWallAtPosition(pos, walls, tolerance),
         getSelectedDoorWidth: () => getDoorPlacementSettings().width,
@@ -797,7 +796,7 @@
       {
         measurementController,
         lightManager,
-        getWalls: () => currentRoomState.walls,
+        getWalls: () => currentWalls,
       },
       {
         onMeasurementUpdate: (data) => {
@@ -823,7 +822,7 @@
           dragManager.startDrag(operation, {
             position: pos,
             modifiers: EMPTY_MODIFIERS,
-            roomState: currentRoomState,
+            document: currentRoomState,
             selection: buildInteractionContext().selection,
           });
         },
@@ -843,12 +842,12 @@
               getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
               getVertices: () => getVertices(currentRoomState),
               getLights: () => currentRoomState.lights,
-              getWalls: () => currentRoomState.walls,
-              getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
-              getDoors: () => currentRoomState.doors ?? [],
-              getDoorById: (id) => (currentRoomState.doors ?? []).find((d) => d.id === id),
+              getWalls: () => currentWalls,
+              getWallById: (id) => currentWalls.find((w) => w.id === id),
+              getDoors: () => currentDoors,
+              getDoorById: (id) => currentDoors.find((d) => d.id === id),
               getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
-              isRoomClosed: () => currentRoomState.isClosed,
+              isRoomClosed: () => currentRoomState.geometry.boundary.isClosed,
               getCurrentMousePos: () => currentMousePos,
             },
             dragManager.getCallbacks()
@@ -861,10 +860,10 @@
         getCurrentMousePos: () => currentMousePos,
         getVertices: () => getVertices(currentRoomState),
         getLights: () => currentRoomState.lights,
-        getWalls: () => currentRoomState.walls,
-        getDoors: () => currentRoomState.doors ?? [],
-        getDoorById: (id) => (currentRoomState.doors ?? []).find((d) => d.id === id),
-        getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
+        getWalls: () => currentWalls,
+        getDoors: () => currentDoors,
+        getDoorById: (id) => currentDoors.find((d) => d.id === id),
+        getWallById: (id) => currentWalls.find((w) => w.id === id),
       },
       {
         onGrabModeStart: () => {},
@@ -914,8 +913,8 @@
         getSelectedObstacleVertexIndices: () => get(selectedObstacleVertexIndices),
         getWallAtPosition: (pos, walls, tolerance) =>
           editorRenderer.getWallAtPosition(pos, walls, tolerance),
-        getDoors: () => currentRoomState.doors ?? [],
-        getObstacles: () => currentRoomState.obstacles ?? [],
+        getDoors: () => currentDoors,
+        getObstacles: () => currentObstacles,
       }
     );
 
@@ -936,6 +935,7 @@
     inputManager.on('drag', handleMouseMove);
     inputManager.on('mouseup', handleMouseUp);
     inputManager.on('keydown', handleKeyDown);
+    inputManager.on('cancel', handleInputCancel);
 
     // Initial renderer visibility
     heatmapRenderer.setVisible(false);
@@ -959,8 +959,8 @@
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
         getVertices: () => getVertices(currentRoomState),
         getLights: () => currentRoomState.lights,
-        getWalls: () => currentRoomState.walls,
-        isRoomClosed: () => currentRoomState.isClosed,
+        getWalls: () => currentWalls,
+        isRoomClosed: () => currentRoomState.geometry.boundary.isClosed,
       },
       {
         ...dragManager.getCallbacks(),
@@ -976,8 +976,8 @@
       {
         snapController,
         getVertices: () => getVertices(currentRoomState),
-        getWalls: () => currentRoomState.walls,
-        getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
+        getWalls: () => currentWalls,
+        getWallById: (id) => currentWalls.find((w) => w.id === id),
       },
       dragManager.getCallbacks()
     );
@@ -1008,14 +1008,11 @@
   }
 
   function createDoorDragOperation(): DoorDragOperation {
-    return new DoorDragOperation(
-      {
-        getWallById: (id) => currentRoomState.walls.find((w) => w.id === id),
-        getDoorById: (id) => (currentRoomState.doors ?? []).find((d) => d.id === id),
-        getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
-      },
-      dragManager.getCallbacks()
-    );
+    return new DoorDragOperation({
+      getWallById: (id) => currentWalls.find((w) => w.id === id),
+      getDoorById: (id) => currentDoors.find((d) => d.id === id),
+      getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
+    });
   }
 
   onDestroy(() => {

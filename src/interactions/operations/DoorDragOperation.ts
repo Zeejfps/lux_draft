@@ -1,6 +1,5 @@
-import type { WallSegment, Door } from '../../types';
+import type { WallSegment, Door, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
-import type { DragManagerCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
 import { doorPositioningService } from '../../services';
 
@@ -21,12 +20,10 @@ export class DoorDragOperation extends BaseDragOperation {
   private doorId: string | null = null;
   private originalPosition: number | null = null;
   private config: DoorDragConfig;
-  private callbacks: DragManagerCallbacks;
 
-  constructor(config: DoorDragConfig, callbacks: DragManagerCallbacks) {
+  constructor(config: DoorDragConfig) {
     super();
     this.config = config;
-    this.callbacks = callbacks;
   }
 
   /**
@@ -47,19 +44,19 @@ export class DoorDragOperation extends BaseDragOperation {
     this.originalPosition = door.position;
   }
 
-  update(context: DragUpdateContext): void {
+  update(context: DragUpdateContext): EditorCommand | null {
     if (!this._isActive || !this.doorId || !this.startPosition || this.originalPosition === null)
-      return;
+      return null;
 
     const door = this.config.getDoorById(this.doorId);
-    if (!door) return;
+    if (!door) return null;
 
     const wall = this.config.getWallById(door.wallId);
-    if (!wall) return;
+    if (!wall) return null;
 
     // Calculate new position using the service
     const existingDoors = this.config.getDoorsByWallId(door.wallId);
-    const newPosition = doorPositioningService.calculateDragPosition(
+    const offset = doorPositioningService.calculateDragPosition(
       context.position,
       wall,
       door.width,
@@ -67,27 +64,10 @@ export class DoorDragOperation extends BaseDragOperation {
       this.doorId
     );
 
-    this.callbacks.onUpdateDoorPosition(this.doorId, newPosition);
+    return { type: 'door.move', doorId: this.doorId, offset };
   }
 
-  commit(): void {
-    if (!this._isActive) return;
-
-    this._isActive = false;
-    this.cleanup();
-  }
-
-  cancel(): void {
-    if (!this._isActive || !this.doorId || this.originalPosition === null) return;
-
-    // Restore original door position
-    this.callbacks.onUpdateDoorPosition(this.doorId, this.originalPosition);
-
-    this._isActive = false;
-    this.cleanup();
-  }
-
-  private cleanup(): void {
+  protected cleanup(): void {
     this.doorId = null;
     this.originalPosition = null;
     this.startPosition = null;

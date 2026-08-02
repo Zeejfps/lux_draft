@@ -4,7 +4,7 @@ import {
   loadFromLocalStorage,
   clearLocalStorage,
 } from '../../../src/persistence/localStorage';
-import type { RoomState } from '../../../src/types';
+import { makeDocument } from '../../helpers/documents';
 
 describe('LocalStorage Persistence', () => {
   const mockLocalStorage: Record<string, string> = {};
@@ -27,23 +27,12 @@ describe('LocalStorage Persistence', () => {
   });
 
   it('saves room state to localStorage', () => {
-    const state: RoomState = {
+    const doc = makeDocument({
       ceilingHeight: 9,
-      walls: [
-        {
-          id: '1',
-          start: { x: 0, y: 0 },
-          end: { x: 10, y: 0 },
-          length: 10,
-        },
-      ],
-      lights: [],
-      doors: [],
-      obstacles: [],
-      isClosed: false,
-    };
+      walls: [{ id: '1', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, length: 10 }],
+    });
 
-    saveToLocalStorage(state);
+    saveToLocalStorage(doc);
 
     const stored = JSON.parse(mockLocalStorage['lumen2d_project']);
     expect(stored.ceilingHeight).toBe(9);
@@ -51,21 +40,20 @@ describe('LocalStorage Persistence', () => {
   });
 
   it('restores room state from localStorage', () => {
-    const state: RoomState = {
+    mockLocalStorage['lumen2d_project'] = JSON.stringify({
       ceilingHeight: 10,
       walls: [],
       lights: [],
       doors: [],
       obstacles: [],
       isClosed: true,
-    };
-    mockLocalStorage['lumen2d_project'] = JSON.stringify(state);
+    });
 
     const restored = loadFromLocalStorage();
 
     expect(restored).not.toBeNull();
-    expect(restored!.ceilingHeight).toBe(10);
-    expect(restored!.isClosed).toBe(true);
+    expect(restored!.space.ceilingHeight).toBe(10);
+    expect(restored!.geometry.boundary.isClosed).toBe(true);
   });
 
   it('returns null when no saved state exists', () => {
@@ -94,7 +82,7 @@ describe('LocalStorage Persistence', () => {
   });
 
   it('preserves all room state properties', () => {
-    const state: RoomState = {
+    const doc = makeDocument({
       ceilingHeight: 12,
       walls: [
         { id: 'w1', start: { x: 0, y: 0 }, end: { x: 10, y: 0 }, length: 10 },
@@ -107,14 +95,13 @@ describe('LocalStorage Persistence', () => {
           properties: { lumen: 800, beamAngle: 60, warmth: 2700 },
         },
       ],
-      doors: [],
-      obstacles: [],
       isClosed: true,
-    };
+    });
 
-    saveToLocalStorage(state);
+    saveToLocalStorage(doc);
     const restored = loadFromLocalStorage();
 
-    expect(restored).toEqual(state);
+    // The document survives the flat legacy wire shape unchanged
+    expect(restored).toEqual(doc);
   });
 });

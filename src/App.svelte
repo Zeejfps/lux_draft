@@ -17,7 +17,7 @@
   import LightingStatsPanel from './components/LightingStatsPanel.svelte';
   import LightDefinitionManager from './components/LightDefinitionManager.svelte';
   import ViewerPage from './components/ViewerPage.svelte';
-  import { roomStore } from './stores/roomStore';
+  import { committedRoom, openDocument } from './stores/roomStore';
   import { activeTool, setActiveTool, requestCameraFit } from './stores/appStore';
   import { loadFromLocalStorage, setupAutoSave } from './persistence/localStorage';
   import { initSettingsFromRoom, displayPreferences } from './stores/settingsStore';
@@ -119,16 +119,16 @@
   onMount(() => {
     // Only initialize editor features when on the editor route
     if (get(currentRoute) === 'editor') {
-      const savedState = loadFromLocalStorage();
-      if (savedState) {
-        roomStore.set(savedState);
+      const savedDocument = loadFromLocalStorage();
+      if (savedDocument) {
+        openDocument(savedDocument);
         // Initialize settings from saved room state
         initSettingsFromRoom();
         // Fit camera to the loaded project
         requestCameraFit();
       }
 
-      cleanupAutoSave = setupAutoSave(roomStore);
+      cleanupAutoSave = setupAutoSave(committedRoom);
       window.addEventListener('keydown', handleGlobalKeydown);
     }
   });

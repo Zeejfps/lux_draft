@@ -1,4 +1,4 @@
-import type { Vector2 } from '../types';
+import type { Vector2, EditorCommand } from '../types';
 import type {
   IDragOperation,
   DragStartContext,
@@ -9,25 +9,25 @@ import type {
 import type { SnapGuide } from '../controllers/SnapController';
 import { SNAP_GUIDE_LENGTH } from '../constants/editor';
 
-export interface DragManagerCallbacks {
-  onUpdateVertexPosition: (index: number, position: Vector2) => void;
-  onUpdateLightPositions: (updates: Map<string, Vector2>) => void;
-  onMoveWall: (wallId: string, newStart: Vector2, newEnd: Vector2) => void;
-  onUpdateDoorPosition: (doorId: string, position: number) => void;
-  onUpdateObstacleVertexPosition: (
-    obstacleId: string,
-    vertexIndex: number,
-    position: Vector2
-  ) => void;
-  onMoveObstacle: (obstacleId: string, vertexPositions: Map<number, Vector2>) => void;
+/** What a drag operation is allowed to do besides returning a command: draw guides. */
+export interface DragOperationCallbacks {
   onSetSnapGuides: (guides: SnapGuide[]) => void;
-  onPauseHistory: () => void;
-  onResumeHistory: () => void;
+}
+
+export interface DragManagerCallbacks extends DragOperationCallbacks {
+  /** Show the candidate command for this frame. Writes nothing to the document. */
+  onPreviewCommand: (command: EditorCommand) => void;
+  /** Dispatch the previewed command verbatim. */
+  onCommitCommand: () => void;
+  /** Discard the preview. The committed document is untouched. */
+  onCancelCommand: () => void;
 }
 
 /**
  * Manages drag operations with support for axis locking and operation lifecycle.
- * Orchestrates drag operations and provides shared functionality.
+ *
+ * A drag never writes: the operation returns a candidate command per frame, which is previewed,
+ * and the same value is dispatched on commit (invariant 3).
  */
 export class DragManager {
   private currentOperation: IDragOperation | null = null;
@@ -63,12 +63,11 @@ export class DragManager {
     this.currentOperation = operation;
     this.dragStartPos = { ...context.position };
     this._axisLock = 'none';
-    this.callbacks.onPauseHistory();
     operation.start(context);
   }
 
   /**
-   * Update the current drag operation.
+   * Update the current drag operation and preview the command it resolves to.
    */
   updateDrag(position: Vector2, modifiers: InputModifiers): void {
     if (!this.currentOperation?.isActive()) return;
@@ -79,27 +78,32 @@ export class DragManager {
       axisLock: this._axisLock,
     };
 
-    this.currentOperation.update(context);
+    const command = this.currentOperation.update(context);
+    if (command) {
+      this.callbacks.onPreviewCommand(command);
+    }
   }
 
   /**
-   * Commit the current drag operation.
+   * Commit the current drag operation: the previewed command is dispatched verbatim.
    */
   commitDrag(): void {
     if (!this.currentOperation?.isActive()) return;
 
-    this.currentOperation.commit();
+    this.currentOperation.finish();
     this.cleanup();
+    this.callbacks.onCommitCommand();
   }
 
   /**
-   * Cancel the current drag operation and restore original state.
+   * Cancel the current drag operation. Nothing was written, so nothing is restored.
    */
   cancelDrag(): void {
     if (!this.currentOperation) return;
 
-    this.currentOperation.cancel();
+    this.currentOperation.finish();
     this.cleanup();
+    this.callbacks.onCancelCommand();
   }
 
   /**
@@ -163,7 +167,6 @@ export class DragManager {
     this.currentOperation = null;
     this._axisLock = 'none';
     this.dragStartPos = null;
-    this.callbacks.onResumeHistory();
     this.callbacks.onSetSnapGuides([]);
   }
 }

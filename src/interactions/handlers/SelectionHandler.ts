@@ -101,10 +101,12 @@ export class SelectionHandler extends BaseInteractionHandler {
   handleClick(event: InputEvent, context: InteractionContext): boolean {
     const pos = event.worldPos;
     const addToSelection = event.shiftKey ?? false;
-    const { roomState, vertices } = context;
+    const { document: doc, vertices } = context;
+    const walls = doc.geometry.boundary.walls;
+    const isClosed = doc.geometry.boundary.isClosed;
 
     // Check vertices first (if room is closed)
-    if (roomState.isClosed) {
+    if (isClosed) {
       const vertexResult = this.trySelectVertex(pos, vertices, addToSelection);
       if (vertexResult.handled) {
         this.callbacks.onClearObstacleSelection();
@@ -122,8 +124,8 @@ export class SelectionHandler extends BaseInteractionHandler {
     }
 
     // Check doors (if room is closed)
-    if (roomState.isClosed) {
-      const doorResult = this.trySelectDoor(pos, roomState.walls);
+    if (isClosed) {
+      const doorResult = this.trySelectDoor(pos, walls);
       if (doorResult.handled) {
         this.callbacks.onClearObstacleSelection();
         this.callbacks.onClearObstacleVertexSelection();
@@ -132,20 +134,20 @@ export class SelectionHandler extends BaseInteractionHandler {
     }
 
     // Check obstacle vertices (if room is closed)
-    if (roomState.isClosed) {
+    if (isClosed) {
       const obstacleVertexResult = this.trySelectObstacleVertex(pos, addToSelection);
       if (obstacleVertexResult.handled) return true;
     }
 
     // Check obstacles (if room is closed)
-    if (roomState.isClosed) {
+    if (isClosed) {
       const obstacleResult = this.trySelectObstacle(pos);
       if (obstacleResult.handled) return true;
     }
 
     // Check walls (if room is closed)
-    if (roomState.isClosed) {
-      const wallResult = this.trySelectWall(pos, roomState.walls);
+    if (isClosed) {
+      const wallResult = this.trySelectWall(pos, walls);
       if (wallResult.handled) {
         this.callbacks.onClearObstacleSelection();
         this.callbacks.onClearObstacleVertexSelection();
@@ -154,7 +156,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     }
 
     // Start box selection in empty space
-    if (roomState.isClosed) {
+    if (isClosed) {
       if (!addToSelection) {
         this.callbacks.onClearVertexSelection();
         this.callbacks.onClearLightSelection();
@@ -175,12 +177,12 @@ export class SelectionHandler extends BaseInteractionHandler {
   }
 
   handleDoubleClick(event: InputEvent, context: InteractionContext): boolean {
-    const { roomState } = context;
-    if (!roomState.isClosed) return false;
+    const { document: doc } = context;
+    if (!doc.geometry.boundary.isClosed) return false;
 
     const wall = this.callbacks.getWallAtPosition(
       event.worldPos,
-      roomState.walls,
+      doc.geometry.boundary.walls,
       VERTEX_HIT_TOLERANCE_FT
     );
 
@@ -322,7 +324,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null,
+      document: null,
       selection: this.config.getSelection(),
     });
 
@@ -413,7 +415,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null,
+      document: null,
       selection: this.config.getSelection(),
     });
   }
@@ -472,7 +474,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null,
+      document: null,
       selection: this.config.getSelection(),
     });
   }
@@ -493,7 +495,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null,
+      document: null,
       selection: this.config.getSelection(),
     });
 
@@ -512,7 +514,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     this.config.dragManager.startDrag(operation, {
       position: pos,
       modifiers: EMPTY_MODIFIERS,
-      roomState: null,
+      document: null,
       selection: this.config.getSelection(),
     });
   }
@@ -531,9 +533,9 @@ export class SelectionHandler extends BaseInteractionHandler {
     return getSelectionOriginFromRoomState(
       selection,
       context.vertices,
-      context.roomState.lights,
-      context.roomState.walls,
-      context.roomState.doors
+      context.document.lights,
+      context.document.geometry.boundary.walls,
+      context.document.geometry.doors
     );
   }
 }

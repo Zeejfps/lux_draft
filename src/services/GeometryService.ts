@@ -1,30 +1,31 @@
-import type { Vector2, WallSegment, RoomState } from '../types';
+import type { Vector2, WallSegment } from '../types/geometry';
+import type { WallLoop } from '../types/document';
 import { distancePointToPoint } from '../utils/math';
 import { generateId } from '../utils/id';
 
 /**
- * Service for geometry operations on room state.
- * Provides pure functions that don't directly mutate stores.
+ * Service for geometry operations on a wall loop.
+ * Pure functions — they take and return plain values and touch no store.
  */
 export class GeometryService {
   /**
-   * Insert a vertex on a wall and return the new state and inserted index.
+   * Insert a vertex on a wall and return the new walls plus the inserted index.
    */
   insertVertexOnWall(
-    state: RoomState,
+    loop: WallLoop,
     wallId: string,
     position: Vector2
-  ): { state: RoomState; insertedIndex: number | null } {
-    if (!state.isClosed || state.walls.length === 0) {
-      return { state, insertedIndex: null };
+  ): { walls: WallSegment[]; insertedIndex: number | null } {
+    if (!loop.isClosed || loop.walls.length === 0) {
+      return { walls: loop.walls, insertedIndex: null };
     }
 
-    const wallIndex = state.walls.findIndex((w) => w.id === wallId);
+    const wallIndex = loop.walls.findIndex((w) => w.id === wallId);
     if (wallIndex === -1) {
-      return { state, insertedIndex: null };
+      return { walls: loop.walls, insertedIndex: null };
     }
 
-    const wall = state.walls[wallIndex];
+    const wall = loop.walls[wallIndex];
 
     // Create two new walls from the split
     const newWall1: WallSegment = {
@@ -43,32 +44,27 @@ export class GeometryService {
 
     // Replace the old wall with two new walls
     const newWalls = [
-      ...state.walls.slice(0, wallIndex),
+      ...loop.walls.slice(0, wallIndex),
       newWall1,
       newWall2,
-      ...state.walls.slice(wallIndex + 1),
+      ...loop.walls.slice(wallIndex + 1),
     ];
 
     // The new vertex is at index wallIndex + 1 (start of newWall2)
-    const insertedIndex = wallIndex + 1;
-
-    return {
-      state: { ...state, walls: newWalls },
-      insertedIndex,
-    };
+    return { walls: newWalls, insertedIndex: wallIndex + 1 };
   }
 
   /**
-   * Delete a vertex and return the new state.
+   * Delete a vertex, merging the two walls that meet there.
    */
-  deleteVertex(state: RoomState, vertexIndex: number): { state: RoomState; success: boolean } {
-    if (!state.isClosed || state.walls.length <= 3) {
-      return { state, success: false }; // Need at least 3 vertices for a polygon
+  deleteVertex(loop: WallLoop, vertexIndex: number): { walls: WallSegment[]; success: boolean } {
+    if (!loop.isClosed || loop.walls.length <= 3) {
+      return { walls: loop.walls, success: false }; // Need at least 3 vertices for a polygon
     }
 
-    const numWalls = state.walls.length;
+    const numWalls = loop.walls.length;
     if (vertexIndex < 0 || vertexIndex >= numWalls) {
-      return { state, success: false };
+      return { walls: loop.walls, success: false };
     }
 
     // The vertex at index i is the start of wall[i] and end of wall[i-1]
@@ -76,8 +72,8 @@ export class GeometryService {
     const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
     const currentWallIndex = vertexIndex;
 
-    const prevWall = state.walls[prevWallIndex];
-    const currentWall = state.walls[currentWallIndex];
+    const prevWall = loop.walls[prevWallIndex];
+    const currentWall = loop.walls[currentWallIndex];
 
     // Create merged wall (from prevWall.start to currentWall.end)
     const mergedWall: WallSegment = {
@@ -95,22 +91,11 @@ export class GeometryService {
       } else if (i === currentWallIndex) {
         // Skip this wall, it's been merged
       } else {
-        newWalls.push(state.walls[i]);
+        newWalls.push(loop.walls[i]);
       }
     }
 
-    return {
-      state: { ...state, walls: newWalls },
-      success: true,
-    };
-  }
-
-  /**
-   * Get all vertices from a room state.
-   */
-  getVertices(state: RoomState): Vector2[] {
-    if (state.walls.length === 0) return [];
-    return state.walls.map((w) => w.start);
+    return { walls: newWalls, success: true };
   }
 }
 

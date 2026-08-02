@@ -11,7 +11,7 @@
   let isClosed: boolean;
 
   $: currentTool = $activeTool;
-  $: isClosed = $roomStore.isClosed;
+  $: isClosed = $roomStore.geometry.boundary.isClosed;
 
   function formatCoord(value: number): string {
     return formatImperial(value, { decimal: false });

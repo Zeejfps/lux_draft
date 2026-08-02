@@ -2,9 +2,9 @@
   import { roomStore, getVertices, updateVertexPosition, deleteVertex } from '../stores/roomStore';
   import { selectedVertexIndex, clearVertexSelection } from '../stores/appStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { RoomState } from '../types';
+  import type { EditorDocument } from '../types';
 
-  let currentRoom: RoomState;
+  let currentRoom: EditorDocument;
   let currentSelectedVertexIndex: number | null;
   let selectedVertex: import('../types').Vector2 | null = null;
   let vertexXInput: string = '';

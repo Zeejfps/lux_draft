@@ -5,7 +5,7 @@ import {
   DEFAULT_DISPLAY_PREFERENCES,
   migrateLightRadiusVisibility,
 } from '../types';
-import { roomStore } from './roomStore';
+import { committedRoom, dispatch } from './roomStore';
 
 export const rafterConfig = writable<RafterConfig>({ ...DEFAULT_RAFTER_CONFIG });
 
@@ -16,23 +16,23 @@ export const displayPreferences = writable<DisplayPreferences>({
 // Flag to prevent circular updates during initialization from saved state
 let isLoadingFromSavedState = false;
 
-// Sync settings to roomStore when they change (but not during initial load)
+// Sync settings into the document when they change (but not during initial load)
 rafterConfig.subscribe((config) => {
   if (!isLoadingFromSavedState) {
-    roomStore.update((state) => ({ ...state, rafterConfig: config }));
+    dispatch({ type: 'lighting.setRafterConfig', config });
   }
 });
 
-displayPreferences.subscribe((prefs) => {
+displayPreferences.subscribe((preferences) => {
   if (!isLoadingFromSavedState) {
-    roomStore.update((state) => ({ ...state, displayPreferences: prefs }));
+    dispatch({ type: 'document.setDisplayPreferences', preferences });
   }
 });
 
-// Initialize settings from roomStore (called when loading saved projects)
+// Initialize settings from the committed document (called when loading saved projects)
 export function initSettingsFromRoom(): void {
   isLoadingFromSavedState = true;
-  const state = get(roomStore);
+  const state = get(committedRoom);
   if (state.rafterConfig) {
     // Merge with defaults to handle missing fields from old data
     rafterConfig.set({ ...DEFAULT_RAFTER_CONFIG, ...state.rafterConfig });

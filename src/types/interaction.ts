@@ -1,5 +1,25 @@
-import type { Vector2, RoomState } from './index';
+import type { Vector2 } from './geometry';
+import type { EditorDocument } from './document';
+import type { EditorCommand } from './command';
 import type { InputEvent } from '../core/InputManager';
+
+// ============================================
+// Interaction (ephemeral gesture state)
+// ============================================
+
+/**
+ * What the user is currently doing. Ephemeral — never persisted, never undoable.
+ *
+ * Phase 1a carries the two variants the drag machinery needs. The `drawing` and `measuring`
+ * variants of the target model still live in `WallBuilder` and `MeasurementController`; phase 1b
+ * folds them in.
+ */
+export type Interaction =
+  | { kind: 'idle' }
+  /** A command the user is aiming. Dispatched verbatim on completion, discarded on cancel. */
+  | { kind: 'commandPreview'; command: EditorCommand };
+
+export const IDLE_INTERACTION: Interaction = { kind: 'idle' };
 
 // ============================================
 // Selection State
@@ -51,7 +71,7 @@ export interface InputModifiers {
 export interface DragStartContext {
   position: Vector2;
   modifiers: InputModifiers;
-  roomState: RoomState | null;
+  document: EditorDocument | null;
   selection: SelectionState;
 }
 
@@ -61,12 +81,19 @@ export interface DragUpdateContext {
   axisLock: AxisLock;
 }
 
+/**
+ * A drag operation resolves pointer input into a candidate command. It never writes:
+ * `update` returns the command that would produce the state the user is looking at, and the
+ * same value is dispatched on completion. There is no `cancel` — discarding the preview is
+ * the whole of cancelling.
+ */
 export interface IDragOperation {
   readonly type: string;
   start(context: DragStartContext): void;
-  update(context: DragUpdateContext): void;
-  commit(): void;
-  cancel(): void;
+  /** The candidate command for this frame, or null when there is nothing to preview. */
+  update(context: DragUpdateContext): EditorCommand | null;
+  /** End the operation. Writes nothing. */
+  finish(): void;
   isActive(): boolean;
   getStartPosition(): Vector2 | null;
 }
@@ -76,7 +103,7 @@ export interface IDragOperation {
 // ============================================
 
 export interface InteractionContext {
-  roomState: RoomState;
+  document: EditorDocument;
   selection: SelectionState;
   isDrawingEnabled: boolean;
   isPlacingLights: boolean;

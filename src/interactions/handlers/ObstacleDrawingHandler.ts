@@ -80,7 +80,7 @@ export class ObstacleDrawingHandler extends BaseInteractionHandler {
     const gridSize = this.getEffectiveGridSize();
 
     // Verify point is inside the room
-    if (!isPointInRoom(pos, context.roomState.walls)) {
+    if (!isPointInRoom(pos, context.document.geometry.boundary.walls)) {
       return true; // Consume the event but don't place
     }
 
@@ -92,7 +92,9 @@ export class ObstacleDrawingHandler extends BaseInteractionHandler {
         wallBuilder.startDrawing(gridPos);
         this.callbacks.onUpdateDrawingVertices(wallBuilder.getVertices());
       } else {
-        if (this.tryClosureWithGridSnap(gridPos, gridSize, context.roomState.walls)) {
+        if (
+          this.tryClosureWithGridSnap(gridPos, gridSize, context.document.geometry.boundary.walls)
+        ) {
           return true;
         }
 
@@ -111,7 +113,10 @@ export class ObstacleDrawingHandler extends BaseInteractionHandler {
       const snap = wallBuilder.currentSnap;
 
       if (snap?.snapType === 'closure' && wallBuilder.vertexCount >= 3) {
-        this.handleClosureAttempt(wallBuilder.closeLoop(), context.roomState.walls);
+        this.handleClosureAttempt(
+          wallBuilder.closeLoop(),
+          context.document.geometry.boundary.walls
+        );
       } else {
         wallBuilder.placeVertex(snappedPos);
         this.callbacks.onUpdateDrawingVertices(wallBuilder.getVertices());

@@ -1,23 +1,103 @@
-import { writable, derived } from 'svelte/store';
-import type { RoomState, WallSegment, Vector2, Door, Obstacle } from '../types';
-import { DEFAULT_ROOM_STATE } from '../types';
+import { writable, derived, get } from 'svelte/store';
+import type { WallSegment, Vector2, Door, Obstacle } from '../types/geometry';
+import type { EditorDocument } from '../types/document';
+import type { EditorCommand, DoorChanges, ObstacleChanges } from '../types/command';
+import type { Interaction } from '../types/interaction';
+import { createEmptyDocument } from '../types/document';
+import { IDLE_INTERACTION } from '../types/interaction';
 import {
-  vectorSubtract,
-  vectorNormalize,
-  vectorAdd,
-  vectorScale,
-  distancePointToPoint,
-} from '../utils/math';
+  applyCommand,
+  previewDocument,
+  assertCommandIsSerializable,
+  valueEqual,
+} from '../commands';
 import { geometryService } from '../services/GeometryService';
 
-export const roomStore = writable<RoomState>({ ...DEFAULT_ROOM_STATE });
+// ============================================
+// Store topology
+// ============================================
+//
+// `committedRoom` is what history, autosave, export and share read: it changes only when a
+// command is dispatched, a document is opened, or history moves. `interaction` holds the
+// candidate command the user is aiming. `roomStore` keeps its old name and its old *live*
+// meaning — during a gesture it shows the preview, exactly as writing mid-drag used to.
+//
+// Phase 1b replaces all three with a single `Session` value and `reduceSession`.
 
-export const canPlaceLights = derived(roomStore, ($room) => $room.isClosed);
-export const canPlaceDoors = derived(roomStore, ($room) => $room.isClosed);
-export const canDrawObstacles = derived(roomStore, ($room) => $room.isClosed);
+/** Committed document. Never contains a preview. */
+export const committedRoom = writable<EditorDocument>(createEmptyDocument());
+
+/** Ephemeral gesture state. Not persisted, not undoable. */
+export const interaction = writable<Interaction>(IDLE_INTERACTION);
+
+/** Live view: committed document with the candidate command applied. What the editor renders. */
+export const roomStore = derived([committedRoom, interaction], ([$doc, $interaction]) =>
+  previewDocument($doc, $interaction)
+);
+
+// ============================================
+// The write path
+// ============================================
+
+/**
+ * The only way to edit the document (invariant 2).
+ *
+ * A command whose result is value-equal to the current document returns the *same reference*,
+ * so the store does not emit and no history entry appears. That guarantee lives here rather
+ * than in `historyStore`'s stringify diff, because phase 1b deletes that diff.
+ */
+export function dispatch(command: EditorCommand): void {
+  if (import.meta.env.DEV) {
+    assertCommandIsSerializable(command);
+  }
+  committedRoom.update((doc) => {
+    const next = applyCommand(doc, command);
+    return valueEqual(next, doc) ? doc : next;
+  });
+}
+
+/** Replace the whole document — load, import, share link, reset. Not a command, not undoable. */
+export function openDocument(doc: EditorDocument): void {
+  interaction.set(IDLE_INTERACTION);
+  committedRoom.set(doc);
+}
+
+/** Show a candidate command. Writes nothing to the committed document. */
+export function previewCommand(command: EditorCommand): void {
+  interaction.set({ kind: 'commandPreview', command });
+}
+
+/** Discard the candidate command. The committed document is untouched. */
+export function cancelInteraction(): void {
+  if (get(interaction).kind !== 'idle') {
+    interaction.set(IDLE_INTERACTION);
+  }
+}
+
+/**
+ * Commit the candidate command: dispatch that exact value and return to idle.
+ * Returns true when something was pending.
+ */
+export function commitInteraction(): boolean {
+  const current = get(interaction);
+  if (current.kind !== 'commandPreview') return false;
+
+  interaction.set(IDLE_INTERACTION);
+  dispatch(current.command);
+  return true;
+}
+
+// ============================================
+// Derived views
+// ============================================
+
+export const canPlaceLights = derived(roomStore, ($room) => $room.geometry.boundary.isClosed);
+export const canPlaceDoors = derived(roomStore, ($room) => $room.geometry.boundary.isClosed);
+export const canDrawObstacles = derived(roomStore, ($room) => $room.geometry.boundary.isClosed);
 
 export const roomBounds = derived(roomStore, ($room) => {
-  if ($room.walls.length === 0) {
+  const walls = $room.geometry.boundary.walls;
+  if (walls.length === 0) {
     return { minX: -10, minY: -10, maxX: 10, maxY: 10 };
   }
 
@@ -26,7 +106,7 @@ export const roomBounds = derived(roomStore, ($room) => {
   let maxX = -Infinity;
   let maxY = -Infinity;
 
-  for (const wall of $room.walls) {
+  for (const wall of walls) {
     minX = Math.min(minX, wall.start.x, wall.end.x);
     minY = Math.min(minY, wall.start.y, wall.end.y);
     maxX = Math.max(maxX, wall.start.x, wall.end.x);
@@ -42,225 +122,98 @@ export const roomBounds = derived(roomStore, ($room) => {
   };
 });
 
+// ============================================
+// Read helpers
+// ============================================
+
+export function getVertices(doc: EditorDocument): Vector2[] {
+  return doc.geometry.boundary.walls.map((w) => w.start);
+}
+
+export function getWalls(doc: EditorDocument): WallSegment[] {
+  return doc.geometry.boundary.walls;
+}
+
+export function getDoorsByWallId(doc: EditorDocument, wallId: string): Door[] {
+  return doc.geometry.doors.filter((d) => d.wallId === wallId);
+}
+
+// ============================================
+// Command producers
+//
+// Thin wrappers so call sites keep reading like verbs. Each one is exactly one dispatch.
+// ============================================
+
 export function resetRoom(): void {
-  roomStore.set({ ...DEFAULT_ROOM_STATE });
+  openDocument(createEmptyDocument());
+}
+
+export function closeRoom(walls: WallSegment[]): void {
+  dispatch({ type: 'room.close', walls });
 }
 
 export function updateWallLength(wallId: string, newLength: number): void {
   if (newLength <= 0) return;
-
-  roomStore.update((state) => {
-    const wallIndex = state.walls.findIndex((w) => w.id === wallId);
-    if (wallIndex === -1) return state;
-
-    const wall = state.walls[wallIndex];
-    const direction = vectorNormalize(vectorSubtract(wall.end, wall.start));
-    const newEnd = vectorAdd(wall.start, vectorScale(direction, newLength));
-
-    const updatedWall: WallSegment = {
-      ...wall,
-      end: newEnd,
-      length: newLength,
-    };
-
-    // Update this wall
-    const newWalls = [...state.walls];
-    newWalls[wallIndex] = updatedWall;
-
-    // If the room is closed, we need to update the adjacent wall's start point
-    if (state.isClosed) {
-      const nextWallIndex = (wallIndex + 1) % state.walls.length;
-      const nextWall = newWalls[nextWallIndex];
-
-      // Update the next wall's start to match this wall's new end
-      const nextWallLength = distancePointToPoint(newEnd, nextWall.end);
-
-      newWalls[nextWallIndex] = {
-        ...nextWall,
-        start: { ...newEnd },
-        length: nextWallLength,
-      };
-    }
-
-    return { ...state, walls: newWalls };
-  });
-}
-
-/**
- * Update a vertex in a closed wall loop: sets wall[vertexIndex].start and wall[prevIndex].end,
- * recalculating lengths for both affected walls. Mutates the provided walls array in place.
- */
-function updateVertexInWalls(
-  walls: WallSegment[],
-  vertexIndex: number,
-  newPosition: Vector2
-): void {
-  const numWalls = walls.length;
-
-  const currentWall = walls[vertexIndex];
-  walls[vertexIndex] = {
-    ...currentWall,
-    start: { ...newPosition },
-    length: distancePointToPoint(newPosition, currentWall.end),
-  };
-
-  const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
-  const prevWall = walls[prevWallIndex];
-  walls[prevWallIndex] = {
-    ...prevWall,
-    end: { ...newPosition },
-    length: distancePointToPoint(prevWall.start, newPosition),
-  };
-}
-
-export function getVertices(state: RoomState): Vector2[] {
-  if (state.walls.length === 0) return [];
-  return state.walls.map((w) => w.start);
+  dispatch({ type: 'wall.setLength', wallId, length: newLength });
 }
 
 export function updateVertexPosition(vertexIndex: number, newPosition: Vector2): void {
-  roomStore.update((state) => {
-    if (!state.isClosed || state.walls.length === 0) return state;
-
-    const numWalls = state.walls.length;
-    if (vertexIndex < 0 || vertexIndex >= numWalls) return state;
-
-    const newWalls = [...state.walls];
-    updateVertexInWalls(newWalls, vertexIndex, newPosition);
-    return { ...state, walls: newWalls };
-  });
-}
-
-export function insertVertexOnWall(wallId: string, position: Vector2): number | null {
-  let insertedIndex: number | null = null;
-
-  roomStore.update((state) => {
-    const result = geometryService.insertVertexOnWall(state, wallId, position);
-    insertedIndex = result.insertedIndex;
-    return result.state;
-  });
-
-  return insertedIndex;
+  dispatch({ type: 'vertex.move', index: vertexIndex, position: newPosition });
 }
 
 export function moveWall(wallId: string, newStart: Vector2, newEnd: Vector2): void {
-  roomStore.update((state) => {
-    if (!state.isClosed || state.walls.length === 0) return state;
+  dispatch({ type: 'wall.move', wallId, start: newStart, end: newEnd });
+}
 
-    const wallIndex = state.walls.findIndex((w) => w.id === wallId);
-    if (wallIndex === -1) return state;
+/** Returns the index of the inserted vertex, or null when the insert was rejected. */
+export function insertVertexOnWall(wallId: string, position: Vector2): number | null {
+  const doc = get(committedRoom);
+  const { insertedIndex } = geometryService.insertVertexOnWall(
+    doc.geometry.boundary,
+    wallId,
+    position
+  );
+  if (insertedIndex === null) return null;
 
-    const numWalls = state.walls.length;
-    const newWalls = [...state.walls];
-
-    // Update the selected wall
-    const wall = newWalls[wallIndex];
-    newWalls[wallIndex] = {
-      ...wall,
-      start: { ...newStart },
-      end: { ...newEnd },
-      // Length stays the same since we're translating
-    };
-
-    // Update the previous wall's end point (it shares start vertex with this wall)
-    const prevWallIndex = (wallIndex - 1 + numWalls) % numWalls;
-    const prevWall = newWalls[prevWallIndex];
-    const prevLength = distancePointToPoint(prevWall.start, newStart);
-    newWalls[prevWallIndex] = {
-      ...prevWall,
-      end: { ...newStart },
-      length: prevLength,
-    };
-
-    // Update the next wall's start point (it shares end vertex with this wall)
-    const nextWallIndex = (wallIndex + 1) % numWalls;
-    const nextWall = newWalls[nextWallIndex];
-    const nextLength = distancePointToPoint(newEnd, nextWall.end);
-    newWalls[nextWallIndex] = {
-      ...nextWall,
-      start: { ...newEnd },
-      length: nextLength,
-    };
-
-    return { ...state, walls: newWalls };
-  });
+  dispatch({ type: 'vertex.insert', wallId, position });
+  return insertedIndex;
 }
 
 export function deleteVertex(vertexIndex: number): boolean {
-  let success = false;
+  const doc = get(committedRoom);
+  const { success } = geometryService.deleteVertex(doc.geometry.boundary, vertexIndex);
+  if (!success) return false;
 
-  roomStore.update((state) => {
-    // Get the wall that will be deleted (needed for door cleanup)
-    const deletedWallId = state.walls[vertexIndex]?.id;
-
-    const result = geometryService.deleteVertex(state, vertexIndex);
-    success = result.success;
-
-    if (!result.success) return state;
-
-    // Remove doors on the deleted wall
-    const newDoors = deletedWallId
-      ? result.state.doors.filter((d) => d.wallId !== deletedWallId)
-      : result.state.doors;
-
-    return { ...result.state, doors: newDoors };
-  });
-
-  return success;
+  dispatch({ type: 'vertex.delete', index: vertexIndex });
+  return true;
 }
 
-// ============================================
-// Door Operations
-// ============================================
+// --- doors ---
 
 export function addDoor(door: Door): void {
-  roomStore.update((state) => ({
-    ...state,
-    doors: [...state.doors, door],
-  }));
+  dispatch({ type: 'door.add', door });
 }
 
-export function updateDoor(doorId: string, updates: Partial<Omit<Door, 'id'>>): void {
-  roomStore.update((state) => ({
-    ...state,
-    doors: state.doors.map((door) => (door.id === doorId ? { ...door, ...updates } : door)),
-  }));
+export function updateDoor(doorId: string, changes: DoorChanges): void {
+  dispatch({ type: 'door.set', doorId, changes });
 }
 
 export function removeDoor(doorId: string): void {
-  roomStore.update((state) => ({
-    ...state,
-    doors: state.doors.filter((d) => d.id !== doorId),
-  }));
+  dispatch({ type: 'door.remove', doorId });
 }
 
-export function getDoorsByWallId(state: RoomState, wallId: string): Door[] {
-  return state.doors.filter((d) => d.wallId === wallId);
-}
-
-// ============================================
-// Obstacle Operations
-// ============================================
+// --- obstacles ---
 
 export function addObstacle(obstacle: Obstacle): void {
-  roomStore.update((state) => ({
-    ...state,
-    obstacles: [...(state.obstacles ?? []), obstacle],
-  }));
+  dispatch({ type: 'obstacle.add', obstacle });
 }
 
-export function updateObstacle(id: string, updates: Partial<Omit<Obstacle, 'id'>>): void {
-  roomStore.update((state) => ({
-    ...state,
-    obstacles: (state.obstacles ?? []).map((obs) => (obs.id === id ? { ...obs, ...updates } : obs)),
-  }));
+export function updateObstacle(id: string, changes: ObstacleChanges): void {
+  dispatch({ type: 'obstacle.set', obstacleId: id, changes });
 }
 
 export function removeObstacle(id: string): void {
-  roomStore.update((state) => ({
-    ...state,
-    obstacles: (state.obstacles ?? []).filter((obs) => obs.id !== id),
-  }));
+  dispatch({ type: 'obstacle.remove', obstacleId: id });
 }
 
 export function updateObstacleVertexPosition(
@@ -268,64 +221,26 @@ export function updateObstacleVertexPosition(
   vertexIndex: number,
   newPosition: Vector2
 ): void {
-  roomStore.update((state) => {
-    const obstacles = state.obstacles ?? [];
-    const obstacleIndex = obstacles.findIndex((o) => o.id === obstacleId);
-    if (obstacleIndex === -1) return state;
-
-    const obstacle = obstacles[obstacleIndex];
-    const numWalls = obstacle.walls.length;
-    if (vertexIndex < 0 || vertexIndex >= numWalls) return state;
-
-    const newWalls = [...obstacle.walls];
-    updateVertexInWalls(newWalls, vertexIndex, newPosition);
-
-    const newObstacles = [...obstacles];
-    newObstacles[obstacleIndex] = { ...obstacle, walls: newWalls };
-
-    return { ...state, obstacles: newObstacles };
-  });
+  dispatch({ type: 'obstacle.vertex.move', obstacleId, index: vertexIndex, position: newPosition });
 }
 
-export function moveObstacle(obstacleId: string, vertexPositions: Map<number, Vector2>): void {
-  roomStore.update((state) => {
-    const obstacles = state.obstacles ?? [];
-    const obstacleIndex = obstacles.findIndex((o) => o.id === obstacleId);
-    if (obstacleIndex === -1) return state;
+export function moveObstacle(obstacleId: string, vertices: Vector2[]): void {
+  dispatch({ type: 'obstacle.move', obstacleId, vertices });
+}
 
-    const obstacle = obstacles[obstacleIndex];
-    const newWalls = [...obstacle.walls];
+// --- lights (legacy; becomes `lighting.*` in phase 3b) ---
 
-    // Update each vertex position
-    for (const [vertexIndex, newPosition] of vertexPositions) {
-      const numWalls = newWalls.length;
-      if (vertexIndex < 0 || vertexIndex >= numWalls) continue;
+export function addLight(light: import('../types/lighting').LightFixture): void {
+  dispatch({ type: 'light.add', light });
+}
 
-      const currentWall = newWalls[vertexIndex];
-      newWalls[vertexIndex] = {
-        ...currentWall,
-        start: { ...newPosition },
-      };
-
-      const prevWallIndex = (vertexIndex - 1 + numWalls) % numWalls;
-      const prevWall = newWalls[prevWallIndex];
-      newWalls[prevWallIndex] = {
-        ...prevWall,
-        end: { ...newPosition },
-      };
-    }
-
-    // Recalculate all wall lengths after all positions are updated
-    for (let i = 0; i < newWalls.length; i++) {
-      newWalls[i] = {
-        ...newWalls[i],
-        length: distancePointToPoint(newWalls[i].start, newWalls[i].end),
-      };
-    }
-
-    const newObstacles = [...obstacles];
-    newObstacles[obstacleIndex] = { ...obstacle, walls: newWalls };
-
-    return { ...state, obstacles: newObstacles };
-  });
+export function removeLights(ids: Iterable<string>): void {
+  const commands: EditorCommand[] = [];
+  for (const id of ids) commands.push({ type: 'light.remove', lightId: id });
+  if (commands.length === 0) return;
+  if (commands.length === 1) {
+    dispatch(commands[0]);
+    return;
+  }
+  dispatch({ type: 'compound', label: 'Delete lights', commands });
 }

@@ -1,6 +1,8 @@
 import { get } from 'svelte/store';
 import type { RoomState, LightDefinition } from '../types';
+import type { EditorDocument } from '../types/document';
 import { lightDefinitions } from '../stores/lightDefinitionsStore';
+import { toLegacyRoomState } from './legacyDocumentAdapter';
 
 export interface ExportData {
   version: 1 | 2;
@@ -8,8 +10,8 @@ export interface ExportData {
   lightDefinitions: LightDefinition[];
 }
 
-export function exportToJSON(state: RoomState): void {
-  const exportData = createExportData(state);
+export function exportToJSON(doc: EditorDocument): void {
+  const exportData = createExportData(doc);
   const json = JSON.stringify(exportData, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -23,18 +25,18 @@ export function exportToJSON(state: RoomState): void {
   URL.revokeObjectURL(url);
 }
 
-export function getJSONString(state: RoomState): string {
-  const exportData = createExportData(state);
+export function getJSONString(doc: EditorDocument): string {
+  const exportData = createExportData(doc);
   return JSON.stringify(exportData, null, 2);
 }
 
-function createExportData(state: RoomState): ExportData {
+function createExportData(doc: EditorDocument): ExportData {
   // Get all current light definitions
   const allDefinitions = get(lightDefinitions);
 
   // Find which custom definitions are actually used by lights in this room
   const usedDefinitionIds = new Set(
-    state.lights
+    doc.lights
       .map((light) => light.definitionId)
       .filter((id): id is string => id !== undefined && id.startsWith('custom-'))
   );
@@ -44,7 +46,7 @@ function createExportData(state: RoomState): ExportData {
 
   return {
     version: 2,
-    roomState: state,
+    roomState: toLegacyRoomState(doc),
     lightDefinitions: usedCustomDefinitions,
   };
 }

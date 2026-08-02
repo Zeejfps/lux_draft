@@ -1,4 +1,4 @@
-import type { Vector2 } from '../types';
+import type { Vector2, EditorCommand } from '../types';
 import type {
   IDragOperation,
   DragStartContext,
@@ -33,9 +33,16 @@ export abstract class BaseDragOperation implements IDragOperation {
   }
 
   abstract start(context: DragStartContext): void;
-  abstract update(context: DragUpdateContext): void;
-  abstract commit(): void;
-  abstract cancel(): void;
+  abstract update(context: DragUpdateContext): EditorCommand | null;
+
+  /** End the operation. Writes nothing — a cancelled drag simply discards its preview. */
+  finish(): void {
+    this._isActive = false;
+    this.cleanup();
+  }
+
+  /** Release per-drag state. Overridden by operations that capture origins. */
+  protected cleanup(): void {}
 
   /**
    * Apply axis lock constraint to a position.

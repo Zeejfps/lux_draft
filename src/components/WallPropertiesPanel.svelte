@@ -3,9 +3,9 @@
   import { selectedWallId, clearWallSelection } from '../stores/appStore';
   import { formatImperial, parseImperial } from '../utils/format';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { WallSegment, RoomState } from '../types';
+  import type { WallSegment, EditorDocument } from '../types';
 
-  let currentRoom: RoomState;
+  let currentRoom: EditorDocument;
   let currentSelectedWallId: string | null;
   let selectedWall: WallSegment | null = null;
   let wallLengthInput: string = '';
@@ -14,7 +14,7 @@
   $: currentSelectedWallId = $selectedWallId;
 
   $: selectedWall = currentSelectedWallId
-    ? (currentRoom.walls.find((w) => w.id === currentSelectedWallId) ?? null)
+    ? (currentRoom.geometry.boundary.walls.find((w) => w.id === currentSelectedWallId) ?? null)
     : null;
 
   $: if (selectedWall) {

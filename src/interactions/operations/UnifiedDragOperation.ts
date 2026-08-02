@@ -1,6 +1,6 @@
-import type { Vector2 } from '../../types';
+import type { Vector2, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext, SelectionState } from '../../types/interaction';
-import type { DragManagerCallbacks } from '../DragManager';
+import type { DragOperationCallbacks } from '../DragManager';
 import type { BaseDragConfig } from '../types';
 import { BaseDragOperation } from '../DragOperation';
 import { calculateDelta, checkPointInRoom, processTargetWithSnapping } from './grabModeHelpers';
@@ -11,13 +11,16 @@ import { calculateDelta, checkPointInRoom, processTargetWithSnapping } from './g
  */
 export type UnifiedDragConfig = BaseDragConfig;
 
-export interface UnifiedDragCallbacks extends DragManagerCallbacks {
+export interface UnifiedDragCallbacks extends DragOperationCallbacks {
   onMeasurementUpdate?: (delta: Vector2) => void;
 }
 
 /**
  * Handles unified dragging of multiple vertices and/or lights.
  * Supports axis locking, grid snapping, and vertex/light alignment snapping.
+ *
+ * A heterogeneous selection resolves to one compound command — one history entry made of the
+ * per-entity absolute moves.
  */
 export class UnifiedDragOperation extends BaseDragOperation {
   readonly type = 'unified';
@@ -84,8 +87,8 @@ export class UnifiedDragOperation extends BaseDragOperation {
     }
   }
 
-  update(context: DragUpdateContext): void {
-    if (!this._isActive || !this.startPosition || !this.selection) return;
+  update(context: DragUpdateContext): EditorCommand | null {
+    if (!this._isActive || !this.startPosition || !this.selection) return null;
 
     const snapResult = processTargetWithSnapping(
       context.position,
@@ -111,40 +114,19 @@ export class UnifiedDragOperation extends BaseDragOperation {
     // Calculate delta from anchor point
     const delta = this.calculateDeltaFromAnchor(snapResult.position);
 
-    // Move all selected vertices
-    this.moveSelectedVertices(delta);
-
-    // Move all selected lights
-    this.moveSelectedLights(delta);
+    const commands: EditorCommand[] = [
+      ...this.vertexMoveCommands(delta),
+      ...this.lightMoveCommands(delta),
+    ];
 
     // Notify measurement update if callback provided
     if (this.callbacks.onMeasurementUpdate) {
       this.callbacks.onMeasurementUpdate(delta);
     }
-  }
 
-  commit(): void {
-    if (!this._isActive) return;
-
-    this._isActive = false;
-    this.cleanup();
-  }
-
-  cancel(): void {
-    if (!this._isActive) return;
-
-    // Restore original vertex positions
-    for (const [idx, originalPos] of this.originalVertexPositions) {
-      this.callbacks.onUpdateVertexPosition(idx, originalPos);
-    }
-
-    // Restore original light positions
-    if (this.originalLightPositions.size > 0) {
-      this.callbacks.onUpdateLightPositions(new Map(this.originalLightPositions));
-    }
-
-    this._isActive = false;
-    this.cleanup();
+    if (commands.length === 0) return null;
+    if (commands.length === 1) return commands[0];
+    return { type: 'compound', label: 'Move selection', commands };
   }
 
   private calculateDeltaFromAnchor(targetPos: Vector2): Vector2 {
@@ -160,41 +142,38 @@ export class UnifiedDragOperation extends BaseDragOperation {
     return { x: 0, y: 0 };
   }
 
-  private moveSelectedVertices(delta: Vector2): void {
-    for (const [idx, originalPos] of this.originalVertexPositions) {
-      const newPos = {
-        x: originalPos.x + delta.x,
-        y: originalPos.y + delta.y,
-      };
-      this.callbacks.onUpdateVertexPosition(idx, newPos);
+  private vertexMoveCommands(delta: Vector2): EditorCommand[] {
+    const commands: EditorCommand[] = [];
+    for (const [index, originalPos] of this.originalVertexPositions) {
+      commands.push({
+        type: 'vertex.move',
+        index,
+        position: { x: originalPos.x + delta.x, y: originalPos.y + delta.y },
+      });
     }
+    return commands;
   }
 
-  private moveSelectedLights(delta: Vector2): void {
-    if (this.originalLightPositions.size === 0) return;
+  private lightMoveCommands(delta: Vector2): EditorCommand[] {
+    if (this.originalLightPositions.size === 0) return [];
 
     const walls = this.config.getWalls();
     const isClosed = this.config.isRoomClosed();
-    const updates = new Map<string, Vector2>();
+    const commands: EditorCommand[] = [];
 
-    for (const [id, originalPos] of this.originalLightPositions) {
-      const newPos = {
-        x: originalPos.x + delta.x,
-        y: originalPos.y + delta.y,
-      };
+    for (const [lightId, originalPos] of this.originalLightPositions) {
+      const position = { x: originalPos.x + delta.x, y: originalPos.y + delta.y };
 
       // Only move if inside room (when room is closed)
-      if (!isClosed || checkPointInRoom(newPos, walls)) {
-        updates.set(id, newPos);
+      if (!isClosed || checkPointInRoom(position, walls)) {
+        commands.push({ type: 'light.move', lightId, position });
       }
     }
 
-    if (updates.size > 0) {
-      this.callbacks.onUpdateLightPositions(updates);
-    }
+    return commands;
   }
 
-  private cleanup(): void {
+  protected cleanup(): void {
     this.originalVertexPositions.clear();
     this.originalLightPositions.clear();
     this.anchorVertexIndex = null;

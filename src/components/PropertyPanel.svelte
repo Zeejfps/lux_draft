@@ -1,20 +1,20 @@
 <script lang="ts">
-  import { roomStore } from '../stores/roomStore';
+  import { roomStore, dispatch } from '../stores/roomStore';
   import { formatImperial, parseImperial } from '../utils/format';
   import { displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
   import { propertiesPanelConfig, togglePropertiesPanel } from '../stores/propertiesPanelStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { RoomState, PropertiesPanelConfig } from '../types';
+  import type { EditorDocument, PropertiesPanelConfig } from '../types';
 
   let config: PropertiesPanelConfig;
-  let currentRoom: RoomState;
+  let currentRoom: EditorDocument;
   let ceilingHeightInput: string = '';
   let unitFormat: 'feet-inches' | 'inches';
 
   $: config = $propertiesPanelConfig;
   $: currentRoom = $roomStore;
   $: unitFormat = $displayPreferences.unitFormat;
-  $: ceilingHeightInput = formatImperial(currentRoom.ceilingHeight);
+  $: ceilingHeightInput = formatImperial(currentRoom.space.ceilingHeight);
 
   function handleCeilingHeightChange(e: Event): void {
     ceilingHeightInput = (e.target as HTMLInputElement).value;
@@ -29,10 +29,10 @@
   function applyCeilingHeight(): void {
     const newHeight = parseImperial(ceilingHeightInput);
     if (newHeight !== null && newHeight > 0 && newHeight <= 50) {
-      roomStore.update((state) => ({ ...state, ceilingHeight: newHeight }));
+      dispatch({ type: 'space.setCeilingHeight', height: newHeight });
     } else {
       // Reset to current value if invalid
-      ceilingHeightInput = formatImperial(currentRoom.ceilingHeight);
+      ceilingHeightInput = formatImperial(currentRoom.space.ceilingHeight);
     }
   }
 </script>

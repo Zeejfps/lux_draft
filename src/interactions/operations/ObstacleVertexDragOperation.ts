@@ -1,7 +1,7 @@
-import type { Vector2 } from '../../types';
+import type { Vector2, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { SnapController } from '../../controllers/SnapController';
-import type { DragManagerCallbacks } from '../DragManager';
+import type { DragOperationCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
 
 export interface ObstacleVertexDragConfig {
@@ -24,9 +24,9 @@ export class ObstacleVertexDragOperation extends BaseDragOperation {
   private allVertices: Vector2[] = [];
   private originalVertexPositions: Map<number, Vector2> = new Map();
   private config: ObstacleVertexDragConfig;
-  private callbacks: DragManagerCallbacks;
+  private callbacks: DragOperationCallbacks;
 
-  constructor(config: ObstacleVertexDragConfig, callbacks: DragManagerCallbacks) {
+  constructor(config: ObstacleVertexDragConfig, callbacks: DragOperationCallbacks) {
     super();
     this.config = config;
     this.callbacks = callbacks;
@@ -73,8 +73,8 @@ export class ObstacleVertexDragOperation extends BaseDragOperation {
     }
   }
 
-  update(context: DragUpdateContext): void {
-    if (!this._isActive || !this.obstacleId || !this.startPosition) return;
+  update(context: DragUpdateContext): EditorCommand | null {
+    if (!this._isActive || !this.obstacleId || !this.startPosition) return null;
 
     let targetPos = context.position;
 
@@ -115,41 +115,31 @@ export class ObstacleVertexDragOperation extends BaseDragOperation {
         ? this.originalVertexPositions.get(this.anchorVertexIndex)
         : null;
 
-    if (!anchorOriginal) return;
+    if (!anchorOriginal) return null;
 
     const delta = this.calculateDelta(anchorOriginal, targetPos);
 
-    // Move all selected vertices by the delta
-    for (const [idx, originalPos] of this.originalVertexPositions) {
-      const newPos = {
-        x: originalPos.x + delta.x,
-        y: originalPos.y + delta.y,
-      };
-      this.callbacks.onUpdateObstacleVertexPosition(this.obstacleId!, idx, newPos);
-    }
-  }
-
-  commit(): void {
-    if (!this._isActive) return;
-    this._isActive = false;
-    this.callbacks.onSetSnapGuides([]);
-    this.cleanup();
-  }
-
-  cancel(): void {
-    if (!this._isActive || !this.obstacleId) return;
-
-    // Restore original positions
-    for (const [idx, originalPos] of this.originalVertexPositions) {
-      this.callbacks.onUpdateObstacleVertexPosition(this.obstacleId, idx, originalPos);
+    const commands: EditorCommand[] = [];
+    for (const [index, originalPos] of this.originalVertexPositions) {
+      commands.push({
+        type: 'obstacle.vertex.move',
+        obstacleId: this.obstacleId,
+        index,
+        position: { x: originalPos.x + delta.x, y: originalPos.y + delta.y },
+      });
     }
 
-    this._isActive = false;
-    this.callbacks.onSetSnapGuides([]);
-    this.cleanup();
+    if (commands.length === 0) return null;
+    if (commands.length === 1) return commands[0];
+    return { type: 'compound', label: 'Move obstacle vertices', commands };
   }
 
-  private cleanup(): void {
+  finish(): void {
+    this.callbacks.onSetSnapGuides([]);
+    super.finish();
+  }
+
+  protected cleanup(): void {
     this.obstacleId = null;
     this.anchorVertexIndex = null;
     this.allVertices = [];

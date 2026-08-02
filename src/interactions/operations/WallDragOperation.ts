@@ -1,7 +1,7 @@
-import type { Vector2, WallSegment } from '../../types';
+import type { Vector2, WallSegment, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { SnapController } from '../../controllers/SnapController';
-import type { DragManagerCallbacks } from '../DragManager';
+import type { DragOperationCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
 import { applyWallSnappingWithGuides } from './grabModeHelpers';
 
@@ -23,9 +23,9 @@ export class WallDragOperation extends BaseDragOperation {
   private originalStart: Vector2 | null = null;
   private originalEnd: Vector2 | null = null;
   private config: WallDragConfig;
-  private callbacks: DragManagerCallbacks;
+  private callbacks: DragOperationCallbacks;
 
-  constructor(config: WallDragConfig, callbacks: DragManagerCallbacks) {
+  constructor(config: WallDragConfig, callbacks: DragOperationCallbacks) {
     super();
     this.config = config;
     this.callbacks = callbacks;
@@ -50,7 +50,7 @@ export class WallDragOperation extends BaseDragOperation {
     this.originalEnd = { ...wall.end };
   }
 
-  update(context: DragUpdateContext): void {
+  update(context: DragUpdateContext): EditorCommand | null {
     if (
       !this._isActive ||
       !this.wallId ||
@@ -58,7 +58,7 @@ export class WallDragOperation extends BaseDragOperation {
       !this.originalStart ||
       !this.originalEnd
     )
-      return;
+      return null;
 
     let constrainedPos = context.position;
 
@@ -78,7 +78,7 @@ export class WallDragOperation extends BaseDragOperation {
     const baseStart = this.applyDelta(this.originalStart, delta);
     const baseEnd = this.applyDelta(this.originalEnd, delta);
 
-    const { start: newStart, end: newEnd } = applyWallSnappingWithGuides(
+    const { start, end } = applyWallSnappingWithGuides(
       baseStart,
       baseEnd,
       this.wallId,
@@ -87,27 +87,10 @@ export class WallDragOperation extends BaseDragOperation {
       this.callbacks.onSetSnapGuides
     );
 
-    this.callbacks.onMoveWall(this.wallId, newStart, newEnd);
+    return { type: 'wall.move', wallId: this.wallId, start, end };
   }
 
-  commit(): void {
-    if (!this._isActive) return;
-
-    this._isActive = false;
-    this.cleanup();
-  }
-
-  cancel(): void {
-    if (!this._isActive || !this.wallId || !this.originalStart || !this.originalEnd) return;
-
-    // Restore original wall position
-    this.callbacks.onMoveWall(this.wallId, this.originalStart, this.originalEnd);
-
-    this._isActive = false;
-    this.cleanup();
-  }
-
-  private cleanup(): void {
+  protected cleanup(): void {
     this.wallId = null;
     this.originalStart = null;
     this.originalEnd = null;

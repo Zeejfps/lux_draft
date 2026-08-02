@@ -13,8 +13,9 @@
     canPlaceLights,
     canPlaceDoors,
     canDrawObstacles,
-    roomStore,
+    committedRoom,
     resetRoom,
+    openDocument,
   } from '../stores/roomStore';
   import { toggleRafters, rafterConfig, displayPreferences } from '../stores/settingsStore';
   import { toggleLightingStats, lightingStatsConfig } from '../stores/lightingStatsStore';
@@ -27,15 +28,16 @@
   import { importFromJSON } from '../persistence/jsonImport';
   import { generateShareUrl } from '../persistence/shareUrl';
   import { saveNow, clearLocalStorage } from '../persistence/localStorage';
-  import type { Tool, ViewMode, LightRadiusVisibility, RoomState } from '../types';
+  import type { Tool, ViewMode, LightRadiusVisibility, EditorDocument } from '../types';
 
   const iconPath = `${import.meta.env.BASE_URL}icons/lux_draft_icon.png`;
 
   let toolbarElement: HTMLDivElement;
 
   let fileInput: HTMLInputElement;
-  let currentRoom: RoomState;
-  $: currentRoom = $roomStore;
+  // Save, export and share read the *committed* document, never the live preview.
+  let currentRoom: EditorDocument;
+  $: currentRoom = $committedRoom;
 
   const dispatch = createEventDispatcher<{ toggleMeasurement: void; openLightManager: void }>();
 
@@ -109,7 +111,7 @@
   }
 
   function handleNew(): void {
-    if (currentRoom.walls.length > 0 || currentRoom.lights.length > 0) {
+    if (currentRoom.geometry.boundary.walls.length > 0 || currentRoom.lights.length > 0) {
       if (!confirm('Start a new project? Unsaved changes will be lost.')) {
         return;
       }
@@ -155,7 +157,7 @@
 
     try {
       const imported = await importFromJSON(file);
-      roomStore.set(imported);
+      openDocument(imported);
       clearSelection();
       historyStore.clear();
     } catch (err) {

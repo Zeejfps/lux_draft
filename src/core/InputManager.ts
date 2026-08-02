@@ -11,7 +11,9 @@ export type InputEventType =
   | 'wheel'
   | 'keydown'
   | 'keyup'
-  | 'contextmenu';
+  | 'contextmenu'
+  /** The gesture was taken away from us: pointercancel, or the window lost focus. */
+  | 'cancel';
 
 export interface InputEvent {
   type: InputEventType;
@@ -55,6 +57,9 @@ export class InputManager {
     for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
       canvas.addEventListener(type, (e: Event) => e.preventDefault());
     }
+
+    canvas.addEventListener('pointercancel', this.handleCancel);
+    window.addEventListener('blur', this.handleCancel);
 
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
     window.addEventListener('keyup', this.handleKeyUp.bind(this));
@@ -165,6 +170,24 @@ export class InputManager {
     this.emit('wheel', event);
   }
 
+  /**
+   * A drag that never gets its mouseup — the pointer was cancelled or the window lost focus.
+   * Bound once so it can be removed on dispose.
+   */
+  private handleCancel = (): void => {
+    this.isDragging = false;
+    this.isPanning = false;
+    this.emit('cancel', {
+      type: 'cancel',
+      worldPos: { x: 0, y: 0 },
+      screenPos: { x: 0, y: 0 },
+      button: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+    });
+  };
+
   private handleContextMenu(e: MouseEvent): void {
     e.preventDefault();
     this.emit('contextmenu', this.createEvent(e, 'contextmenu'));
@@ -201,6 +224,8 @@ export class InputManager {
   }
 
   dispose(): void {
+    this.scene.domElement.removeEventListener('pointercancel', this.handleCancel);
+    window.removeEventListener('blur', this.handleCancel);
     window.removeEventListener('keydown', this.handleKeyDown.bind(this));
     window.removeEventListener('keyup', this.handleKeyUp.bind(this));
   }

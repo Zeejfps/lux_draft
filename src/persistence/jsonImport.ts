@@ -10,7 +10,9 @@ import type {
   DoorSwingSide,
   Obstacle,
 } from '../types';
+import type { EditorDocument } from '../types/document';
 import { mergeLightDefinitions } from '../stores/lightDefinitionsStore';
+import { fromLegacyRoomState } from './legacyDocumentAdapter';
 import type { ExportData } from './jsonExport';
 
 export class ValidationError extends Error {
@@ -305,7 +307,7 @@ function validateVector2(data: unknown, field: string): void {
   }
 }
 
-export async function importFromJSON(file: File): Promise<RoomState> {
+export async function importFromJSON(file: File): Promise<EditorDocument> {
   const text = await file.text();
   let data: unknown;
 
@@ -318,7 +320,7 @@ export async function importFromJSON(file: File): Promise<RoomState> {
   return processImportData(data);
 }
 
-export function importFromString(jsonString: string): RoomState {
+export function importFromString(jsonString: string): EditorDocument {
   let data: unknown;
 
   try {
@@ -330,7 +332,7 @@ export function importFromString(jsonString: string): RoomState {
   return processImportData(data);
 }
 
-function processImportData(data: unknown): RoomState {
+function processImportData(data: unknown): EditorDocument {
   if (!data || typeof data !== 'object') {
     throw new ValidationError('Invalid data format: expected an object');
   }
@@ -351,11 +353,11 @@ function processImportData(data: unknown): RoomState {
     }
 
     // Then validate and return the room state
-    return validateRoomState(exportData.roomState);
+    return fromLegacyRoomState(validateRoomState(exportData.roomState));
   }
 
   // Legacy format: direct RoomState object
-  return validateRoomState(data);
+  return fromLegacyRoomState(validateRoomState(data));
 }
 
 function validateLightDefinition(data: unknown): data is LightDefinition {

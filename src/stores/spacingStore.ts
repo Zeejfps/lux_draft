@@ -17,7 +17,7 @@ export const spacingWarnings = derived(
       return [];
     }
 
-    return analyzer.analyzeSpacing($room.lights, $room.ceilingHeight, $config);
+    return analyzer.analyzeSpacing($room.lights, $room.space.ceilingHeight, $config);
   }
 );
 

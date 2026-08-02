@@ -47,7 +47,9 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
     const state = this.config.getBoxSelectionState();
     return (
       state.isSelecting ||
-      (context.roomState.isClosed && !context.isDrawingEnabled && !context.isPlacingLights)
+      (context.document.geometry.boundary.isClosed &&
+        !context.isDrawingEnabled &&
+        !context.isPlacingLights)
     );
   }
 
@@ -75,14 +77,14 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
 
     // Find items in box
     const vertices = context.vertices;
-    const lights = context.roomState.lights;
+    const lights = context.document.lights;
     const indicesInBox = findVerticesInBox(vertices, state.startPosition, state.currentPosition);
     const lightIdsInBox = findLightsInBox(lights, state.startPosition, state.currentPosition);
 
     // Find obstacle vertices in box (only for the currently selected obstacle)
     const selectedObstacleId = context.selection.selectedObstacleId;
     const selectedObstacle = selectedObstacleId
-      ? (context.roomState.obstacles ?? []).find((o) => o.id === selectedObstacleId)
+      ? context.document.geometry.obstacles.find((o) => o.id === selectedObstacleId)
       : null;
     const obstacleVerticesInBox = selectedObstacle
       ? this.findObstacleVerticesInBox(

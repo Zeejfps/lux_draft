@@ -209,7 +209,7 @@ export class MeasurementHandler extends BaseInteractionHandler {
     // Check for wall click
     const wall = this.callbacks.getWallAtPosition(
       event.worldPos,
-      context.roomState.walls,
+      context.document.geometry.boundary.walls,
       WALL_CLICK_TOLERANCE_FT
     );
     if (wall) {

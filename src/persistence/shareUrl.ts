@@ -1,6 +1,7 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { get } from 'svelte/store';
-import type { RoomState } from '../types';
+import type { EditorDocument } from '../types/document';
+import { toLegacyRoomState } from './legacyDocumentAdapter';
 import { lightDefinitions } from '../stores/lightDefinitionsStore';
 import { importFromString } from './jsonImport';
 
@@ -10,7 +11,8 @@ export interface ShareResult {
   warning?: string;
 }
 
-function createSharePayload(state: RoomState): object {
+function createSharePayload(doc: EditorDocument): object {
+  const state = toLegacyRoomState(doc);
   // Strip fields that aren't needed for viewing
   const stripped: Record<string, unknown> = {
     ceilingHeight: state.ceilingHeight,
@@ -49,8 +51,8 @@ function createSharePayload(state: RoomState): object {
   return stripped;
 }
 
-export function generateShareUrl(state: RoomState): ShareResult {
-  const payload = createSharePayload(state);
+export function generateShareUrl(doc: EditorDocument): ShareResult {
+  const payload = createSharePayload(doc);
   const json = JSON.stringify(payload);
   const compressed = compressToEncodedURIComponent(json);
 
@@ -70,7 +72,7 @@ export function generateShareUrl(state: RoomState): ShareResult {
   return { url, length, warning };
 }
 
-export function decodeShareData(compressed: string): RoomState {
+export function decodeShareData(compressed: string): EditorDocument {
   const json = decompressFromEncodedURIComponent(compressed);
   if (!json) {
     throw new Error('Failed to decompress shared data. The URL may be corrupted.');

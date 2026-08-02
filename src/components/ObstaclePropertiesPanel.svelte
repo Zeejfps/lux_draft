@@ -2,16 +2,16 @@
   import { roomStore, updateObstacle, removeObstacle } from '../stores/roomStore';
   import { selectedObstacleId, clearObstacleSelection } from '../stores/appStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { Obstacle, RoomState } from '../types';
+  import type { Obstacle, EditorDocument } from '../types';
 
-  let currentRoom: RoomState;
+  let currentRoom: EditorDocument;
   let currentSelectedObstacleId: string | null = null;
   let selectedObstacle: Obstacle | null = null;
 
   $: currentRoom = $roomStore;
   $: currentSelectedObstacleId = $selectedObstacleId;
   $: selectedObstacle = currentSelectedObstacleId
-    ? ((currentRoom.obstacles ?? []).find((o) => o.id === currentSelectedObstacleId) ?? null)
+    ? (currentRoom.geometry.obstacles.find((o) => o.id === currentSelectedObstacleId) ?? null)
     : null;
   $: visible = selectedObstacle !== null;
 

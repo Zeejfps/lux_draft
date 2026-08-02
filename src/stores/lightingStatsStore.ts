@@ -40,9 +40,9 @@ const metricsInputs = derived(
   [roomStore, roomBounds, lightingStatsConfig],
   ([$room, $bounds, $config]) => ({
     lights: $room.lights,
-    walls: $room.walls,
-    obstacles: $room.obstacles ?? [],
-    ceilingHeight: $room.ceilingHeight,
+    walls: $room.geometry.boundary.walls,
+    obstacles: $room.geometry.obstacles,
+    ceilingHeight: $room.space.ceilingHeight,
     bounds: $bounds,
     gridSpacing: $config.gridSpacing,
     visible: $config.visible,

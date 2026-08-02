@@ -1,7 +1,7 @@
-import type { Vector2 } from '../../types';
+import type { Vector2, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { SnapController } from '../../controllers/SnapController';
-import type { DragManagerCallbacks } from '../DragManager';
+import type { DragOperationCallbacks } from '../DragManager';
 import { BaseDragOperation } from '../DragOperation';
 
 export interface ObstacleDragConfig {
@@ -21,9 +21,9 @@ export class ObstacleDragOperation extends BaseDragOperation {
   private obstacleId: string | null = null;
   private originalVertexPositions: Map<number, Vector2> = new Map();
   private config: ObstacleDragConfig;
-  private callbacks: DragManagerCallbacks;
+  private callbacks: DragOperationCallbacks;
 
-  constructor(config: ObstacleDragConfig, callbacks: DragManagerCallbacks) {
+  constructor(config: ObstacleDragConfig, callbacks: DragOperationCallbacks) {
     super();
     this.config = config;
     this.callbacks = callbacks;
@@ -50,8 +50,8 @@ export class ObstacleDragOperation extends BaseDragOperation {
     this.startPosition = { ...context.position };
   }
 
-  update(context: DragUpdateContext): void {
-    if (!this._isActive || !this.obstacleId || !this.startPosition) return;
+  update(context: DragUpdateContext): EditorCommand | null {
+    if (!this._isActive || !this.obstacleId || !this.startPosition) return null;
 
     let constrainedPos = context.position;
 
@@ -92,32 +92,15 @@ export class ObstacleDragOperation extends BaseDragOperation {
 
     const delta = this.calculateDelta(this.startPosition, constrainedPos);
 
-    // Move all vertices by the delta
-    const newPositions = new Map<number, Vector2>();
-    for (const [idx, originalPos] of this.originalVertexPositions) {
-      newPositions.set(idx, {
-        x: originalPos.x + delta.x,
-        y: originalPos.y + delta.y,
-      });
+    // Absolute target for every vertex, in index order
+    const vertices: Vector2[] = [];
+    for (let i = 0; i < this.originalVertexPositions.size; i++) {
+      const originalPos = this.originalVertexPositions.get(i);
+      if (!originalPos) return null;
+      vertices.push({ x: originalPos.x + delta.x, y: originalPos.y + delta.y });
     }
 
-    this.callbacks.onMoveObstacle(this.obstacleId, newPositions);
-  }
-
-  commit(): void {
-    if (!this._isActive) return;
-    this._isActive = false;
-    this.cleanup();
-  }
-
-  cancel(): void {
-    if (!this._isActive || !this.obstacleId) return;
-
-    // Restore original positions
-    this.callbacks.onMoveObstacle(this.obstacleId, new Map(this.originalVertexPositions));
-
-    this._isActive = false;
-    this.cleanup();
+    return { type: 'obstacle.move', obstacleId: this.obstacleId, vertices };
   }
 
   private snapObstacleToRoomVertices(
@@ -184,7 +167,7 @@ export class ObstacleDragOperation extends BaseDragOperation {
     return { delta: snappedDelta, guides };
   }
 
-  private cleanup(): void {
+  protected cleanup(): void {
     this.obstacleId = null;
     this.originalVertexPositions.clear();
     this.startPosition = null;

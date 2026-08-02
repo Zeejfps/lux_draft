@@ -8,7 +8,7 @@
   import { roomBounds, roomStore } from '../stores/roomStore';
   import { shouldFitCamera } from '../stores/appStore';
   import { selectedViewerLight } from '../stores/viewerStore';
-  import type { BoundingBox, RoomState, ViewMode, LightFixture } from '../types';
+  import type { BoundingBox, EditorDocument, ViewMode, LightFixture } from '../types';
   import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, PINCH_ZOOM_SENSITIVITY } from '../constants/editor';
 
   export let viewMode: ViewMode = 'editor';
@@ -35,7 +35,7 @@
   let hasTouchMoved = false;
 
   // Reactive state
-  let currentRoomState: RoomState;
+  let currentRoomState: EditorDocument;
   let currentBounds: BoundingBox;
 
   $: currentRoomState = $roomStore;
@@ -51,35 +51,49 @@
     : new Set<string>();
 
   $: if (editorRenderer && currentRoomState) {
-    editorRenderer.updateWalls(currentRoomState.walls, null, null, currentRoomState.doors ?? []);
+    editorRenderer.updateWalls(
+      currentRoomState.geometry.boundary.walls,
+      null,
+      null,
+      currentRoomState.geometry.doors
+    );
     editorRenderer.updateLights(
       currentRoomState.lights,
-      currentRoomState.ceilingHeight,
+      currentRoomState.space.ceilingHeight,
       selectedLightIds
     );
-    editorRenderer.updateDoors(currentRoomState.doors ?? [], currentRoomState.walls, null);
-    editorRenderer.updateObstacles(currentRoomState.obstacles ?? [], null);
+    editorRenderer.updateDoors(
+      currentRoomState.geometry.doors,
+      currentRoomState.geometry.boundary.walls,
+      null
+    );
+    editorRenderer.updateObstacles(currentRoomState.geometry.obstacles, null);
   }
 
   $: if (heatmapRenderer && currentRoomState && currentBounds) {
     heatmapRenderer.updateBounds(currentBounds);
-    heatmapRenderer.updateWalls(currentRoomState.walls);
-    heatmapRenderer.updateObstacles(currentRoomState.obstacles ?? []);
-    heatmapRenderer.updateLights(currentRoomState.lights, currentRoomState.ceilingHeight);
+    heatmapRenderer.updateWalls(currentRoomState.geometry.boundary.walls);
+    heatmapRenderer.updateObstacles(currentRoomState.geometry.obstacles);
+    heatmapRenderer.updateLights(currentRoomState.lights, currentRoomState.space.ceilingHeight);
   }
 
   $: if (shadowRenderer && currentRoomState && currentBounds) {
     shadowRenderer.updateShadows(
       currentRoomState.lights,
-      currentRoomState.walls,
+      currentRoomState.geometry.boundary.walls,
       currentBounds,
-      currentRoomState.doors ?? [],
-      currentRoomState.obstacles ?? [],
-      currentRoomState.ceilingHeight
+      currentRoomState.geometry.doors,
+      currentRoomState.geometry.obstacles,
+      currentRoomState.space.ceilingHeight
     );
   }
 
-  $: if ($shouldFitCamera && scene && currentBounds && currentRoomState.walls.length > 0) {
+  $: if (
+    $shouldFitCamera &&
+    scene &&
+    currentBounds &&
+    currentRoomState.geometry.boundary.walls.length > 0
+  ) {
     scene.fitToBounds(currentBounds);
     shouldFitCamera.set(false);
   }

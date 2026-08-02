@@ -1,18 +1,24 @@
 import { writable, get } from 'svelte/store';
-import type { RoomState } from '../types';
-import { roomStore } from '../stores/roomStore';
+import type { EditorDocument } from '../types/document';
+import { committedRoom, interaction } from './roomStore';
+import { IDLE_INTERACTION } from '../types/interaction';
 
 interface HistoryState {
-  past: RoomState[];
-  future: RoomState[];
+  past: EditorDocument[];
+  future: EditorDocument[];
 }
 
 const MAX_HISTORY = 50;
 
 /**
- * Check if two room states are equivalent (for avoiding duplicate history entries).
+ * Check if two documents are equivalent (for avoiding duplicate history entries).
+ *
+ * Phase 1a still *infers* history by diffing the committed document: one dispatch is one
+ * update, so one entry. Phase 1b deletes this and moves history into `reduceSession` with a
+ * label per entry. The no-op guarantee does not depend on this diff — `dispatch` already
+ * returns the same reference for a value-equal result.
  */
-function statesAreEqual(a: RoomState | null, b: RoomState): boolean {
+function statesAreEqual(a: EditorDocument | null, b: EditorDocument): boolean {
   if (!a) return false;
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -24,14 +30,12 @@ function createHistoryStore() {
   });
 
   let isPerformingHistoryOperation = false;
-  let isRecordingPaused = false;
-  let lastSavedState: RoomState | null = null;
-  let stateBeforePause: RoomState | null = null;
+  let lastSavedState: EditorDocument | null = null;
 
   /**
    * Push a state onto the history stack, respecting max history limit.
    */
-  function pushToHistory(stateToPush: RoomState): void {
+  function pushToHistory(stateToPush: EditorDocument): void {
     update((history) => {
       const newPast = [...history.past, stateToPush];
       // Limit history size
@@ -45,9 +49,9 @@ function createHistoryStore() {
     });
   }
 
-  // Subscribe to room store changes to record history
-  roomStore.subscribe((state) => {
-    if (isPerformingHistoryOperation || isRecordingPaused) return;
+  // Subscribe to the *committed* document — a preview must never make history
+  committedRoom.subscribe((state) => {
+    if (isPerformingHistoryOperation) return;
 
     // Don't record if state hasn't meaningfully changed
     if (statesAreEqual(lastSavedState, state)) {
@@ -70,7 +74,7 @@ function createHistoryStore() {
 
       isPerformingHistoryOperation = true;
 
-      const currentState = get(roomStore);
+      const currentState = get(committedRoom);
       const previousState = history.past[history.past.length - 1];
 
       update((h) => ({
@@ -78,7 +82,10 @@ function createHistoryStore() {
         future: [currentState, ...h.future],
       }));
 
-      roomStore.set(previousState);
+      // Undo and redo clear the interaction: a surviving candidate command would be
+      // re-applied to the restored document using ids resolved against the pre-undo one.
+      interaction.set(IDLE_INTERACTION);
+      committedRoom.set(previousState);
       lastSavedState = structuredClone(previousState);
 
       isPerformingHistoryOperation = false;
@@ -91,7 +98,7 @@ function createHistoryStore() {
 
       isPerformingHistoryOperation = true;
 
-      const currentState = get(roomStore);
+      const currentState = get(committedRoom);
       const nextState = history.future[0];
 
       update((h) => ({
@@ -99,7 +106,8 @@ function createHistoryStore() {
         future: h.future.slice(1),
       }));
 
-      roomStore.set(nextState);
+      interaction.set(IDLE_INTERACTION);
+      committedRoom.set(nextState);
       lastSavedState = structuredClone(nextState);
 
       isPerformingHistoryOperation = false;
@@ -108,10 +116,7 @@ function createHistoryStore() {
 
     clear: () => {
       set({ past: [], future: [] });
-      lastSavedState = structuredClone(get(roomStore));
-      // Reset pause state to prevent stale state from affecting future recordings
-      isRecordingPaused = false;
-      stateBeforePause = null;
+      lastSavedState = structuredClone(get(committedRoom));
     },
 
     canUndo: () => {
@@ -122,28 +127,6 @@ function createHistoryStore() {
     canRedo: () => {
       const history = get({ subscribe });
       return history.future.length > 0;
-    },
-
-    pauseRecording: () => {
-      if (!isRecordingPaused) {
-        isRecordingPaused = true;
-        stateBeforePause = structuredClone(get(roomStore));
-      }
-    },
-
-    resumeRecording: () => {
-      if (isRecordingPaused) {
-        isRecordingPaused = false;
-        const currentState = get(roomStore);
-
-        // Only record if the state actually changed during the pause
-        if (stateBeforePause && !statesAreEqual(stateBeforePause, currentState)) {
-          pushToHistory(stateBeforePause);
-          lastSavedState = structuredClone(currentState);
-        }
-
-        stateBeforePause = null;
-      }
     },
   };
 }

@@ -3,11 +3,17 @@
   import { selectedDoorId, clearDoorSelection } from '../stores/appStore';
   import { displayPreferences } from '../stores/settingsStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { Door, RoomState, DoorSwingDirection, DoorSwingSide, UnitFormat } from '../types';
+  import type {
+    Door,
+    EditorDocument,
+    DoorSwingDirection,
+    DoorSwingSide,
+    UnitFormat,
+  } from '../types';
   import { DOOR_WIDTHS } from '../interactions/handlers/DoorPlacementHandler';
   import { formatImperial } from '../utils/format';
 
-  let currentRoom: RoomState;
+  let currentRoom: EditorDocument;
   let currentSelectedDoorId: string | null = null;
   let selectedDoor: Door | null = null;
   let unitFormat: UnitFormat;
@@ -16,7 +22,7 @@
   $: currentSelectedDoorId = $selectedDoorId;
   $: unitFormat = $displayPreferences.unitFormat;
   $: selectedDoor = currentSelectedDoorId
-    ? (currentRoom.doors.find((d) => d.id === currentSelectedDoorId) ?? null)
+    ? (currentRoom.geometry.doors.find((d) => d.id === currentSelectedDoorId) ?? null)
     : null;
   $: visible = selectedDoor !== null;
 

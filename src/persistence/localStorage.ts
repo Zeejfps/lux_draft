@@ -1,18 +1,20 @@
-import type { Writable } from 'svelte/store';
+import type { Readable } from 'svelte/store';
 import type { RoomState } from '../types';
+import type { EditorDocument } from '../types/document';
+import { fromLegacyRoomState, toLegacyRoomState } from './legacyDocumentAdapter';
 
 const STORAGE_KEY = 'lumen2d_project';
 const AUTOSAVE_INTERVAL = 30000;
 
-export function saveToLocalStorage(state: RoomState): void {
+export function saveToLocalStorage(doc: EditorDocument): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toLegacyRoomState(doc)));
   } catch (e) {
     console.error('Failed to save to localStorage:', e);
   }
 }
 
-export function loadFromLocalStorage(): RoomState | null {
+export function loadFromLocalStorage(): EditorDocument | null {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) return null;
@@ -31,7 +33,7 @@ export function loadFromLocalStorage(): RoomState | null {
     if (!state.obstacles) {
       state.obstacles = [];
     }
-    return state;
+    return fromLegacyRoomState(state);
   } catch (e) {
     console.error('Failed to load from localStorage:', e);
     return null;
@@ -42,23 +44,24 @@ export function clearLocalStorage(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-export function setupAutoSave(store: Writable<RoomState>): () => void {
+/** Autosave reads the committed document — never the live preview. */
+export function setupAutoSave(store: Readable<EditorDocument>): () => void {
   let timeout: ReturnType<typeof setTimeout> | null = null;
-  let lastState: RoomState | null = null;
+  let lastDoc: EditorDocument | null = null;
 
-  const unsubscribe = store.subscribe((state) => {
-    if (lastState && JSON.stringify(state) === JSON.stringify(lastState)) {
+  const unsubscribe = store.subscribe((doc) => {
+    if (lastDoc && JSON.stringify(doc) === JSON.stringify(lastDoc)) {
       return;
     }
 
-    lastState = state;
+    lastDoc = doc;
 
     if (timeout) {
       clearTimeout(timeout);
     }
 
     timeout = setTimeout(() => {
-      saveToLocalStorage(state);
+      saveToLocalStorage(doc);
     }, AUTOSAVE_INTERVAL);
   });
 
@@ -70,6 +73,6 @@ export function setupAutoSave(store: Writable<RoomState>): () => void {
   };
 }
 
-export function saveNow(state: RoomState): void {
-  saveToLocalStorage(state);
+export function saveNow(doc: EditorDocument): void {
+  saveToLocalStorage(doc);
 }

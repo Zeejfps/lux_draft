@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { roomStore } from '../stores/roomStore';
+  import { roomStore, dispatch, removeLights } from '../stores/roomStore';
   import { selectedLightIds, clearLightSelection } from '../stores/appStore';
   import { lightDefinitions, getDefinitionById } from '../stores/lightDefinitionsStore';
   import FloatingPanel from './FloatingPanel.svelte';
-  import type { LightFixture, RoomState, LightDefinition } from '../types';
+  import type { LightFixture, EditorDocument, EditorCommand, LightDefinition } from '../types';
 
-  let currentRoom: RoomState;
+  let currentRoom: EditorDocument;
   let currentSelectedLightIds: Set<string> = new Set();
   let selectedLights: LightFixture[] = [];
   let definitions: LightDefinition[] = [];
@@ -29,32 +29,32 @@
     const definition = getDefinitionById(newDefinitionId);
     if (!definition) return;
 
-    roomStore.update((state) => ({
-      ...state,
-      lights: state.lights.map((light) => {
-        if (currentSelectedLightIds.has(light.id)) {
-          return {
-            ...light,
-            definitionId: newDefinitionId,
-            properties: {
-              lumen: definition.lumen,
-              beamAngle: definition.beamAngle,
-              warmth: definition.warmth,
-            },
-          };
-        }
-        return light;
-      }),
-    }));
+    const commands: EditorCommand[] = [];
+    for (const light of currentRoom.lights) {
+      if (!currentSelectedLightIds.has(light.id)) continue;
+      commands.push({
+        type: 'light.set',
+        lightId: light.id,
+        changes: {
+          definitionId: newDefinitionId,
+          properties: {
+            lumen: definition.lumen,
+            beamAngle: definition.beamAngle,
+            warmth: definition.warmth,
+          },
+        },
+      });
+    }
+    if (commands.length === 0) return;
+    dispatch(
+      commands.length === 1 ? commands[0] : { type: 'compound', label: 'Change lights', commands }
+    );
   }
 
   function deleteSelectedLights(): void {
     if (currentSelectedLightIds.size === 0) return;
 
-    roomStore.update((state) => ({
-      ...state,
-      lights: state.lights.filter((l) => !currentSelectedLightIds.has(l.id)),
-    }));
+    removeLights(currentSelectedLightIds);
     clearLightSelection();
   }
 

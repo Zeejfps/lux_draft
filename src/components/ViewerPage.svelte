@@ -5,7 +5,7 @@
   import ViewerCanvas from './ViewerCanvas.svelte';
   import ViewerStatsPanel from './ViewerStatsPanel.svelte';
   import LightInfoBottomSheet from './LightInfoBottomSheet.svelte';
-  import { roomStore } from '../stores/roomStore';
+  import { openDocument } from '../stores/roomStore';
   import { requestCameraFit } from '../stores/appStore';
   import { lightingStatsConfig } from '../stores/lightingStatsStore';
   import { importFromJSON, ValidationError } from '../persistence/jsonImport';
@@ -23,12 +23,12 @@
     const params = get(routeParams);
     if (params.d) {
       try {
-        const roomState = decodeShareData(params.d);
-        roomStore.set(roomState);
+        const doc = decodeShareData(params.d);
+        openDocument(doc);
         initSettingsFromRoom();
         hasProject = true;
 
-        if (roomState.lights.length > 0) {
+        if (doc.lights.length > 0) {
           lightingStatsConfig.update((c) => ({ ...c, visible: true }));
         }
 
@@ -51,13 +51,13 @@
     errorMessage = '';
 
     try {
-      const roomState = await importFromJSON(e.detail.file);
-      roomStore.set(roomState);
+      const doc = await importFromJSON(e.detail.file);
+      openDocument(doc);
       initSettingsFromRoom();
       hasProject = true;
 
       // Enable lighting stats if there are lights
-      if (roomState.lights.length > 0) {
+      if (doc.lights.length > 0) {
         lightingStatsConfig.update((c) => ({ ...c, visible: true }));
       }
 
