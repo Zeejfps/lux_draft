@@ -143,23 +143,28 @@ export interface HistoryEntry {
 }
 
 export interface History {
-  past: HistoryEntry[];
-  future: HistoryEntry[];
+  readonly past: readonly HistoryEntry[];
+  readonly future: readonly HistoryEntry[];
 }
 
 /** Derived, not stored — labels must travel with their snapshots, not alongside the stacks. */
 export const undoLabel = (h: History) => h.past.at(-1)?.label ?? null;
 export const redoLabel = (h: History) => h.future[0]?.label ?? null;
 
+/**
+ * The exported shape. `DeepReadonly` — not bare `readonly` — because `Readonly<T>` is
+ * shallow and `doc.walls.push(w)` would otherwise type-check. Mutable counterparts exist
+ * only inside `sessionStore`, which is the sole constructor of these values.
+ */
 export interface Session {
   /** Committed. The only field history snapshots, autosave writes, and export reads. */
-  readonly document: RoomState;
-  readonly carried: CarriedState;
+  readonly document: DeepReadonly<RoomState>;
+  readonly carried: DeepReadonly<CarriedState>;
 
   /** Ephemeral. Never persisted, never undoable. */
-  readonly selection: Selection;
-  readonly interaction: Interaction; // §3.2.1
-  readonly diagnostics: Diagnostics;
+  readonly selection: Readonly<Selection>;
+  readonly interaction: DeepReadonly<Interaction>; // §3.2.1
+  readonly diagnostics: DeepReadonly<Diagnostics>;
 
   readonly history: History;
 }
@@ -200,12 +205,13 @@ every step.
 
 **The 50-entry cap is load-bearing and must not be lost in the rewrite.** `historyStore.ts:10` caps
 `past` today; an unbounded stack retains whole document snapshots for the life of a session, which is
-exactly the growth the module slices make worse. Eviction is oldest-first from `past` only — `future`
-is bounded by `past` since entries move between them. Test: commit 51 times, assert
-`past.length === 50` and that entry 1 is gone.
+exactly the growth the module slices make worse.
 
-`undo`/`redo` never evict, so a full stack survives arbitrary undo/redo traversal; only new commits
-push out history, which is the standard and expected behavior.
+Eviction is oldest-first from `past` only, and `undo`/`redo` never evict — they move entries between
+the stacks, so **`past.length + future.length ≤ MAX_HISTORY`** is the real invariant. (Not "`future`
+is bounded by `past`", which an earlier draft said and which is false: undo everything and `future`
+is 50 while `past` is 0.) Tests: commit 51 times → `past.length === 50` with entry 1 gone; then undo
+50 times → `past` 0, `future` 50, sum still 50.
 
 ### 3.2 There is exactly one way to write, and it is a commit
 
@@ -226,6 +232,13 @@ export const sessionStore = {
   setInteraction(next: Interaction): void,
   select(next: Selection): void,
 
+  /**
+   * Completes the active interaction: commits its result, pushes one history entry,
+   * and returns to `idle` — in a single emission. §3.2.1.
+   */
+  finishInteraction(): boolean,
+
+  /** Both reset `interaction` to `idle` atomically with the document swap. §3.2.1. */
   undo(): boolean,
   redo(): boolean,
 };
@@ -252,6 +265,15 @@ survive a swap.
 `statesAreEqual` and its `JSON.stringify` of the entire document on every emission are deleted, not
 optimized — history is now told what happened. (This resolves what earlier drafts filed as a
 follow-up performance item; it comes free.)
+
+**Subscription granularity.** One `Session` value means every pointer move during a drag
+reconstructs it and notifies every `sessionStore` subscriber. Nothing may subscribe to `sessionStore`
+directly except the narrow derived stores in this file — `roomStore`, `committedDocument`,
+`selection`, `history`, `diagnostics`. Svelte's `derived` propagates on every parent emission, so
+those stores each guard with a reference-equality check and only emit when their own slice actually
+changed; a drag then wakes the renderer and the geometry panels, not the toolbar and the share
+dialog. Components subscribe to the narrow stores, never to the session. Worth a lint rule if it
+starts drifting.
 
 **Every writer converts in one phase.** Making `roomStore` derived is not a gradual change: the
 moment it loses `set`/`update`, every existing writer stops compiling. That is the desired property —
@@ -299,39 +321,111 @@ pointer move (`WallDragOperation.ts:90`), `cancel()` restores by writing again (
 position, axis lock, snap config). **The single impure line is 90**, where it calls a store-writing
 callback instead of returning the value it just computed.
 
-So make the interaction a value, and the previewed document a pure function of it:
+So make the interaction a value, and the previewed document a pure function of it.
+
+**One authoritative drag representation.** There is a fork here that must be closed explicitly,
+because taking both branches would duplicate drag logic between the operation classes and
+`applyDrag` and let preview and commit drift apart. The division of labour is:
+
+- **Operations resolve pointer input into target values.** Axis lock, snapping, guides, constraints
+  — the geometry work `WallDragOperation:63-88` already does well. They do not touch documents.
+- **`applyDrag` puts those values into a document.** It is the only code that edits for a drag, and
+  both the preview and the pointer-up commit call it.
 
 ```ts
 // src/floorplan/types/interaction.ts
+
+export type DragTarget =
+  | { kind: 'vertex'; index: number }
+  | { kind: 'wall'; id: string }
+  | { kind: 'door'; id: string }
+  | { kind: 'obstacle'; id: string }
+  | { kind: 'obstacleVertex'; obstacleId: string; index: number }
+  | { kind: 'moduleEntity'; moduleId: string; ids: string[] };
+
+/**
+ * What the operation resolved for the current pointer. ABSOLUTE, never a delta —
+ * so applying it is idempotent and independent of the document it lands on.
+ */
+export type DragResolution =
+  | { kind: 'points'; positions: ReadonlyMap<string, Vector2> }
+  | { kind: 'segment'; start: Vector2; end: Vector2 }
+  | { kind: 'scalar'; value: number }; // e.g. a door's offset along its wall
+
+export interface DraggingInteraction {
+  kind: 'dragging';
+  target: DragTarget;
+  resolved: DragResolution;
+  label: string;
+}
+
 export type Interaction =
   | { kind: 'idle' }
-  | { kind: 'drawing'; vertices: Vector2[]; cursor: Vector2 | null }
-  | { kind: 'dragging'; op: DragSpec; origin: DragOrigin; pointer: Vector2; axisLock: AxisLock }
+  | { kind: 'drawing'; vertices: readonly Vector2[]; cursor: Vector2 | null }
+  | DraggingInteraction
   | { kind: 'measuring'; from: Vector2; to: Vector2 | null };
 
-/** Pure. No store access, no mutation, no allocation beyond the touched entities. */
-export function previewDocument(doc: Readonly<RoomState>, i: Interaction): RoomState;
+/** Pure. The single implementation of "what this drag does to a document". */
+export function applyDrag(doc: DeepReadonly<RoomState>, d: DraggingInteraction): RoomState;
 
-/** Pure. What the drag would commit. `previewDocument` for 'dragging' is exactly this. */
-export function applyDrag(doc: Readonly<RoomState>, d: DraggingInteraction): RoomState;
+/** Pure. Dispatches to `applyDrag` for 'dragging'; returns `doc` unchanged for 'idle'. */
+export function previewDocument(doc: DeepReadonly<RoomState>, i: Interaction): RoomState;
 ```
 
-The drag lifecycle becomes three ordinary ephemeral writes and one commit:
+Operations therefore return a `DragResolution`, not a document and not a callback invocation. Their
+`update()` signature becomes `(ctx: DragUpdateContext) => DragResolution`, which is a smaller change
+than it sounds: `WallDragOperation:81-90` already computes `{ newStart, newEnd }` and then throws it
+at a callback.
+
+**Resolutions are absolute, not deltas.** A delta-based resolution applied twice moves twice; an
+absolute one is idempotent, which makes the preview and the commit trivially equal and removes a
+whole class of ordering bug. Operations already capture `originalStart` / `originalEnd` at drag
+start precisely so they can compute absolute results.
+
+Contract test, per drag kind: drive an operation through a pointer sequence, then assert
+`previewDocument(committed, dragging)` is **deeply equal** to the document produced by the pointer-up
+commit. Preview and commit cannot disagree without failing this.
+
+#### Completing an interaction is one atomic transition
 
 ```ts
-// startDrag
-setInteraction({ kind: 'dragging', op, origin, pointer, axisLock: 'none' });
+// startDrag / updateDrag — ephemeral only, one emission each
+setInteraction({ kind: 'dragging', target, resolved, label });
 
-// updateDrag — renders live, because roomStore is the previewed view
-setInteraction({ ...current, pointer, axisLock });
+// commitDrag — ONE session transition: document, history, and interaction together
+finishInteraction();
 
-// commitDrag — the only document write in the whole gesture
-commit(op.label, (d) => applyDrag(d, current));
-setInteraction({ kind: 'idle' });
-
-// cancelDrag — the document was never touched, so there is nothing to restore
+// cancelDrag — the document was never touched
 setInteraction({ kind: 'idle' });
 ```
+
+`finishInteraction()` is a distinct store operation, not `commit(...)` followed by
+`setInteraction(...)`. Two emissions would leave an observable intermediate state in which the
+document already contains the drag's result while `interaction` still describes it — so `roomStore`
+would derive the drag over a document that already has it applied. Absolute resolutions make that
+frame harmless rather than wrong, but it is still a redundant emission and an incoherent `Session`,
+which is exactly what §3.1 exists to prevent.
+
+The same rule applies to every transition that changes the committed document:
+
+| Operation             | Interaction afterwards                                           |
+| --------------------- | ---------------------------------------------------------------- |
+| `finishInteraction()` | `idle`, in the same emission as the commit and the history push  |
+| `undo()` / `redo()`   | `idle`, set **atomically with** the document swap — see below    |
+| `open(loaded)`        | `idle`, with selection cleared, in the one `Session` replacement |
+| `commit(label, fn)`   | Unchanged — an ordinary commit is not part of an interaction     |
+
+**Undo and redo must clear the interaction, not merely coexist with it.** An earlier draft said undo
+during a drag "is well-defined because there is no in-flight document write to conflict with". That
+was wrong in a different way: if the interaction survives, the preview is immediately re-applied to
+the _restored_ document, using a `DragTarget` whose ids or vertex indices were resolved against the
+pre-undo document. Undoing the deletion of the very wall being dragged, or undoing a vertex
+insertion that shifts indices, then previews against entities that no longer mean the same thing.
+Clearing to `idle` in the same transition removes the question.
+
+Tests: drag an entity and undo mid-drag; undo to a snapshot that does not contain the dragged
+entity; redo the same; assert in each case that the interaction is `idle` and the rendered document
+equals the restored snapshot exactly.
 
 #### What this deletes
 
@@ -466,16 +560,19 @@ ways, and the second is nasty:
 
 Three defenses, none expensive:
 
-- **`Readonly<T>` at every boundary.** `readModule` returns `Readonly<T>`; `commit` and
-  `commitModule` hand their callbacks readonly input and require a new value back. This catches
-  top-level field assignment at compile time. It is shallow — `doc.walls.push(w)` still type-checks
-  — so it is a first line, not the guarantee.
-- **Deep-freeze in development.** `open`, every `commit`, and every `defaultData()` result pass
-  through a recursive `Object.freeze` under `import.meta.env.DEV`, stripped in production builds.
-  This is what actually catches the nested mutations `Readonly<T>` misses, and it converts silent
-  drift into a `TypeError` at the mutation site rather than a wrong result three operations later.
-  Existing helper bodies already build new objects (`{ ...state, walls: [...] }`), so the expected
-  number of violations to fix is small.
+- **`DeepReadonly` at every exported boundary** — `Session`, `readModule`, `ModuleContext`,
+  `SceneLayer.update`, `ToolDescriptor.enabled` (§3.1, §5.2). This is the primary defense, not a
+  first line: bare `Readonly<T>` is shallow and would let `doc.walls.push(w)` type-check. Mutable
+  counterparts exist only inside `sessionStore`, which is the sole constructor of these values.
+- **Deep-freeze in development, as a backstop for the gaps `DeepReadonly` cannot close** — data
+  arriving from `JSON.parse`, `structuredClone` results, and any `as` cast. `open`, every `commit`,
+  and every `defaultData()` result pass through a recursive `Object.freeze` under
+  `import.meta.env.DEV`. For that to actually vanish from production the call must sit behind a
+  statically eliminable branch — a bare `if (import.meta.env.DEV)` that Vite replaces with `false`
+  and the minifier drops — and the freeze helper must have no retained side effects (no registry of
+  frozen objects, no logging). A `DEV &&`-guarded expression assigned to nothing, or a helper that
+  memoizes what it froze, defeats elimination and ships the cost. Existing helper bodies already
+  build new objects (`{ ...state, walls: [...] }`), so the expected number of violations is small.
 - **Fresh-default test, applied to every codec.** A shared contract test — run against each
   registered codec, not written per module — asserting `defaultData() !== defaultData()` and that
   mutating one result leaves a second call unaffected. This is the test that closes failure (2), and
@@ -611,8 +708,11 @@ export interface ModuleCodec<T> {
   /** Decode a stored blob. Never throws — returns a status. */
   decode(blob: ModuleBlob): DecodeResult<T>;
 
-  /** Strip derived/non-essential fields for share URLs. Defaults to identity. */
-  compactForShare?(data: Readonly<T>): unknown;
+  /**
+   * Strip derived/non-essential fields for share URLs. Defaults to identity.
+   * MUST return a valid `T` at the current `schemaVersion` — see below.
+   */
+  compactForShare?(data: Readonly<T>): T;
 }
 
 /** On-disk envelope for one module's slice. */
@@ -636,6 +736,17 @@ _known-but-corrupt_, and _unknown module id_ (no codec registered at all), and h
 differently. See §7.2 for the policy table. (There is no _absent_ case at the pipeline level — §3.3
 normalizes absent slices to defaults during decode.)
 
+**`compactForShare` returns `T`, not `unknown`, and this is load-bearing.** A compacted payload is
+written into a share URL at the current `schemaVersion` and is read back by the ordinary
+`decodeDocument` path — there is no separate share decoder. If compaction were free to emit an
+arbitrary shape, it could produce a link that the module's own `decode` rejects, and the failure
+would appear as a quarantined slice on the recipient's machine rather than as a bug on the sender's.
+Typing the return as `T` states the requirement; the contract test enforces it: for every registered
+codec, `decodeDocument(encodeDocument(doc, carried, { kind: 'share', moduleId }))` must succeed with
+status `ok`, and the essential semantics (§7.3a: definitions, ids referenced by fixtures) must
+survive. The alternative — a separate share schema with its own version — buys nothing here and
+doubles the migration matrix.
+
 ### 5.2 Runtime — lazy, loaded when a module is activated
 
 ```ts
@@ -658,31 +769,108 @@ export interface ToolDescriptor {
   icon: string;
   shortcut?: string;
   /** Gate on document state, e.g. requires a closed polygon. */
-  enabled?: (doc: RoomState) => boolean;
+  enabled?: (doc: DeepReadonly<RoomState>) => boolean;
 }
 
 export interface SceneLayer {
   id: string;
-  update(doc: RoomState, selection: Selection): void;
+  update(doc: DeepReadonly<RoomState>, selection: Readonly<Selection>): void;
   setVisible(v: boolean): void;
   dispose(): void;
 }
+
+/** What a runtime is given. Capabilities, not stores. */
+export interface ModuleContext {
+  commit<T>(codec: ModuleCodec<T>, label: string, fn: (prev: Readonly<T>) => T): void;
+  select(next: Selection): void;
+  setInteraction(next: Interaction): void;
+  read<T>(codec: ModuleCodec<T>): Readonly<T>;
+  readonly document: DeepReadonly<RoomState>;
+}
 ```
 
-Registration pairs the two halves:
-
-```ts
-// src/app/moduleRegistry.ts
-registry.register({
-  codec: lightingCodec, // eager, already imported
-  loadRuntime: () => import('../modules/lighting/runtime'), // lazy
-});
-```
+**Every document a module sees is deep-readonly, and `ModuleContext` hands out operations rather
+than the session store.** A runtime that receives a mutable `RoomState` — or the store itself — can
+edit outside `commit` and defeat the central invariant from a directory the core cannot police.
+`DeepReadonly` makes that a compile error rather than a review item.
 
 `SceneLayer` is deliberately the shape the existing renderers almost have already — they all expose
 `update(...)`, `setVisible(...)`, `dispose()`. The change is narrowing `update` to
 `(doc, selection)` so `EditorRenderer` can hold a `SceneLayer[]` and loop, instead of naming each
 renderer as a field with a bespoke method (`updateLights`, `updateDoors`, `updateObstacles`).
+
+One consequence to watch: `update(doc, selection)` asks every layer to re-derive from the whole
+document on every change. That is fine for lighting and is what the renderers effectively do today,
+but a plank layout is expensive enough that a naive implementation would recompute on unrelated edits.
+`SceneLayer` may therefore declare a selector — `inputs?: (doc) => unknown` — with the shell skipping
+`update` when the selected inputs are reference-equal to the previous call. Add it when flooring
+needs it, not before; noted here so the interface has room.
+
+### 5.3 Runtime activation is a state machine with an ownership rule
+
+`loadRuntime()` is asynchronous, while mode switches, route changes, and document opens are not. Left
+unspecified this produces leaked `THREE` resources and handlers wired to a mode the user already
+left. The registry owns a per-module record:
+
+```ts
+type RuntimeState =
+  | { status: 'unloaded' }
+  | { status: 'loading'; token: number; promise: Promise<ModuleRuntime> }
+  | {
+      status: 'active';
+      runtime: ModuleRuntime;
+      layers: SceneLayer[];
+      handlers: IInteractionHandler[];
+    }
+  | { status: 'failed'; error: Error };
+```
+
+Rules:
+
+- **Dedup.** A second `activate()` while `loading` returns the in-flight promise. `import()` is
+  already idempotent, but the layer/handler construction that follows it is not.
+- **Generation token.** Every activation increments a counter. When a load resolves, the registry
+  compares its token against the current one; a stale resolution constructs nothing and disposes
+  nothing, because it never built anything. This is what makes "switch modes twice quickly" safe.
+- **Ownership.** The registry constructs layers and handlers, and the registry disposes them —
+  modules never dispose their own. Deactivation calls `dispose()` on every layer in reverse
+  construction order and unregisters the handlers. `open(loaded)` deactivates the active module
+  before swapping documents, so no layer ever sees two unrelated documents.
+- **Caching.** The resolved module _record_ is cached; layers and handlers are **not**. They bind to
+  a `THREE.Scene` and a `ModuleContext` and are rebuilt per activation. Caching them is the
+  straightforward way to leak a scene.
+- **Failure is session-scoped and does not touch data.** A runtime that fails to load or throws
+  during construction moves to `failed`, and the module is disabled for the session with a
+  diagnostic. Its slice stays decoded, live, and **is written back normally on save** — a runtime
+  failure is not a decode failure, and must not quarantine valid data (§7.2).
+- **Concurrency bound.** Only one module is active at a time in the current product shape (one mode
+  visible). If that changes, the state machine is per-module already.
+
+Tests, in phase 5: activate/deactivate/activate leaves zero orphaned scene children; a mode switch
+mid-load discards the stale resolution; a rejected `loadRuntime` disables the mode, surfaces the
+error, and still round-trips the module's data through save.
+
+### 5.4 Registration validates and fails fast
+
+The design depends on a lot of unique strings. A duplicate does not fail loudly on its own — it
+silently shadows, and the failure surfaces later as the wrong codec decoding a slice or a panel
+rendering for the wrong selection. Registration therefore throws on:
+
+| Check                                     | Why                                                |
+| ----------------------------------------- | -------------------------------------------------- |
+| Duplicate module id                       | Second codec would shadow the first for that slice |
+| `runtime.id !== codec.id`                 | Pairs the wrong runtime to a slice                 |
+| Duplicate tool id, layer id, or panel key | Silent overwrite in the toolbar / dispatch map     |
+| Tool id not namespaced with the module id | Guarantees the above cannot collide across modules |
+| Shortcut already bound                    | See precedence below                               |
+
+Shortcut precedence is explicit rather than registration-order: **core shortcuts win over module
+shortcuts, and a conflict between two modules is a registration error.** Since only one module is
+active at a time, a module-vs-module conflict is detectable at registration even though it could
+never fire — failing then is better than failing when a user finally installs both.
+
+These live in a shared registry contract test that every module is run through, so a new module
+inherits the checks rather than re-deriving them.
 
 ---
 
@@ -837,10 +1025,43 @@ geometry validation failure rejects the document.
 | Module slice `unsupported` (newer `v`) | Quarantine verbatim, disable module, warn: "saved by a newer version". |
 | Module slice `invalid`                 | Quarantine verbatim, disable module, warn with the codec's message.    |
 | No codec registered for the id         | Quarantine verbatim, no warning (expected in single-module builds).    |
+| Runtime failed to load (§5.3)          | **Data stays live and saves normally.** Mode unavailable this session. |
+
+That last row is a distinction worth keeping sharp: a runtime failure is a UI failure, not a data
+failure. The slice decoded fine, so it is written back through the normal encode path at the current
+`schemaVersion`. Only decode failures quarantine.
 
 Disabled means: the mode is not selectable, its tools/layers/panels are absent, no default is
 materialized for it, and its blob is written back unchanged on save. The user can still edit geometry
 and use the other module.
+
+#### Quarantined data can go stale against edited geometry
+
+Preserving a blob verbatim while the user reshapes the room means a future build may reopen data that
+was authored for a different polygon. A flooring layout computed for the old room is not merely
+outdated — its expansion gaps and cut list are wrong in a way that looks authoritative.
+
+Three options were considered:
+
+| Option                                   | Verdict                                                                                                                      |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Block geometry edits while quarantined   | No — inverts §7.2's premise. The room is the shared asset; a module this build cannot even parse must not hold it hostage.   |
+| Stamp a marker into the quarantined blob | No — we cannot parse it, so we cannot safely modify it. Editing an opaque blob is how "preserved verbatim" stops being true. |
+| **Record the drift beside the blob**     | **Yes.**                                                                                                                     |
+
+`CarriedState` gains a geometry fingerprint captured at load — a cheap structural hash of walls,
+obstacles, and `isClosed`. On save, if the fingerprint no longer matches, the envelope records
+`geometryChangedSinceLoad: true` **next to** the quarantined blob, never inside it. The reading build
+gets an explicit signal that the data predates the current room and can decide for itself whether to
+recompute, warn, or discard.
+
+In the app, the diagnostic escalates: a quarantined module's warning gains "the room has been edited
+since this data was saved" on the first geometry commit. Tests: edit geometry with a quarantined
+slice present, save, and assert the blob is value-identical and the flag is set; edit nothing and
+assert the flag is absent.
+
+This is a product decision as much as a data one, and it is the conservative branch — we never
+silently discard a user's work, and we never let unparseable data freeze the editor.
 
 ### 7.3 Versioning — two levels, and the existing collision
 
@@ -958,7 +1179,9 @@ what will be undone. Revisit only if cross-mode undo confusion shows up in real 
 Each phase is independently shippable and leaves `main` green. Run `npm run test:run`,
 `npm run type-check`, and `npm run lint` at every phase boundary.
 
-Phases 3 and 4 divide cleanly: **phase 3 is the data plane, phase 4 is the UI plane.**
+The split points are deliberate: **1a is interaction, 1b is state, 3a/3b are the data plane
+(infrastructure then live conversion), 4 is the UI plane.** Each of 1a, 1b, 2, and 3a is worth
+landing even if the next one never does.
 
 ### Phase 0 — scaffolding (½ day)
 
@@ -1020,7 +1243,12 @@ implementation, which makes the drag rewrite verifiable before the history rewri
 ### Phase 1b — session store + commit spine (3–4 days)
 
 - Introduce `Session`, `sessionStore`, `commit` / `open` / `undo` / `redo` / `setInteraction` /
-  `select` (§3.1–3.2). `modules` starts as an empty opaque map; no module system yet.
+  `select` / `finishInteraction` (§3.1–3.2). `modules` starts as an empty opaque map; no module
+  system yet.
+- Move drag completion from 1a's two-step (`helper(...)` then clear interaction) to the atomic
+  `finishInteraction()`, and make `undo`/`redo` clear the interaction in the same emission (§3.2.1).
+- Add the narrow derived stores (`roomStore`, `committedDocument`, `selection`, `history`,
+  `diagnostics`), each guarded by reference equality; nothing else subscribes to `sessionStore`.
 - Re-point `roomStore` (still the live derived view) and `committedRoom` at `sessionStore`; export
   the latter as `committedDocument`. Readers are untouched for the second time.
 - **Convert all 29 writers in this phase — the §3.2 inventory is the checklist.** Making `roomStore`
@@ -1032,8 +1260,10 @@ implementation, which makes the drag rewrite verifiable before the history rewri
 - `resetRoom()` becomes `open(emptyDocument())`.
 - Add dev-mode deep-freeze on `open` and `commit` (§3.4.1) and fix the mutations it surfaces.
 - **Tests:** the mixed-label sequence from §3.1 (commit A, commit B, undo, undo, redo, asserting the
-  label pair at every step); commit 51 times and assert the stack holds 50 with entry 1 evicted;
-  load pushes no undo entry; `open` clears interaction and selection.
+  label pair at every step); commit 51 times and assert the stack holds 50 with entry 1 evicted, then
+  undo 50 and assert `past + future` is still 50; load pushes no undo entry; `open` clears interaction
+  and selection; undo/redo mid-drag clears the interaction atomically, including when the restored
+  snapshot no longer contains the dragged entity (§3.2.1).
 - **Risk:** breadth, not depth — 29 sites, all the same conversion, in one landing.
 - **Ships value alone:** removes the O(document) `JSON.stringify` on every emission, gives undo
   entries real labels, and fixes the load-pushes-undo bug that exists today.
@@ -1056,15 +1286,33 @@ doing it twice.
   must be converted together or the canvas will render against stale selection.
 - **Ships value alone:** removes the manual cross-clearing bug class.
 
-### Phase 3 — document restructure + persistence pipeline (4–5 days)
+### Phase 3a — codec infrastructure and migration fixtures (3–4 days)
+
+No live data moves in this phase. It builds the pipeline and proves it against fixtures while
+lighting still reads `RoomState.lights`, so 3b lands against a tested decoder rather than an
+untested one.
 
 - Define `ModuleCodec<T>` / `ModuleBlob` / `DecodeResult<T>` in `floorplan/types/module.ts`, the
-  opaque `ModuleSlices` type with `readModule` / `commitModule`, and the codec registry in
-  `modules/codecs.ts`. No runtime manifest yet.
-- Write `lighting/codec.ts` — the only module codec at this point.
-- Build `documentCodec.ts` (§7.1) and route **all** entry points through it: `jsonImport`,
-  `jsonExport`, `localStorage`, plus `shareUrl` on both sides. Every load ends in
-  `sessionStore.open(loaded)`.
+  opaque `ModuleSlices` type with `readModule` / `commitModule` / `withModule`, and the codec
+  registry in `modules/codecs.ts`. No runtime manifest yet.
+- Write `lighting/codec.ts` against the target `LightingData` shape (§7.3a), unused for now.
+- Build `documentCodec.ts` (§7.1): envelope `version: 3`, permanent readers for 1 and 2 (§7.3),
+  quarantine, normalize-on-load / prune-on-save (§3.3) with the fresh-`defaultData()` baseline rule.
+- The shared codec contract tests, which every future module inherits: fresh defaults (§3.4.1),
+  share round-trip (§5.1), registration uniqueness (§5.4).
+- **Fixtures, written before anything reads them:** envelope v1; v2; **a v2 file with a referenced
+  `custom-` light definition, plus a conflicting local definition of the same id** (§7.3a); a
+  future-version module blob; a corrupt module blob; an unknown module id. Assert the migrated shape,
+  the quarantine behavior, the geometry-drift flag (§7.2), and **value-identical** round-trip of
+  quarantined blobs (deep equality after decode → encode → decode). Not byte-identical: the blob has
+  already been through `JSON.parse`, so key order, whitespace, string escapes, and numeric spelling
+  are free to change. Preserving the JSON _value_ is the requirement, and is what a future build
+  needs to decode its own data.
+- **Ships value alone:** the v1/v2 readers and their fixtures are permanent assets regardless of what
+  happens next.
+
+### Phase 3b — move lighting data into the module slice (3–4 days)
+
 - Add `RoomState.modules` and `CarriedState`; move `lights`, `rafterConfig`, dead-zone and spacing
   config into `modules.lighting`; route lighting's writes through `commitModule`, and its drag
   preview through `previewDocument`'s `dragging` case like any other drag (§3.4).
@@ -1072,32 +1320,30 @@ doing it twice.
   `lightDefinitions` store to a picker library; replace the `mergeLightDefinitions` decode side
   effect with an explicit post-`open` adoption step; make `resolveDefinition` prefer the document's
   copy.
-- Implement normalize-on-load / prune-on-save (§3.3), with the fresh-`defaultData()` baseline rule
-  (§7.1) and the shared fresh-default contract test applied to every registered codec (§3.4.1).
-- Envelope `version: 3` with permanent readers for 1 and 2 (§7.3).
-- **Test first**, before changing any types: fixtures for envelope v1, v2, **a v2 file with a
-  referenced `custom-` light definition** (§7.3a), a future-version module blob, a corrupt module
-  blob, and an unknown module id — asserting the migrated shape, the
-  quarantine behavior, and **value-identical** round-trip of quarantined blobs (deep equality after
-  a decode → encode → decode cycle). Not byte-identical: the blob has already been through
-  `JSON.parse`, so key order, whitespace, string escapes, and numeric spelling are free to change.
-  Preserving the JSON _value_ is the actual requirement and is what a future build needs to decode
-  its own data successfully.
-- Add a round-trip test for prune/normalize: load → visit a mode → save produces a
-  value-identical document.
-- **Risk:** share URLs in the wild encode envelope 1 and 2. Those readers are permanent.
+- Route **all** entry points through `documentCodec`: `jsonImport`, `jsonExport`, `localStorage`,
+  plus `shareUrl` on both sides. Every load ends in `sessionStore.open(loaded)`.
+- Add the round-trip test for prune/normalize: load → visit a mode → save produces a value-identical
+  document.
+- **Risk:** share URLs in the wild encode envelope 1 and 2. Those readers are permanent — but they
+  were already proven in 3a, which is the point of the split.
 
 ### Phase 4 — runtime manifest + move lighting (4–5 days)
 
-- Define `ModuleRuntime` and the full registry pairing codec + `loadRuntime`.
+- Define `ModuleRuntime`, `ModuleContext`, and the full registry pairing codec + `loadRuntime`.
+- Implement the activation state machine (§5.3): dedup, generation token, registry-owned disposal,
+  per-activation layer/handler construction, `failed` as session-disabled-but-data-live.
+- Implement registration validation (§5.4) and wire the shared registry contract test.
 - Physically move lighting files under `src/modules/lighting/`; author `runtime.ts`.
 - Refactor `EditorRenderer` to `SceneLayer[]`; refactor `Canvas.svelte` and `Toolbar.svelte` to
   drive off the registry; repoint the phase-2 panel map at module manifests.
 - Turn on the boundary lint rules for real, including the codec/runtime isolation rule.
+- **Tests:** activate → deactivate → activate leaves zero orphaned scene children; a mode switch
+  mid-load discards the stale resolution; a rejected `loadRuntime` disables the mode and still
+  round-trips the module's data through save.
 - **This phase proves the seam using the module that already works** — if the contract is wrong,
   it is wrong against known-good behavior with an existing test suite, not against new flooring code.
 
-### Phase 5 — Studio shell + routing (1–2 days)
+### Phase 5 — Studio shell + routing (2–3 days)
 
 - Extend `routerStore` beyond `'editor' | 'viewer'` to `#/{module}`, `#/{module}/viewer`, plus a
   mode-picker landing route.
@@ -1105,6 +1351,8 @@ doing it twice.
 - Module-aware share links (§7.5).
 - Lazy-load runtimes via dynamic `import()`; verify with a bundle-size check that the IES parser and
   heatmap shaders are absent from the initial chunk.
+- **Route-race tests** (§5.3): rapid `#/lighting` → `#/flooring` → `#/lighting` navigation, and a
+  document open landing mid-activation, both ending with exactly one active module and no leaks.
 
 ### Phase 6 — flooring module (scope TBD, largest phase)
 
@@ -1123,26 +1371,32 @@ doing it twice.
 
 ## 9. Risks
 
-| Risk                                                                 | Mitigation                                                                                     |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Big-bang refactor stalls mid-way                                     | Seven implementation phases plus scaffolding, each shippable; 1a/1b/2/3 stand alone.           |
-| Rewriting six drag operations regresses interaction feel             | Phase 1a is standalone, against current stores; per-op test for live preview + one entry.      |
-| Custom light definitions lost or silently overridden on import       | Definitions move into `LightingData`; document copy wins; v2 conflict fixture (§7.3a).         |
-| History grows unbounded once `MAX_HISTORY` is reimplemented          | Cap is in the `commit` contract (§3.1); test that commit 51 evicts entry 1.                    |
-| `GrabModeDragOperation` (302 lines) is the hard conversion           | Convert it last in 1a, after the pattern is proven on `WallDragOperation`.                     |
-| Reading committed where previewed is meant, or the reverse           | Visuals freeze mid-drag / saves capture half a gesture; named in §3.5, checked in review.      |
-| Phase 1b must convert all 29 writers atomically — no partial landing | Reads untouched; inventory enumerated in §3.2; flip `roomStore` to derived last.               |
-| Undo/redo labels desync after repeated undo                          | Labels ride with snapshots in `HistoryEntry`; mixed-sequence test in phase 1b (§3.1).          |
-| In-place mutation bypasses history, or drifts the prune baseline     | `Readonly<T>` at boundaries, dev deep-freeze, fresh-default contract test per codec (§3.4.1).  |
-| Existing share URLs break                                            | Envelope 1/2 readers are permanent; fixture tests land before the type change.                 |
-| Undecodable module data silently lost on save                        | Quarantine held in `CarriedState`; value-identical round-trip test in phase 3.                 |
-| Prune-on-save drops a slice a user meant to keep                     | Prune only on exact deep-equality with `defaultData()`; round-trip test in phase 3.            |
-| Codec bundle bloat defeats lazy loading                              | Lint rule bans `three` / `*.svelte` / `runtime.ts` imports from `codec.ts`; bundle check in 5. |
-| `Canvas.svelte` (1052 lines) is a merge-conflict magnet              | Do phases 1–4 on short-lived branches; avoid parallel feature work in that file.               |
-| Module contract is wrong                                             | Phase 4 validates it against lighting (known-good, tested) before flooring exists.             |
-| History snapshots balloon with plank data                            | Structural: derived output has no field on `Session` and is unnameable from `codec.ts`.        |
-| Plank rendering perf                                                 | `InstancedMesh` + spatial hit-testing from the first commit, not retrofitted.                  |
-| Product focus dilution (lighting designers vs. flooring contractors) | Mitigate with branding and entry points in phase 5, not with a code split.                     |
+| Risk                                                                 | Mitigation                                                                                            |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Big-bang refactor stalls mid-way                                     | Eight implementation phases plus scaffolding, each shippable; 1a/1b/2/3a stand alone.                 |
+| Rewriting six drag operations regresses interaction feel             | Phase 1a is standalone, against current stores; per-op test for live preview + one entry.             |
+| Preview and commit diverge as drag logic evolves                     | One `applyDrag`; ops return resolutions only; per-kind deep-equality test (§3.2.1).                   |
+| Leaked THREE resources / stale handlers on mode switch               | Activation state machine, generation token, registry-owned disposal (§5.3); race tests in 5.          |
+| Duplicate module/tool/panel ids silently shadow                      | Registration throws; shared registry contract test (§5.4).                                            |
+| A compacted share payload fails the module's own decoder             | `compactForShare` returns `T`; share round-trip contract test per codec (§5.1).                       |
+| Quarantined data reopened against materially different geometry      | Fingerprint in `CarriedState`, `geometryChangedSinceLoad` beside the blob, escalating warning (§7.2). |
+| Runtime code mutates the document outside `commit`                   | `DeepReadonly` on every module-facing boundary; `ModuleContext` exposes operations, not stores.       |
+| Custom light definitions lost or silently overridden on import       | Definitions move into `LightingData`; document copy wins; v2 conflict fixture (§7.3a).                |
+| History grows unbounded once `MAX_HISTORY` is reimplemented          | Cap is in the `commit` contract (§3.1); test that commit 51 evicts entry 1.                           |
+| `GrabModeDragOperation` (302 lines) is the hard conversion           | Convert it last in 1a, after the pattern is proven on `WallDragOperation`.                            |
+| Reading committed where previewed is meant, or the reverse           | Visuals freeze mid-drag / saves capture half a gesture; named in §3.5, checked in review.             |
+| Phase 1b must convert all 29 writers atomically — no partial landing | Reads untouched; inventory enumerated in §3.2; flip `roomStore` to derived last.                      |
+| Undo/redo labels desync after repeated undo                          | Labels ride with snapshots in `HistoryEntry`; mixed-sequence test in phase 1b (§3.1).                 |
+| In-place mutation bypasses history, or drifts the prune baseline     | `Readonly<T>` at boundaries, dev deep-freeze, fresh-default contract test per codec (§3.4.1).         |
+| Existing share URLs break                                            | Envelope 1/2 readers are permanent; fixture tests land before the type change.                        |
+| Undecodable module data silently lost on save                        | Quarantine held in `CarriedState`; value-identical round-trip test in phase 3.                        |
+| Prune-on-save drops a slice a user meant to keep                     | Prune only on exact deep-equality with `defaultData()`; round-trip test in phase 3.                   |
+| Codec bundle bloat defeats lazy loading                              | Lint rule bans `three` / `*.svelte` / `runtime.ts` imports from `codec.ts`; bundle check in 5.        |
+| `Canvas.svelte` (1052 lines) is a merge-conflict magnet              | Do phases 1–4 on short-lived branches; avoid parallel feature work in that file.                      |
+| Module contract is wrong                                             | Phase 4 validates it against lighting (known-good, tested) before flooring exists.                    |
+| History snapshots balloon with plank data                            | Structural: derived output has no field on `Session` and is unnameable from `codec.ts`.               |
+| Plank rendering perf                                                 | `InstancedMesh` + spatial hit-testing from the first commit, not retrofitted.                         |
+| Product focus dilution (lighting designers vs. flooring contractors) | Mitigate with branding and entry points in phase 5, not with a code split.                            |
 
 ---
 
