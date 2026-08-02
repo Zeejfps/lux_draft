@@ -1,6 +1,7 @@
 <script lang="ts">
   import { roomStore, dispatch, removeLights } from '../stores/roomStore';
-  import { selectedLightIds, clearLightSelection } from '../stores/appStore';
+  import { selection, clearSelection } from '../stores/selectionStore';
+  import { getSelectedFixtureIds } from '../lighting/selection';
   import { lightDefinitions, getDefinitionById } from '../stores/lightDefinitionsStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { LightFixture, EditorDocument, EditorCommand, LightDefinition } from '../types';
@@ -11,7 +12,7 @@
   let definitions: LightDefinition[] = [];
 
   $: currentRoom = $roomStore;
-  $: currentSelectedLightIds = $selectedLightIds;
+  $: currentSelectedLightIds = new Set(getSelectedFixtureIds($selection));
   $: definitions = $lightDefinitions;
   $: selectedLights = currentRoom.lights.filter((l) => currentSelectedLightIds.has(l.id));
   $: visible = selectedLights.length > 0;
@@ -55,11 +56,11 @@
     if (currentSelectedLightIds.size === 0) return;
 
     removeLights(currentSelectedLightIds);
-    clearLightSelection();
+    clearSelection();
   }
 
   function handleClose(): void {
-    clearLightSelection();
+    clearSelection();
   }
 </script>
 

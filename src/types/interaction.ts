@@ -1,6 +1,7 @@
 import type { Vector2 } from './geometry';
 import type { EditorDocument } from './document';
 import type { EditorCommand } from './command';
+import type { Selection } from './selection';
 import type { InputEvent } from '../core/InputManager';
 
 // ============================================
@@ -20,19 +21,6 @@ export type Interaction =
   | { kind: 'commandPreview'; command: EditorCommand };
 
 export const IDLE_INTERACTION: Interaction = { kind: 'idle' };
-
-// ============================================
-// Selection State
-// ============================================
-
-export interface SelectionState {
-  selectedVertexIndices: Set<number>;
-  selectedLightIds: Set<string>;
-  selectedWallId: string | null;
-  selectedDoorId: string | null;
-  selectedObstacleId: string | null;
-  selectedObstacleVertexIndices: Set<number>;
-}
 
 // ============================================
 // Interaction Modes
@@ -72,7 +60,7 @@ export interface DragStartContext {
   position: Vector2;
   modifiers: InputModifiers;
   document: EditorDocument | null;
-  selection: SelectionState;
+  selection: Selection;
 }
 
 export interface DragUpdateContext {
@@ -104,7 +92,7 @@ export interface IDragOperation {
 
 export interface InteractionContext {
   document: EditorDocument;
-  selection: SelectionState;
+  selection: Selection;
   isDrawingEnabled: boolean;
   isPlacingLights: boolean;
   isPlacingDoors: boolean;

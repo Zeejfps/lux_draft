@@ -1,6 +1,7 @@
 <script lang="ts">
   import { roomStore, updateDoor, removeDoor } from '../stores/roomStore';
-  import { selectedDoorId, clearDoorSelection } from '../stores/appStore';
+  import { selection, clearSelection } from '../stores/selectionStore';
+  import { getSelectedDoorId } from '../types/selection';
   import { displayPreferences } from '../stores/settingsStore';
   import FloatingPanel from './FloatingPanel.svelte';
   import type {
@@ -19,7 +20,7 @@
   let unitFormat: UnitFormat;
 
   $: currentRoom = $roomStore;
-  $: currentSelectedDoorId = $selectedDoorId;
+  $: currentSelectedDoorId = getSelectedDoorId($selection);
   $: unitFormat = $displayPreferences.unitFormat;
   $: selectedDoor = currentSelectedDoorId
     ? (currentRoom.geometry.doors.find((d) => d.id === currentSelectedDoorId) ?? null)
@@ -53,11 +54,11 @@
   function deleteSelectedDoor(): void {
     if (!currentSelectedDoorId) return;
     removeDoor(currentSelectedDoorId);
-    clearDoorSelection();
+    clearSelection();
   }
 
   function handleClose(): void {
-    clearDoorSelection();
+    clearSelection();
   }
 
   function formatWidth(width: number): string {

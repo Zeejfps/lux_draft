@@ -2,6 +2,7 @@ import type { InputEvent } from '../../core/InputManager';
 import type { Vector2, Obstacle } from '../../types';
 import type { InteractionContext, BoxSelectionState } from '../../types/interaction';
 import { BaseInteractionHandler } from '../InteractionHandler';
+import { getSelectedObstacleId } from '../../types/selection';
 import { findVerticesInBox, findLightsInBox } from '../../utils/math';
 
 export interface ObstacleVertexBoxSelection {
@@ -82,7 +83,7 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
     const lightIdsInBox = findLightsInBox(lights, state.startPosition, state.currentPosition);
 
     // Find obstacle vertices in box (only for the currently selected obstacle)
-    const selectedObstacleId = context.selection.selectedObstacleId;
+    const selectedObstacleId = getSelectedObstacleId(context.selection);
     const selectedObstacle = selectedObstacleId
       ? context.document.geometry.obstacles.find((o) => o.id === selectedObstacleId)
       : null;

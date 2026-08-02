@@ -1,6 +1,13 @@
 import type { InputEvent } from '../../core/InputManager';
 import type { Vector2, WallSegment, Door, Obstacle } from '../../types';
-import type { InteractionContext, SelectionState } from '../../types/interaction';
+import type { InteractionContext } from '../../types/interaction';
+import {
+  getSelectedObstacleId,
+  getSelectedObstacleVertexIndices,
+  getSelectedVertexIndices,
+  type Selection,
+} from '../../types/selection';
+import { getSelectedFixtureIds } from '../../lighting/selection';
 import type { LightManager } from '../../lighting/LightManager';
 import type { DragManager } from '../DragManager';
 import type { UnifiedDragOperation } from '../operations/UnifiedDragOperation';
@@ -29,6 +36,11 @@ import {
   handleAxisLockKey,
 } from '../utils';
 
+/**
+ * Selection is one value, so there is no `onClear*Selection` per entity kind: selecting
+ * anything replaces everything else structurally. `onClearSelection` is the only clear left,
+ * and it means "select nothing".
+ */
 export interface SelectionHandlerCallbacks {
   onSelectVertex: (index: number, addToSelection: boolean) => void;
   onSelectLight: (id: string, addToSelection: boolean) => void;
@@ -41,16 +53,9 @@ export interface SelectionHandlerCallbacks {
     addToSelection: boolean
   ) => void;
   onClearSelection: () => void;
-  onClearLightSelection: () => void;
-  onClearVertexSelection: () => void;
-  onClearWallSelection: () => void;
-  onClearDoorSelection: () => void;
-  onClearObstacleSelection: () => void;
-  onClearObstacleVertexSelection: () => void;
+  /** Shift+box-drag in empty space: keep what a box can extend, drop the rest. */
+  onRetainBoxCandidates: () => void;
   onInsertVertex: (wallId: string, position: Vector2) => number | null;
-  getSelectedVertexIndices: () => Set<number>;
-  getSelectedLightIds: () => Set<string>;
-  getSelectedObstacleVertexIndices: () => Set<number>;
   getWallAtPosition: (pos: Vector2, walls: WallSegment[], tolerance: number) => WallSegment | null;
   getDoors: () => Door[];
   getObstacles: () => Obstacle[];
@@ -65,7 +70,7 @@ export interface SelectionHandlerConfig {
   createDoorDragOperation: () => DoorDragOperation;
   createObstacleVertexDragOperation: () => ObstacleVertexDragOperation;
   createObstacleDragOperation: () => ObstacleDragOperation;
-  getSelection: () => SelectionState;
+  getSelection: () => Selection;
   getCurrentMousePos: () => Vector2;
 }
 
@@ -108,29 +113,17 @@ export class SelectionHandler extends BaseInteractionHandler {
     // Check vertices first (if room is closed)
     if (isClosed) {
       const vertexResult = this.trySelectVertex(pos, vertices, addToSelection);
-      if (vertexResult.handled) {
-        this.callbacks.onClearObstacleSelection();
-        this.callbacks.onClearObstacleVertexSelection();
-        return true;
-      }
+      if (vertexResult.handled) return true;
     }
 
     // Check lights
     const lightResult = this.trySelectLight(pos, vertices, addToSelection, context);
-    if (lightResult.handled) {
-      this.callbacks.onClearObstacleSelection();
-      this.callbacks.onClearObstacleVertexSelection();
-      return true;
-    }
+    if (lightResult.handled) return true;
 
     // Check doors (if room is closed)
     if (isClosed) {
       const doorResult = this.trySelectDoor(pos, walls);
-      if (doorResult.handled) {
-        this.callbacks.onClearObstacleSelection();
-        this.callbacks.onClearObstacleVertexSelection();
-        return true;
-      }
+      if (doorResult.handled) return true;
     }
 
     // Check obstacle vertices (if room is closed)
@@ -148,22 +141,17 @@ export class SelectionHandler extends BaseInteractionHandler {
     // Check walls (if room is closed)
     if (isClosed) {
       const wallResult = this.trySelectWall(pos, walls);
-      if (wallResult.handled) {
-        this.callbacks.onClearObstacleSelection();
-        this.callbacks.onClearObstacleVertexSelection();
-        return true;
-      }
+      if (wallResult.handled) return true;
     }
 
     // Start box selection in empty space
     if (isClosed) {
       if (!addToSelection) {
-        this.callbacks.onClearVertexSelection();
-        this.callbacks.onClearLightSelection();
+        this.callbacks.onClearSelection();
+      } else {
+        // Keep only what a box drag can extend; the wall/door/obstacle parts go.
+        this.callbacks.onRetainBoxCandidates();
       }
-      this.callbacks.onClearWallSelection();
-      this.callbacks.onClearObstacleSelection();
-      this.callbacks.onClearObstacleVertexSelection();
       this.config.boxSelectionHandler.startBoxSelection(pos);
       return true;
     }
@@ -192,8 +180,6 @@ export class SelectionHandler extends BaseInteractionHandler {
 
       if (newVertexIndex !== null) {
         this.callbacks.onSelectVertex(newVertexIndex, false);
-        this.callbacks.onClearWallSelection();
-        this.callbacks.onClearLightSelection();
       }
       return true;
     }
@@ -251,25 +237,22 @@ export class SelectionHandler extends BaseInteractionHandler {
     vertices: Vector2[],
     addToSelection: boolean
   ): { handled: boolean } {
-    const selectedIndices = this.callbacks.getSelectedVertexIndices();
-    const selectedLightIds = this.callbacks.getSelectedLightIds();
+    const selectedIndices = getSelectedVertexIndices(this.config.getSelection());
+    const selectedLightIds = getSelectedFixtureIds(this.config.getSelection());
 
     const attempt = attemptItemSelection<number>(pos, {
       findItemAtPosition: (p, tolerance) => {
         const idx = findVertexAtPosition(p, vertices, tolerance);
         return idx !== null ? { id: idx, position: vertices[idx] } : null;
       },
-      isSelected: (idx) => selectedIndices.has(idx),
-      getOtherSelectedCount: () => selectedIndices.size - 1 + selectedLightIds.size,
+      isSelected: (idx) => selectedIndices.includes(idx),
+      getOtherSelectedCount: () => selectedIndices.length - 1 + selectedLightIds.length,
       hitTolerance: VERTEX_HIT_TOLERANCE_FT,
     });
 
     const handled = handleSelectionAction(attempt, addToSelection, {
       onSelect: (idx, add) => this.callbacks.onSelectVertex(idx, add),
-      onClearOtherSelection: () => this.callbacks.onClearLightSelection(),
-      onClearWallSelection: () => this.callbacks.onClearWallSelection(),
-      onClearDoorSelection: () => this.callbacks.onClearDoorSelection(),
-      isSelectedNow: (idx) => this.callbacks.getSelectedVertexIndices().has(idx),
+      isSelectedNow: (idx) => getSelectedVertexIndices(this.config.getSelection()).includes(idx),
       startDrag: (idx) => this.startUnifiedDrag(idx, null, pos, vertices),
     });
 
@@ -282,25 +265,22 @@ export class SelectionHandler extends BaseInteractionHandler {
     addToSelection: boolean,
     _context: InteractionContext
   ): { handled: boolean } {
-    const selectedIndices = this.callbacks.getSelectedVertexIndices();
-    const selectedLightIds = this.callbacks.getSelectedLightIds();
+    const selectedIndices = getSelectedVertexIndices(this.config.getSelection());
+    const selectedLightIds = getSelectedFixtureIds(this.config.getSelection());
 
     const attempt = attemptItemSelection<string>(pos, {
       findItemAtPosition: (p, tolerance) => {
         const light = this.config.lightManager.getLightAt(p, tolerance);
         return light ? { id: light.id, position: light.position } : null;
       },
-      isSelected: (id) => selectedLightIds.has(id),
-      getOtherSelectedCount: () => selectedLightIds.size - 1 + selectedIndices.size,
+      isSelected: (id) => selectedLightIds.includes(id),
+      getOtherSelectedCount: () => selectedLightIds.length - 1 + selectedIndices.length,
       hitTolerance: LIGHT_HIT_TOLERANCE_FT,
     });
 
     const handled = handleSelectionAction(attempt, addToSelection, {
       onSelect: (id, add) => this.callbacks.onSelectLight(id, add),
-      onClearOtherSelection: () => this.callbacks.onClearVertexSelection(),
-      onClearWallSelection: () => this.callbacks.onClearWallSelection(),
-      onClearDoorSelection: () => this.callbacks.onClearDoorSelection(),
-      isSelectedNow: (id) => this.callbacks.getSelectedLightIds().has(id),
+      isSelectedNow: (id) => getSelectedFixtureIds(this.config.getSelection()).includes(id),
       startDrag: (id) => this.startUnifiedDrag(null, id, pos, vertices),
     });
 
@@ -313,9 +293,6 @@ export class SelectionHandler extends BaseInteractionHandler {
     if (!door) return { handled: false };
 
     this.callbacks.onSelectDoor(door.id);
-    this.callbacks.onClearLightSelection();
-    this.callbacks.onClearVertexSelection();
-    this.callbacks.onClearWallSelection();
 
     // Start door drag
     const operation = this.config.createDoorDragOperation();
@@ -354,42 +331,39 @@ export class SelectionHandler extends BaseInteractionHandler {
 
   private trySelectObstacleVertex(pos: Vector2, addToSelection: boolean): { handled: boolean } {
     const obstacles = this.callbacks.getObstacles();
-    const selectedObstacleVertexIndices = this.callbacks.getSelectedObstacleVertexIndices();
+    const selectedObstacleVertexIndices = getSelectedObstacleVertexIndices(
+      this.config.getSelection()
+    );
 
     for (const obstacle of obstacles) {
       const vertices = obstacle.walls.map((w) => w.start);
       const idx = findVertexAtPosition(pos, vertices, VERTEX_HIT_TOLERANCE_FT);
 
       if (idx !== null) {
-        const isAlreadySelected = selectedObstacleVertexIndices.has(idx);
-        const currentSelection = this.config.getSelection();
-        const isThisObstacleSelected = currentSelection.selectedObstacleId === obstacle.id;
+        const isAlreadySelected = selectedObstacleVertexIndices.includes(idx);
+        const isThisObstacleSelected =
+          getSelectedObstacleId(this.config.getSelection()) === obstacle.id;
 
         if (addToSelection && isThisObstacleSelected) {
           // Toggle vertex in/out of selection within same obstacle
           this.callbacks.onSelectObstacleVertex(obstacle.id, idx, true);
           if (isAlreadySelected) {
             // Toggled off - check if still selected after update
-            const nowSelected = this.callbacks.getSelectedObstacleVertexIndices();
-            if (!nowSelected.has(idx)) {
+            const nowSelected = getSelectedObstacleVertexIndices(this.config.getSelection());
+            if (!nowSelected.includes(idx)) {
               return { handled: true };
             }
           }
         } else if (
           isAlreadySelected &&
           isThisObstacleSelected &&
-          selectedObstacleVertexIndices.size > 1
+          selectedObstacleVertexIndices.length > 1
         ) {
           // Clicking on already-selected vertex in multi-select: start drag
         } else {
           // Single select
           this.callbacks.onSelectObstacleVertex(obstacle.id, idx, false);
         }
-
-        this.callbacks.onClearLightSelection();
-        this.callbacks.onClearVertexSelection();
-        this.callbacks.onClearWallSelection();
-        this.callbacks.onClearDoorSelection();
 
         // Start drag
         this.startObstacleVertexDrag(obstacle.id, idx, pos, vertices);
@@ -446,11 +420,6 @@ export class SelectionHandler extends BaseInteractionHandler {
 
       if (hit) {
         this.callbacks.onSelectObstacle(obstacle.id);
-        this.callbacks.onClearLightSelection();
-        this.callbacks.onClearVertexSelection();
-        this.callbacks.onClearWallSelection();
-        this.callbacks.onClearDoorSelection();
-        this.callbacks.onClearObstacleVertexSelection();
 
         // Start whole-obstacle drag
         this.startObstacleDrag(
@@ -484,9 +453,6 @@ export class SelectionHandler extends BaseInteractionHandler {
     if (!wall) return { handled: false };
 
     this.callbacks.onSelectWall(wall.id);
-    this.callbacks.onClearLightSelection();
-    this.callbacks.onClearVertexSelection();
-    this.callbacks.onClearDoorSelection();
 
     // Start wall drag
     const operation = this.config.createWallDragOperation();

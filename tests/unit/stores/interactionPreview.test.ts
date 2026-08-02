@@ -60,14 +60,7 @@ function startWallDrag(manager: DragManager, at = { x: 5, y: 0 }): void {
     position: at,
     modifiers: NO_MODIFIERS,
     document: get(roomStore),
-    selection: {
-      selectedVertexIndices: new Set(),
-      selectedLightIds: new Set(),
-      selectedWallId: 'wall-1',
-      selectedDoorId: null,
-      selectedObstacleId: null,
-      selectedObstacleVertexIndices: new Set(),
-    },
+    selection: { kind: 'wall', id: 'wall-1' },
   });
 }
 

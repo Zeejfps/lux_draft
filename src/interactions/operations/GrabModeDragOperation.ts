@@ -1,5 +1,6 @@
 import type { Vector2, EditorCommand } from '../../types';
-import type { DragStartContext, DragUpdateContext, SelectionState } from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
+import type { Selection } from '../../types/selection';
 import type { DragOperationCallbacks } from '../DragManager';
 import type { BaseDragConfig, RoomStateWithDoors } from '../types';
 import { BaseDragOperation } from '../DragOperation';
@@ -48,7 +49,7 @@ export class GrabModeDragOperation extends BaseDragOperation {
   private anchorLightId: string | null = null;
   private wallId: string | null = null;
   private doorId: string | null = null;
-  private selection: SelectionState | null = null;
+  private selection: Selection | null = null;
   private config: GrabModeConfig;
   private callbacks: DragOperationCallbacks;
 

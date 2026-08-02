@@ -1,7 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { SvelteSet } from 'svelte/reactivity';
   import { Scene } from '../core/Scene';
   import { type InputEvent, InputManager } from '../core/InputManager';
   import { EditorRenderer } from '../rendering/EditorRenderer';
@@ -35,31 +34,36 @@
     cancelInteraction,
   } from '../stores/roomStore';
   import {
-    clearLightSelection,
-    clearVertexSelection,
-    clearDoorSelection,
-    clearObstacleSelection,
-    clearObstacleVertexSelection,
     isDrawingEnabled,
     isLightPlacementEnabled,
     isDoorPlacementEnabled,
     isObstacleDrawingEnabled,
-    selectedLightId,
-    selectedLightIds,
-    selectedVertexIndex,
-    selectedVertexIndices,
-    selectedWallId,
-    selectedDoorId,
-    selectedObstacleId,
-    selectedObstacleVertexIndices,
-    selectLight,
-    selectVertex,
-    selectObstacle,
-    selectObstacleVertex,
     shouldFitCamera,
-    selectDoor,
     viewMode,
   } from '../stores/appStore';
+  import {
+    clearSelection,
+    retainBoxCandidates,
+    selection,
+    selectDoor,
+    selectFixture,
+    selectInBox,
+    selectObstacle,
+    selectObstacleVertex,
+    selectObstacleVerticesInBox,
+    selectVertex,
+    selectWall,
+    setObstacleVertexSelection,
+  } from '../stores/selectionStore';
+  import {
+    getSelectedDoorId,
+    getSelectedObstacleId,
+    getSelectedObstacleVertexIndices,
+    getSelectedVertexIndices,
+    getSelectedWallId,
+    type Selection,
+  } from '../types/selection';
+  import { getSelectedFixtureIds } from '../lighting/selection';
   import { sessionStore } from '../stores/sessionStore';
   import { getDoorPlacementSettings } from '../stores/doorStore';
   import {
@@ -178,6 +182,10 @@
   let isPlacingLights = false;
   let isPlacingDoors = false;
   let isObstacleDrawing = false;
+  // One selection value, one subscription. The six `current*` mirrors are gone: they could
+  // arrive out of step with each other, which is exactly what made the canvas render against
+  // a stale selection. Everything below is derived from `currentSelection` in one pass.
+  let currentSelection: Selection = { kind: 'none' };
   let currentSelectedLightId: string | null = null;
   let currentSelectedLightIds: Set<string> = new Set();
   let currentSelectedWallId: string | null = null;
@@ -230,14 +238,21 @@
     editorRenderer.setPreviewVertex(null);
   }
 
-  $: currentSelectedLightId = $selectedLightId;
-  $: currentSelectedLightIds = $selectedLightIds;
-  $: currentSelectedWallId = $selectedWallId;
-  $: currentSelectedDoorId = $selectedDoorId;
-  $: currentSelectedObstacleId = $selectedObstacleId;
-  $: currentSelectedObstacleVertexIndices = $selectedObstacleVertexIndices;
-  $: currentSelectedVertexIndex = $selectedVertexIndex;
-  $: currentSelectedVertexIndices = $selectedVertexIndices;
+  $: currentSelection = $selection;
+  $: {
+    const fixtureIds = getSelectedFixtureIds(currentSelection);
+    const vertexIndices = getSelectedVertexIndices(currentSelection);
+    currentSelectedLightIds = new Set(fixtureIds);
+    currentSelectedLightId = fixtureIds[0] ?? null;
+    currentSelectedVertexIndices = new Set(vertexIndices);
+    currentSelectedVertexIndex = vertexIndices.length > 0 ? vertexIndices[0] : null;
+    currentSelectedWallId = getSelectedWallId(currentSelection);
+    currentSelectedDoorId = getSelectedDoorId(currentSelection);
+    currentSelectedObstacleId = getSelectedObstacleId(currentSelection);
+    currentSelectedObstacleVertexIndices = new Set(
+      getSelectedObstacleVertexIndices(currentSelection)
+    );
+  }
   $: currentRafterConfig = $rafterConfig;
   $: currentDisplayPrefs = $displayPreferences;
   $: currentDeadZoneConfig = $deadZoneConfig;
@@ -350,14 +365,7 @@
   function buildInteractionContext(): InteractionContext {
     return {
       document: currentRoomState,
-      selection: {
-        selectedVertexIndices: currentSelectedVertexIndices,
-        selectedLightIds: currentSelectedLightIds,
-        selectedWallId: currentSelectedWallId,
-        selectedDoorId: currentSelectedDoorId,
-        selectedObstacleId: currentSelectedObstacleId,
-        selectedObstacleVertexIndices: currentSelectedObstacleVertexIndices,
-      },
+      selection: currentSelection,
       isDrawingEnabled: isDrawing,
       isPlacingLights: isPlacingLights,
       isPlacingDoors: isPlacingDoors,
@@ -554,12 +562,7 @@
       editorRenderer.updateDrawingVertices([]);
       return;
     }
-    clearLightSelection();
-    selectedWallId.set(null);
-    clearVertexSelection();
-    clearDoorSelection();
-    clearObstacleSelection();
-    clearObstacleVertexSelection();
+    clearSelection();
   }
 
   function handleSelectAllObstacleVertices(): void {
@@ -567,11 +570,10 @@
     const obstacle = currentObstacles.find((o) => o.id === currentSelectedObstacleId);
     if (!obstacle) return;
 
-    const allIndices = new SvelteSet<number>();
-    for (let i = 0; i < obstacle.walls.length; i++) {
-      allIndices.add(i);
-    }
-    selectedObstacleVertexIndices.set(allIndices);
+    setObstacleVertexSelection(
+      currentSelectedObstacleId,
+      obstacle.walls.map((_wall, index) => index)
+    );
   }
 
   function handleDelete(): void {
@@ -582,19 +584,19 @@
           deleteVertex(idx);
         }
       }
-      clearVertexSelection();
+      clearSelection();
     } else if (currentSelectedObstacleId && currentSelectedObstacleVertexIndices.size === 0) {
       removeObstacle(currentSelectedObstacleId);
-      clearObstacleSelection();
+      clearSelection();
     } else if (currentSelectedDoorId) {
       removeDoor(currentSelectedDoorId);
-      clearDoorSelection();
+      clearSelection();
     } else if (currentSelectedLightIds.size > 0) {
       for (const id of currentSelectedLightIds) {
         lightManager.removeLight(id);
       }
       removeLights(currentSelectedLightIds);
-      clearLightSelection();
+      clearSelection();
     }
   }
 
@@ -752,44 +754,15 @@
           // When an obstacle is selected, box select only applies to that obstacle's vertices
           if (obstacleVertices.length > 0) {
             const first = obstacleVertices[0];
-            if (addToSelection) {
-              selectedObstacleVertexIndices.update((existing) => {
-                const newSet = new SvelteSet(existing);
-                for (const idx of first.vertexIndices) newSet.add(idx);
-                return newSet;
-              });
-            } else {
-              selectedObstacleVertexIndices.set(new SvelteSet(first.vertexIndices));
-            }
+            selectObstacleVerticesInBox(first.obstacleId, first.vertexIndices, addToSelection);
           } else if (currentSelectedObstacleId) {
-            // Obstacle selected but no obstacle vertices in box — clear obstacle vertex selection
+            // Obstacle selected but no obstacle vertices in box — drop the vertex selection
             if (!addToSelection) {
-              selectedObstacleVertexIndices.set(new Set());
+              setObstacleVertexSelection(currentSelectedObstacleId, []);
             }
           } else {
-            // No obstacle selected — normal room vertex/light selection
-            if (vertexIndices.length > 0) {
-              if (addToSelection) {
-                selectedVertexIndices.update((existing) => {
-                  const newSet = new SvelteSet(existing);
-                  for (const idx of vertexIndices) newSet.add(idx);
-                  return newSet;
-                });
-              } else {
-                selectedVertexIndices.set(new SvelteSet(vertexIndices));
-              }
-            }
-            if (lightIds.length > 0) {
-              if (addToSelection) {
-                selectedLightIds.update((existing) => {
-                  const newSet = new SvelteSet(existing);
-                  for (const id of lightIds) newSet.add(id);
-                  return newSet;
-                });
-              } else {
-                selectedLightIds.set(new Set(lightIds));
-              }
-            }
+            // No obstacle selected — normal room vertex/fixture selection
+            selectInBox(vertexIndices, lightIds, addToSelection);
           }
           editorRenderer?.setSelectionBox(null, null);
         },
@@ -815,12 +788,8 @@
           editorRenderer?.setMeasurementLine(null, null);
           dispatch('measurement', null);
         },
-        onSelectLight: (id) => selectLight(id),
-        onSelectVertex: (index, addToSelection) => {
-          selectVertex(index, addToSelection);
-          selectedWallId.set(null);
-          clearLightSelection();
-        },
+        onSelectLight: (id) => selectFixture(id),
+        onSelectVertex: (index, addToSelection) => selectVertex(index, addToSelection),
         onStartDrag: (vertexIndex, lightId, pos) => {
           const operation = createUnifiedDragOperation();
           operation.setAnchor(vertexIndex, lightId);
@@ -828,7 +797,7 @@
             position: pos,
             modifiers: EMPTY_MODIFIERS,
             document: currentRoomState,
-            selection: buildInteractionContext().selection,
+            selection: currentSelection,
           });
         },
         getWallAtPosition: (pos, walls, tolerance) =>
@@ -861,7 +830,7 @@
         setGrabModeActive: (active) => {
           isGrabMode = active;
         },
-        getSelection: () => buildInteractionContext().selection,
+        getSelection: () => currentSelection,
         getCurrentMousePos: () => currentMousePos,
         getVertices: () => getVertices(currentRoomState),
         getLights: () => currentRoomState.lights,
@@ -887,35 +856,23 @@
         createDoorDragOperation,
         createObstacleVertexDragOperation,
         createObstacleDragOperation,
-        getSelection: () => buildInteractionContext().selection,
+        getSelection: () => currentSelection,
         getCurrentMousePos: () => currentMousePos,
       },
       {
         onSelectVertex: (index, addToSelection) => selectVertex(index, addToSelection),
-        onSelectLight: (id, addToSelection) => selectLight(id, addToSelection),
-        onSelectWall: (id) => selectedWallId.set(id),
+        onSelectLight: (id, addToSelection) => selectFixture(id, addToSelection),
+        onSelectWall: (id) => selectWall(id),
         onSelectDoor: (id) => selectDoor(id),
         onSelectObstacle: (id) => selectObstacle(id),
         onSelectObstacleVertex: (obstacleId, vertexIndex, addToSelection) =>
           selectObstacleVertex(obstacleId, vertexIndex, addToSelection),
         onClearSelection: () => {
-          clearLightSelection();
-          selectedWallId.set(null);
-          clearVertexSelection();
-          clearDoorSelection();
-          clearObstacleSelection();
+          clearSelection();
           dragManager.clearAxisLock();
         },
-        onClearLightSelection: () => clearLightSelection(),
-        onClearVertexSelection: () => clearVertexSelection(),
-        onClearWallSelection: () => selectedWallId.set(null),
-        onClearDoorSelection: () => clearDoorSelection(),
-        onClearObstacleSelection: () => clearObstacleSelection(),
-        onClearObstacleVertexSelection: () => clearObstacleVertexSelection(),
+        onRetainBoxCandidates: () => retainBoxCandidates(),
         onInsertVertex: (wallId, position) => insertVertexOnWall(wallId, position),
-        getSelectedVertexIndices: () => get(selectedVertexIndices),
-        getSelectedLightIds: () => get(selectedLightIds),
-        getSelectedObstacleVertexIndices: () => get(selectedObstacleVertexIndices),
         getWallAtPosition: (pos, walls, tolerance) =>
           editorRenderer.getWallAtPosition(pos, walls, tolerance),
         getDoors: () => currentDoors,

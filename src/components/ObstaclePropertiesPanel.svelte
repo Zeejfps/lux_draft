@@ -1,6 +1,7 @@
 <script lang="ts">
   import { roomStore, updateObstacle, removeObstacle } from '../stores/roomStore';
-  import { selectedObstacleId, clearObstacleSelection } from '../stores/appStore';
+  import { selection, clearSelection } from '../stores/selectionStore';
+  import { getSelectedObstacleId } from '../types/selection';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { Obstacle, EditorDocument } from '../types';
 
@@ -9,7 +10,7 @@
   let selectedObstacle: Obstacle | null = null;
 
   $: currentRoom = $roomStore;
-  $: currentSelectedObstacleId = $selectedObstacleId;
+  $: currentSelectedObstacleId = getSelectedObstacleId($selection);
   $: selectedObstacle = currentSelectedObstacleId
     ? (currentRoom.geometry.obstacles.find((o) => o.id === currentSelectedObstacleId) ?? null)
     : null;
@@ -32,11 +33,11 @@
   function deleteSelectedObstacle(): void {
     if (!currentSelectedObstacleId) return;
     removeObstacle(currentSelectedObstacleId);
-    clearObstacleSelection();
+    clearSelection();
   }
 
   function handleClose(): void {
-    clearObstacleSelection();
+    clearSelection();
   }
 </script>
 

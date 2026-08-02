@@ -2,6 +2,7 @@ import type { Vector2, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import type { SnapController } from '../../controllers/SnapController';
 import type { DragOperationCallbacks } from '../DragManager';
+import { getSelectedObstacleVertexIndices } from '../../types/selection';
 import { BaseDragOperation } from '../DragOperation';
 
 export interface ObstacleVertexDragConfig {
@@ -53,7 +54,7 @@ export class ObstacleVertexDragOperation extends BaseDragOperation {
     this._isActive = true;
 
     // Build the set of selected indices from context + anchor
-    const selectedIndices = new Set(context.selection.selectedObstacleVertexIndices);
+    const selectedIndices = new Set(getSelectedObstacleVertexIndices(context.selection));
     selectedIndices.add(this.anchorVertexIndex);
 
     // Store original positions only for selected vertices

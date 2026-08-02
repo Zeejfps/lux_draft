@@ -1,14 +1,36 @@
+<script context="module" lang="ts">
+  import VertexPropertiesPanel from './components/VertexPropertiesPanel.svelte';
+  import WallPropertiesPanel from './components/WallPropertiesPanel.svelte';
+  import LightPropertiesPanel from './components/LightPropertiesPanel.svelte';
+  import DoorPropertiesPanel from './components/DoorPropertiesPanel.svelte';
+  import ObstaclePropertiesPanel from './components/ObstaclePropertiesPanel.svelte';
+  import { registerPanels } from './components/panelRegistry';
+  import { fixtureSelection } from './lighting/selection';
+
+  /**
+   * Panel registration — the whole of it. Keys are `SelectionKind.panelKey`, so registration
+   * and dispatch cannot disagree; dispatch happens below through `panelsForSelection`.
+   *
+   * Phase 4 replaces this literal with a walk over the registered module runtimes' `panels`
+   * records. Nothing else about panel dispatch changes.
+   */
+  registerPanels({
+    'core.vertex': VertexPropertiesPanel,
+    'core.wall': WallPropertiesPanel,
+    'core.door': DoorPropertiesPanel,
+    'core.obstacle': ObstaclePropertiesPanel,
+    // An obstacle-vertex selection edits the obstacle it belongs to.
+    'core.obstacleVertex': ObstaclePropertiesPanel,
+    [fixtureSelection.panelKey]: LightPropertiesPanel,
+  });
+</script>
+
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import Canvas from './components/Canvas.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import PropertyPanel from './components/PropertyPanel.svelte';
-  import VertexPropertiesPanel from './components/VertexPropertiesPanel.svelte';
-  import WallPropertiesPanel from './components/WallPropertiesPanel.svelte';
-  import LightPropertiesPanel from './components/LightPropertiesPanel.svelte';
-  import DoorPropertiesPanel from './components/DoorPropertiesPanel.svelte';
-  import ObstaclePropertiesPanel from './components/ObstaclePropertiesPanel.svelte';
   import LightToolPanel from './components/LightToolPanel.svelte';
   import DoorToolPanel from './components/DoorToolPanel.svelte';
   import StatusBar from './components/StatusBar.svelte';
@@ -19,6 +41,8 @@
   import ViewerPage from './components/ViewerPage.svelte';
   import { committedDocument, openDocument } from './stores/roomStore';
   import { activeTool, setActiveTool, requestCameraFit } from './stores/appStore';
+  import { selection } from './stores/selectionStore';
+  import { panelsForSelection } from './components/panelRegistry';
   import { loadFromLocalStorage, setupAutoSave } from './persistence/localStorage';
   import { toggleGridSnap } from './stores/settingsStore';
   import { togglePropertiesPanel } from './stores/propertiesPanelStore';
@@ -182,11 +206,9 @@
         <LightToolPanel on:openLightManager={handleOpenLightManager} />
         <DoorToolPanel />
         <PropertyPanel />
-        <VertexPropertiesPanel />
-        <WallPropertiesPanel />
-        <LightPropertiesPanel />
-        <DoorPropertiesPanel />
-        <ObstaclePropertiesPanel />
+        {#each panelsForSelection($selection) as panel (panel.key)}
+          <svelte:component this={panel.component} />
+        {/each}
       </div>
     </main>
 

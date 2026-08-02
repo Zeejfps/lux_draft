@@ -1,14 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-  import {
-    activeTool,
-    viewMode,
-    setActiveTool,
-    setViewMode,
-    selectedVertexIndex,
-    selectedLightId,
-    clearSelection,
-  } from '../stores/appStore';
+  import { activeTool, viewMode, setActiveTool, setViewMode } from '../stores/appStore';
+  import { selection, clearSelection } from '../stores/selectionStore';
+  import { getSelectedVertexIndices } from '../types/selection';
+  import { getSelectedFixtureIds } from '../lighting/selection';
   import {
     canPlaceLights,
     canPlaceDoors,
@@ -86,7 +81,8 @@
   $: spacingEnabled = $spacingConfig.enabled;
   $: gridSnapEnabled = $displayPreferences.gridSnapEnabled;
   $: measuringActive = $isMeasuring;
-  $: canMeasure = $selectedVertexIndex !== null || $selectedLightId !== null;
+  $: canMeasure =
+    getSelectedVertexIndices($selection).length > 0 || getSelectedFixtureIds($selection).length > 0;
   $: lightRadiusVisibility = $displayPreferences.lightRadiusVisibility;
 
   function handleToolChange(tool: Tool): void {

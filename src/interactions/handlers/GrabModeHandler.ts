@@ -1,6 +1,7 @@
 import type { InputEvent } from '../../core/InputManager';
 import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
-import type { InteractionContext, GrabModeState, SelectionState } from '../../types/interaction';
+import type { InteractionContext, GrabModeState } from '../../types/interaction';
+import type { Selection } from '../../types/selection';
 import type { DragManager } from '../DragManager';
 import type { GrabModeDragOperation } from '../operations/GrabModeDragOperation';
 import { BaseInteractionHandler } from '../InteractionHandler';
@@ -23,7 +24,7 @@ export interface GrabModeHandlerConfig {
   createGrabOperation: () => GrabModeDragOperation;
   getGrabModeState: () => GrabModeState;
   setGrabModeActive: (active: boolean) => void;
-  getSelection: () => SelectionState;
+  getSelection: () => Selection;
   getCurrentMousePos: () => Vector2;
   getVertices: () => Vector2[];
   getLights: () => LightFixture[];

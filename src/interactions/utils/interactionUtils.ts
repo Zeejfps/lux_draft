@@ -1,6 +1,14 @@
 import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
-import type { InputModifiers, SelectionState } from '../../types/interaction';
+import type { InputModifiers } from '../../types/interaction';
 import type { InputEvent } from '../../core/InputManager';
+import {
+  getSelectedDoorId,
+  getSelectedVertexIndices,
+  getSelectedWallId,
+  isEmptySelection,
+  type Selection,
+} from '../../types/selection';
+import { getSelectedFixtureIds } from '../../lighting/selection';
 import { getWallDirection } from '../../utils/geometry';
 
 /**
@@ -26,15 +34,8 @@ export function extractModifiers(event: InputEvent): InputModifiers {
 /**
  * Checks if any item is selected.
  */
-export function hasSelection(selection: SelectionState): boolean {
-  return (
-    selection.selectedVertexIndices.size > 0 ||
-    selection.selectedLightIds.size > 0 ||
-    selection.selectedWallId !== null ||
-    selection.selectedDoorId !== null ||
-    selection.selectedObstacleId !== null ||
-    selection.selectedObstacleVertexIndices.size > 0
-  );
+export function hasSelection(selection: Selection): boolean {
+  return !isEmptySelection(selection);
 }
 
 /**
@@ -53,22 +54,27 @@ export interface SelectionOriginConfig {
  * Used for axis lock guides and grab mode offset calculation.
  */
 export function getSelectionOrigin(
-  selection: SelectionState,
+  selection: Selection,
   config: SelectionOriginConfig
 ): Vector2 | null {
+  const selectedVertexIndices = getSelectedVertexIndices(selection);
+  const selectedFixtureIds = getSelectedFixtureIds(selection);
+  const selectedWallId = getSelectedWallId(selection);
+  const selectedDoorId = getSelectedDoorId(selection);
+
   // Check vertices first
-  if (selection.selectedVertexIndices.size > 0) {
+  if (selectedVertexIndices.length > 0) {
     const vertices = config.getVertices();
-    const firstIndex = Array.from(selection.selectedVertexIndices)[0];
+    const firstIndex = selectedVertexIndices[0];
     if (vertices[firstIndex]) {
       return { ...vertices[firstIndex] };
     }
   }
 
   // Check lights
-  if (selection.selectedLightIds.size > 0) {
+  if (selectedFixtureIds.length > 0) {
     const lights = config.getLights();
-    const firstId = Array.from(selection.selectedLightIds)[0];
+    const firstId = selectedFixtureIds[0];
     const light = lights.find((l) => l.id === firstId);
     if (light) {
       return { ...light.position };
@@ -76,16 +82,16 @@ export function getSelectionOrigin(
   }
 
   // Check wall
-  if (selection.selectedWallId) {
-    const wall = config.getWallById(selection.selectedWallId);
+  if (selectedWallId) {
+    const wall = config.getWallById(selectedWallId);
     if (wall) {
       return { ...wall.start };
     }
   }
 
   // Check door
-  if (selection.selectedDoorId) {
-    const door = config.getDoorById(selection.selectedDoorId);
+  if (selectedDoorId) {
+    const door = config.getDoorById(selectedDoorId);
     if (door) {
       const wall = config.getWallById(door.wallId);
       if (wall) {
@@ -107,23 +113,28 @@ export function getSelectionOrigin(
  * Gets selection origin using RoomState directly (for handlers that have context).
  */
 export function getSelectionOriginFromRoomState(
-  selection: SelectionState,
+  selection: Selection,
   vertices: Vector2[],
   lights: LightFixture[],
   walls: WallSegment[],
   doors: Door[]
 ): Vector2 | undefined {
+  const selectedVertexIndices = getSelectedVertexIndices(selection);
+  const selectedFixtureIds = getSelectedFixtureIds(selection);
+  const selectedWallId = getSelectedWallId(selection);
+  const selectedDoorId = getSelectedDoorId(selection);
+
   // Check vertices first
-  if (selection.selectedVertexIndices.size > 0) {
-    const firstIndex = Array.from(selection.selectedVertexIndices)[0];
+  if (selectedVertexIndices.length > 0) {
+    const firstIndex = selectedVertexIndices[0];
     if (vertices[firstIndex]) {
       return vertices[firstIndex];
     }
   }
 
   // Check lights
-  if (selection.selectedLightIds.size > 0) {
-    const firstId = Array.from(selection.selectedLightIds)[0];
+  if (selectedFixtureIds.length > 0) {
+    const firstId = selectedFixtureIds[0];
     const light = lights.find((l) => l.id === firstId);
     if (light) {
       return light.position;
@@ -131,8 +142,8 @@ export function getSelectionOriginFromRoomState(
   }
 
   // Check wall - use midpoint
-  if (selection.selectedWallId) {
-    const wall = walls.find((w) => w.id === selection.selectedWallId);
+  if (selectedWallId) {
+    const wall = walls.find((w) => w.id === selectedWallId);
     if (wall) {
       return {
         x: (wall.start.x + wall.end.x) / 2,
@@ -142,8 +153,8 @@ export function getSelectionOriginFromRoomState(
   }
 
   // Check door
-  if (selection.selectedDoorId) {
-    const door = doors.find((d) => d.id === selection.selectedDoorId);
+  if (selectedDoorId) {
+    const door = doors.find((d) => d.id === selectedDoorId);
     if (door) {
       const wall = walls.find((w) => w.id === door.wallId);
       if (wall) {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { roomStore, getVertices, updateVertexPosition, deleteVertex } from '../stores/roomStore';
-  import { selectedVertexIndex, clearVertexSelection } from '../stores/appStore';
+  import { selection, clearSelection } from '../stores/selectionStore';
+  import { getSelectedVertexIndices } from '../types/selection';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { EditorDocument } from '../types';
 
@@ -11,7 +12,7 @@
   let vertexYInput: string = '';
 
   $: currentRoom = $roomStore;
-  $: currentSelectedVertexIndex = $selectedVertexIndex;
+  $: currentSelectedVertexIndex = getSelectedVertexIndices($selection)[0] ?? null;
 
   $: {
     const vertices = getVertices(currentRoom);
@@ -61,14 +62,14 @@
 
   function deleteSelectedVertex(): void {
     if (currentSelectedVertexIndex === null) return;
-    if (currentRoom.walls.length <= 3) return; // Need at least 3 vertices
+    if (currentRoom.geometry.boundary.walls.length <= 3) return; // Need at least 3 vertices
 
     deleteVertex(currentSelectedVertexIndex);
-    clearVertexSelection();
+    clearSelection();
   }
 
   function handleClose(): void {
-    clearVertexSelection();
+    clearSelection();
   }
 </script>
 
@@ -118,7 +119,7 @@
         Drag the vertex or type new coordinates and press Enter. Double-click a wall to insert a new
         vertex.
       </p>
-      {#if currentRoom.walls.length > 3}
+      {#if currentRoom.geometry.boundary.walls.length > 3}
         <button class="panel-delete-btn" on:click={deleteSelectedVertex}> Delete Vertex </button>
       {:else}
         <p class="panel-hint warning">Cannot delete: minimum 3 vertices required.</p>

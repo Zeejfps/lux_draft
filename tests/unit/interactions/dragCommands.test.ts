@@ -5,8 +5,10 @@ import type {
   DragUpdateContext,
   IDragOperation,
   InputModifiers,
-  SelectionState,
 } from '../../../src/types/interaction';
+import type { Selection } from '../../../src/types/selection';
+import { NO_SELECTION, combineSelection } from '../../../src/types/selection';
+import { fixtureSelectionOf } from '../../../src/lighting/selection';
 import type { EditorCommand } from '../../../src/types/command';
 import type { Vector2 } from '../../../src/types/geometry';
 import { SnapController } from '../../../src/controllers/SnapController';
@@ -39,14 +41,13 @@ const callbacks = {
   },
 };
 
-const emptySelection = (): SelectionState => ({
-  selectedVertexIndices: new Set(),
-  selectedLightIds: new Set(),
-  selectedWallId: null,
-  selectedDoorId: null,
-  selectedObstacleId: null,
-  selectedObstacleVertexIndices: new Set(),
-});
+const emptySelection = (): Selection => NO_SELECTION;
+
+const verticesAndFixtures = (indices: number[], fixtureIds: string[]): Selection =>
+  combineSelection([
+    indices.length > 0 ? { kind: 'vertex', indices } : NO_SELECTION,
+    fixtureSelectionOf(fixtureIds),
+  ]);
 
 const roomConfig = () => ({
   snapController: new SnapController(),
@@ -71,7 +72,7 @@ function drag(
   operation: IDragOperation,
   start: Vector2,
   frames: Array<{ position: Vector2; modifiers?: InputModifiers; axisLock?: AxisLock }>,
-  selection: SelectionState = emptySelection()
+  selection: Selection = emptySelection()
 ): EditorCommand | null {
   operation.start({ position: start, modifiers: NO_MODIFIERS, document: doc, selection });
 
@@ -172,11 +173,7 @@ describe('UnifiedDragOperation', () => {
   function unifiedDrag(vertexIndices: number[], lightIds: string[], anchorVertex: number | null) {
     const op = new UnifiedDragOperation(roomConfig(), callbacks);
     op.setAnchor(anchorVertex, anchorVertex === null ? (lightIds[0] ?? null) : null);
-    const selection: SelectionState = {
-      ...emptySelection(),
-      selectedVertexIndices: new Set(vertexIndices),
-      selectedLightIds: new Set(lightIds),
-    };
+    const selection = verticesAndFixtures(vertexIndices, lightIds);
     return { op, selection };
   }
 
@@ -308,11 +305,7 @@ describe('ObstacleVertexDragOperation', () => {
     op.setObstacleId('obs-1');
     op.setAnchorVertex(anchor);
     op.setObstacleVertices(doc.geometry.obstacles[0].walls.map((w) => ({ ...w.start })));
-    const selection: SelectionState = {
-      ...emptySelection(),
-      selectedObstacleId: 'obs-1',
-      selectedObstacleVertexIndices: new Set(indices),
-    };
+    const selection: Selection = { kind: 'obstacleVertex', obstacleId: 'obs-1', indices };
     return { op, selection };
   }
 
@@ -386,7 +379,7 @@ describe('ObstacleVertexDragOperation', () => {
 describe('GrabModeDragOperation', () => {
   let mousePos: Vector2 = { x: 0, y: 0 };
 
-  function grab(selection: SelectionState) {
+  function grab(selection: Selection) {
     const op = new GrabModeDragOperation(
       { ...roomConfig(), getCurrentMousePos: () => mousePos },
       callbacks
@@ -396,7 +389,7 @@ describe('GrabModeDragOperation', () => {
 
   it('a wall-only selection produces wall.move', () => {
     mousePos = { x: 0, y: 0 };
-    const { op, selection } = grab({ ...emptySelection(), selectedWallId: 'wall-1' });
+    const { op, selection } = grab({ kind: 'wall', id: 'wall-1' });
     const command = drag(op, { x: 0, y: 0 }, [{ position: { x: 0, y: -2 } }], selection);
     expect(command).toEqual({
       type: 'wall.move',
@@ -408,18 +401,14 @@ describe('GrabModeDragOperation', () => {
 
   it('a door-only selection produces door.move', () => {
     mousePos = { x: 3, y: 0 };
-    const { op, selection } = grab({ ...emptySelection(), selectedDoorId: 'door-1' });
+    const { op, selection } = grab({ kind: 'door', id: 'door-1' });
     const command = drag(op, { x: 3, y: 0 }, [{ position: { x: 5, y: 0 } }], selection);
     expect(command).toEqual({ type: 'door.move', doorId: 'door-1', offset: 5 });
   });
 
   it('a mixed vertex + light selection produces one compound command', () => {
     mousePos = { x: 0, y: 0 };
-    const { op, selection } = grab({
-      ...emptySelection(),
-      selectedVertexIndices: new Set([0]),
-      selectedLightIds: new Set(['light-1']),
-    });
+    const { op, selection } = grab(verticesAndFixtures([0], ['light-1']));
     const command = drag(op, { x: 0, y: 0 }, [{ position: { x: 1, y: 1 } }], selection);
     expect(command).toEqual({
       type: 'compound',
@@ -433,10 +422,7 @@ describe('GrabModeDragOperation', () => {
 
   it('axis lock applies to a grabbed vertex', () => {
     mousePos = { x: 0, y: 0 };
-    const { op, selection } = grab({
-      ...emptySelection(),
-      selectedVertexIndices: new Set([0]),
-    });
+    const { op, selection } = grab(verticesAndFixtures([0], []));
     const command = drag(
       op,
       { x: 0, y: 0 },
@@ -449,10 +435,7 @@ describe('GrabModeDragOperation', () => {
   it('preserves the grab offset between mouse and anchor', () => {
     // Grab starts with the mouse two feet away from the vertex it is moving
     mousePos = { x: 2, y: 0 };
-    const { op, selection } = grab({
-      ...emptySelection(),
-      selectedVertexIndices: new Set([0]),
-    });
+    const { op, selection } = grab(verticesAndFixtures([0], []));
     const command = drag(op, { x: 2, y: 0 }, [{ position: { x: 6, y: 0 } }], selection);
     expect(command).toEqual({ type: 'vertex.move', index: 0, position: { x: 4, y: 0 } });
   });

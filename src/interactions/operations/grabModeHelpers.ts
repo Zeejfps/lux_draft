@@ -1,5 +1,12 @@
 import type { Vector2, WallSegment, Door, LightFixture } from '../../types';
-import type { SelectionState, AxisLock } from '../../types/interaction';
+import type { AxisLock } from '../../types/interaction';
+import {
+  getSelectedDoorId,
+  getSelectedVertexIndices,
+  getSelectedWallId,
+  type Selection,
+} from '../../types/selection';
+import { getSelectedFixtureIds } from '../../lighting/selection';
 import type { SnapGuide, SnapController } from '../../controllers/SnapController';
 import { getWallDirection, isPointInPolygon } from '../../utils/geometry';
 import { applyGridSnap, type GridSnapConfig } from '../utils/snapHelpers';
@@ -30,7 +37,7 @@ export function applyGrabOffset(mousePos: Vector2, offset: Vector2): Vector2 {
  * Returns the position of the first selected item.
  */
 export function findAnchorPosition(
-  selection: SelectionState,
+  selection: Selection,
   getVertices: () => Vector2[],
   getLights: () => LightFixture[],
   getWallById: (id: string) => WallSegment | undefined,
@@ -42,10 +49,14 @@ export function findAnchorPosition(
 } {
   const vertices = getVertices();
   const lights = getLights();
+  const selectedVertexIndices = getSelectedVertexIndices(selection);
+  const selectedFixtureIds = getSelectedFixtureIds(selection);
+  const selectedWallId = getSelectedWallId(selection);
+  const selectedDoorId = getSelectedDoorId(selection);
 
   // Check vertices first
-  if (selection.selectedVertexIndices.size > 0) {
-    const anchorIndex = Array.from(selection.selectedVertexIndices)[0];
+  if (selectedVertexIndices.length > 0) {
+    const anchorIndex = selectedVertexIndices[0];
     if (vertices[anchorIndex]) {
       return {
         anchorPos: { ...vertices[anchorIndex] },
@@ -56,8 +67,8 @@ export function findAnchorPosition(
   }
 
   // Check lights
-  if (selection.selectedLightIds.size > 0) {
-    const anchorId = Array.from(selection.selectedLightIds)[0];
+  if (selectedFixtureIds.length > 0) {
+    const anchorId = selectedFixtureIds[0];
     const light = lights.find((l) => l.id === anchorId);
     if (light) {
       return {
@@ -69,20 +80,20 @@ export function findAnchorPosition(
   }
 
   // Check wall
-  if (selection.selectedWallId) {
-    const wall = getWallById(selection.selectedWallId);
+  if (selectedWallId) {
+    const wall = getWallById(selectedWallId);
     if (wall) {
       return {
         anchorPos: { ...wall.start },
         anchorType: 'wall',
-        anchorId: selection.selectedWallId,
+        anchorId: selectedWallId,
       };
     }
   }
 
   // Check door
-  if (selection.selectedDoorId) {
-    const door = getDoorById(selection.selectedDoorId);
+  if (selectedDoorId) {
+    const door = getDoorById(selectedDoorId);
     if (door) {
       const wall = getWallById(door.wallId);
       if (wall) {
@@ -94,7 +105,7 @@ export function findAnchorPosition(
               y: wall.start.y + normalized.y * door.position,
             },
             anchorType: 'door',
-            anchorId: selection.selectedDoorId,
+            anchorId: selectedDoorId,
           };
         }
       }
@@ -137,7 +148,7 @@ export function checkPointInRoom(point: Vector2, walls: WallSegment[]): boolean 
  * Stores original positions from a selection for later restoration.
  */
 export function captureOriginalPositions(
-  selection: SelectionState,
+  selection: Selection,
   getVertices: () => Vector2[],
   getLights: () => LightFixture[],
   getWallById: (id: string) => WallSegment | undefined,
@@ -152,31 +163,33 @@ export function captureOriginalPositions(
   const lights = getLights();
 
   const vertexPositions = new Map<number, Vector2>();
-  for (const idx of selection.selectedVertexIndices) {
+  for (const idx of getSelectedVertexIndices(selection)) {
     if (vertices[idx]) {
       vertexPositions.set(idx, { ...vertices[idx] });
     }
   }
 
   const lightPositions = new Map<string, Vector2>();
-  for (const id of selection.selectedLightIds) {
+  for (const id of getSelectedFixtureIds(selection)) {
     const light = lights.find((l) => l.id === id);
     if (light) {
       lightPositions.set(id, { ...light.position });
     }
   }
 
+  const selectedWallId = getSelectedWallId(selection);
   let wallVertices: { start: Vector2; end: Vector2 } | null = null;
-  if (selection.selectedWallId) {
-    const wall = getWallById(selection.selectedWallId);
+  if (selectedWallId) {
+    const wall = getWallById(selectedWallId);
     if (wall) {
       wallVertices = { start: { ...wall.start }, end: { ...wall.end } };
     }
   }
 
+  const selectedDoorId = getSelectedDoorId(selection);
   let doorPosition: number | null = null;
-  if (selection.selectedDoorId) {
-    const door = getDoorById(selection.selectedDoorId);
+  if (selectedDoorId) {
+    const door = getDoorById(selectedDoorId);
     if (door) {
       doorPosition = door.position;
     }
@@ -190,7 +203,7 @@ export function captureOriginalPositions(
  */
 export function handleShiftSnapping(
   targetPos: Vector2,
-  selection: SelectionState | null,
+  selection: Selection | null,
   anchorVertexIndex: number | null,
   anchorLightId: string | null,
   snapController: SnapController,
@@ -201,10 +214,13 @@ export function handleShiftSnapping(
     return { snappedPos: targetPos, guides: [] };
   }
 
+  const selectedVertexIndices = getSelectedVertexIndices(selection);
+  const selectedFixtureIds = getSelectedFixtureIds(selection);
+
   // Only snap for single vertex selection
   if (
-    selection.selectedVertexIndices.size === 1 &&
-    selection.selectedLightIds.size === 0 &&
+    selectedVertexIndices.length === 1 &&
+    selectedFixtureIds.length === 0 &&
     anchorVertexIndex !== null
   ) {
     return snapController.snapToVertices(targetPos, getVertices(), anchorVertexIndex);
@@ -212,8 +228,8 @@ export function handleShiftSnapping(
 
   // Only snap for single light selection
   if (
-    selection.selectedLightIds.size === 1 &&
-    selection.selectedVertexIndices.size === 0 &&
+    selectedFixtureIds.length === 1 &&
+    selectedVertexIndices.length === 0 &&
     anchorLightId !== null
   ) {
     return snapController.snapToLights(targetPos, getLights(), anchorLightId);
@@ -259,7 +275,7 @@ export function applyGridSnapOrAxisLock(
 }
 
 export interface ShiftSnapContext {
-  selection: SelectionState | null;
+  selection: Selection | null;
   anchorVertexIndex: number | null;
   anchorLightId: string | null;
   getVertices: () => Vector2[];

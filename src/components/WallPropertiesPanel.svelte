@@ -1,6 +1,7 @@
 <script lang="ts">
   import { roomStore, updateWallLength } from '../stores/roomStore';
-  import { selectedWallId, clearWallSelection } from '../stores/appStore';
+  import { selection, clearSelection } from '../stores/selectionStore';
+  import { getSelectedWallId } from '../types/selection';
   import { formatImperial, parseImperial } from '../utils/format';
   import FloatingPanel from './FloatingPanel.svelte';
   import type { WallSegment, EditorDocument } from '../types';
@@ -11,7 +12,7 @@
   let wallLengthInput: string = '';
 
   $: currentRoom = $roomStore;
-  $: currentSelectedWallId = $selectedWallId;
+  $: currentSelectedWallId = getSelectedWallId($selection);
 
   $: selectedWall = currentSelectedWallId
     ? (currentRoom.geometry.boundary.walls.find((w) => w.id === currentSelectedWallId) ?? null)
@@ -48,7 +49,7 @@
   }
 
   function handleClose(): void {
-    clearWallSelection();
+    clearSelection();
   }
 </script>
 

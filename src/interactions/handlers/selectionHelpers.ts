@@ -74,12 +74,6 @@ function checkToggleOff<TId>(itemId: TId, isSelectedNow: (id: TId) => boolean): 
 export interface SelectionActionCallbacks<TId> {
   /** Select the item */
   onSelect: (id: TId, addToSelection: boolean) => void;
-  /** Clear the "other" selection type (e.g., clear lights when selecting vertex) */
-  onClearOtherSelection: () => void;
-  /** Clear wall selection */
-  onClearWallSelection: () => void;
-  /** Clear door selection */
-  onClearDoorSelection: () => void;
   /** Check if item is still selected after toggle operation */
   isSelectedNow: (id: TId) => boolean;
   /** Start drag operation for the item */
@@ -89,6 +83,9 @@ export interface SelectionActionCallbacks<TId> {
 /**
  * Handle the common selection action flow after finding an item.
  * This reduces duplication between trySelectVertex and trySelectLight.
+ *
+ * Selecting replaces the whole `Selection` value, so nothing here clears a sibling — the only
+ * explicit clear left is the toggle-off case, where the item leaves the selection entirely.
  *
  * Returns true if the selection was handled (caller should return { handled: true }).
  */
@@ -109,7 +106,6 @@ export function handleSelectionAction<TId>(
 
     // Check if item was toggled off
     if (checkToggleOff(itemId, callbacks.isSelectedNow)) {
-      callbacks.onClearWallSelection();
       return true;
     }
 
@@ -122,11 +118,8 @@ export function handleSelectionAction<TId>(
   // Normal single item selection
   else {
     callbacks.onSelect(itemId, false);
-    callbacks.onClearOtherSelection();
     callbacks.startDrag(itemId);
   }
 
-  callbacks.onClearWallSelection();
-  callbacks.onClearDoorSelection();
   return true;
 }

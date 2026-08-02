@@ -1,5 +1,7 @@
 import type { Vector2, EditorCommand } from '../../types';
-import type { DragStartContext, DragUpdateContext, SelectionState } from '../../types/interaction';
+import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
+import { getSelectedVertexIndices, type Selection } from '../../types/selection';
+import { getSelectedFixtureIds } from '../../lighting/selection';
 import type { DragOperationCallbacks } from '../DragManager';
 import type { BaseDragConfig } from '../types';
 import { BaseDragOperation } from '../DragOperation';
@@ -29,7 +31,7 @@ export class UnifiedDragOperation extends BaseDragOperation {
   private originalLightPositions: Map<string, Vector2> = new Map();
   private anchorVertexIndex: number | null = null;
   private anchorLightId: string | null = null;
-  private selection: SelectionState | null = null;
+  private selection: Selection | null = null;
   private config: UnifiedDragConfig;
   private callbacks: UnifiedDragCallbacks;
 
@@ -56,7 +58,7 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
     // Store original positions of all selected vertices
     this.originalVertexPositions.clear();
-    for (const idx of context.selection.selectedVertexIndices) {
+    for (const idx of getSelectedVertexIndices(context.selection)) {
       if (vertices[idx]) {
         this.originalVertexPositions.set(idx, { ...vertices[idx] });
       }
@@ -65,7 +67,7 @@ export class UnifiedDragOperation extends BaseDragOperation {
     // Store original positions of all selected lights
     this.originalLightPositions.clear();
     const lights = this.config.getLights();
-    for (const id of context.selection.selectedLightIds) {
+    for (const id of getSelectedFixtureIds(context.selection)) {
       const light = lights.find((l) => l.id === id);
       if (light) {
         this.originalLightPositions.set(id, { ...light.position });

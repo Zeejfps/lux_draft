@@ -1,5 +1,6 @@
 import type { InputEvent } from '../core/InputManager';
 import type { KeyBinding, InteractionContext } from '../types/interaction';
+import { getSelectedObstacleId } from '../types/selection';
 
 /**
  * Manages keyboard shortcuts with declarative bindings.
@@ -160,7 +161,7 @@ export function createDefaultKeyboardShortcuts(callbacks: {
       key: 'a',
       ctrlKey: true,
       action: () => callbacks.selectAllObstacleVertices?.(),
-      condition: (ctx) => ctx.selection.selectedObstacleId !== null,
+      condition: (ctx) => getSelectedObstacleId(ctx.selection) !== null,
       description: 'Select all obstacle vertices',
     },
 
