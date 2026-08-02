@@ -22,6 +22,13 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(getGitVersion()),
   },
+  build: {
+    // `scripts/check-bundle.mjs` walks the manifest's static `imports` to work out exactly
+    // which chunks the browser fetches before it can render, and asserts what may and may not
+    // be in them (invariant 7). Without the manifest that graph is only recoverable by parsing
+    // the emitted JS.
+    manifest: true,
+  },
   test: {
     environment: 'jsdom',
     globals: true,

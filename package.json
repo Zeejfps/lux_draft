@@ -11,6 +11,7 @@
     "test:run": "vitest run",
     "type-check": "tsc --noEmit",
     "lint": "eslint .",
+    "check:bundle": "npm run build && node scripts/check-bundle.mjs",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
