@@ -44,6 +44,16 @@ const FORBIDDEN = [
     markers: ['uLightPosition', 'uPolygonVertices[64]'],
     why: 'Same: a lighting renderer, and renderers are the lazy half.',
   },
+  {
+    what: "flooring's scene layers",
+    markers: ['flooring.planks', 'flooring.transitions'],
+    why: 'Layer ids exist only in flooring/layers.ts, which pulls in THREE and the engine.',
+  },
+  {
+    what: "flooring's panels",
+    markers: ['boards to buy', 'Floor Layout', 'Trim a doorway'],
+    why: 'Module surfaces and tools arrive through the manifest, not a shell import.',
+  },
 ];
 
 /** Must appear: persistence is synchronous and cannot wait for an import(). */
@@ -62,6 +72,16 @@ const REQUIRED = [
     what: 'the document codec',
     markers: ['quarantin', 'geometryChangedSinceLoad'],
     why: 'Every entry point decodes through it, synchronously (invariant 9).',
+  },
+  {
+    what: "flooring's codec",
+    markers: ['flooring slice must be an object', 'flooring data was written at'],
+    why: 'Same reason as lighting: a slice is resolved by module id with no runtime loaded.',
+  },
+  {
+    what: "flooring's command table",
+    markers: ['layout.configure', 'origin.move'],
+    why: 'An undo of a layout change must dispatch before the runtime resolves.',
   },
 ];
 

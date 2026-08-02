@@ -29,10 +29,13 @@ import { INCHES_PER_FOOT, MAX_PLANKS } from './types';
  * Sutherland–Hodgman clipping is only correct against a convex clip region — and because a cut
  * list wants piece *lengths* along the run, which is exactly what an interval gives.
  *
- * That approximation is named, not hidden: a plank straddling a diagonal wall is cut square at
- * the interval end rather than mitred, so a strongly non-rectilinear room reports slightly less
- * covered area than it needs. For a rectilinear room — every room this editor draws by default,
- * and every obstacle it draws — the result is exact.
+ * The approximation this buys is named, not hidden. A row is sampled on **one** line, so where
+ * the room's outline changes within a row's band — a diagonal wall, or the inside step of an
+ * L — that row is laid as if the whole band looked like its centreline. The error is bounded by
+ * one plank width along the step and it under-reports rather than over-reports (an L-shaped
+ * 300 sqft room comes out at 299.2). For a rectilinear room whose walls fall on row boundaries
+ * — and for every obstacle this editor draws — the result is exact. Mitring against a diagonal
+ * wall is the same story: the piece is cut square at the interval end.
  */
 
 // ============================================
@@ -61,9 +64,9 @@ export interface Plank {
   readonly center: Vector2;
   /** Along-run length, feet. */
   readonly length: number;
-  /** Across-run width, feet. Always the full plank width. */
+  /** Across-run width, feet. Less than the plank width when the row is ripped at a wall. */
   readonly width: number;
-  /** True when the piece is shorter than a full plank. */
+  /** True when the piece was cut — shorter than a full plank, or ripped narrower. */
   readonly cut: boolean;
 }
 
@@ -310,15 +313,22 @@ function layRow(span: Interval, offset: number, length: number, minEndCut: numbe
   const pieces = cutInterval(span, offset, length);
   if (pieces.length < 2 || minEndCut <= 0) return pieces;
 
-  const last = pieces[pieces.length - 1];
-  const lastLength = last.end - last.start;
-  if (lastLength >= minEndCut - EPS) return pieces;
+  const sizeOf = (piece: Piece): number => piece.end - piece.start;
+  const first = sizeOf(pieces[0]);
+  const last = sizeOf(pieces[pieces.length - 1]);
 
-  const deficit = minEndCut - lastLength;
-  const firstLength = pieces[0].end - pieces[0].start;
-  if (firstLength - deficit < minEndCut - EPS) return pieces;
-
-  return cutInterval(span, offset - deficit, length);
+  // Shifting the joint grid left lengthens the last piece and shortens the first; shifting it
+  // right does the reverse. Only one end can be short at a time, since a shift that fixed both
+  // would have to move in two directions.
+  if (last < minEndCut - EPS && first - (minEndCut - last) >= minEndCut - EPS) {
+    return cutInterval(span, offset - (minEndCut - last), length);
+  }
+  if (first < minEndCut - EPS && last - (minEndCut - first) >= minEndCut - EPS) {
+    return cutInterval(span, offset + (minEndCut - first), length);
+  }
+  // Neither end can be fixed without breaking the other — a run barely wider than the minimum.
+  // A slightly wrong cut list beats an infinite loop, so the original stands.
+  return pieces;
 }
 
 // ============================================
@@ -328,26 +338,44 @@ function layRow(span: Interval, offset: number, length: number, minEndCut: numbe
 /** An off-cut shorter than this is scrap, not stock. Feet. */
 const MIN_USABLE_OFFCUT_FT = 0.5;
 
+/** One installed piece, as the purchase model sees it. */
+export interface PieceDemand {
+  readonly length: number;
+  /** First piece of its run — the only place an off-cut can actually be used. */
+  readonly startsRun: boolean;
+}
+
 /**
  * How many boards actually get bought.
  *
- * Naively every cut piece would cost a whole plank, which overstates waste by a factor of two
- * on a typical floor: the off-cut from the end of one row starts the next. This models the pool
- * an installer actually keeps — take the **smallest** off-cut that will do, so long pieces stay
- * available — and it is what makes the waste figure worth showing.
+ * Naively every cut piece costs a whole plank, which overstates waste by nearly a factor of two:
+ * the off-cut from the end of one row starts the next, and that is what installers are told to
+ * do. But the reuse is not free-for-all — **only a piece that starts a run can come from an
+ * off-cut**, because a mid-run board must be full length and an end piece is by definition
+ * what is left over. Modelling that restriction is the difference between a plausible 5–8%
+ * and an unreachable 0.2%.
+ *
+ * Off-cuts are matched smallest-that-fits, so long stock stays available for a long start.
+ *
+ * What this deliberately does **not** model: defect and damage allowance (the "add 10%" rule of
+ * thumb), or the fact that an off-cut may be the wrong plank in a variegated run. Those are
+ * purchasing judgement, not geometry, and inventing a number for them would make this figure
+ * look more authoritative than it is.
  */
-function purchaseSimulation(lengths: readonly number[], plankLength: number): number {
+function purchaseSimulation(demand: readonly PieceDemand[], plankLength: number): number {
   const offcuts: number[] = [];
   let purchased = 0;
 
-  for (const length of lengths) {
+  for (const { length, startsRun } of demand) {
     if (length >= plankLength - EPS) {
       purchased += 1;
       continue;
     }
     let best = -1;
-    for (let i = 0; i < offcuts.length; i++) {
-      if (offcuts[i] >= length - EPS && (best < 0 || offcuts[i] < offcuts[best])) best = i;
+    if (startsRun) {
+      for (let i = 0; i < offcuts.length; i++) {
+        if (offcuts[i] >= length - EPS && (best < 0 || offcuts[i] < offcuts[best])) best = i;
+      }
     }
     if (best >= 0) {
       const rest = offcuts[best] - length;
@@ -422,8 +450,9 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     return { ...EMPTY_LAYOUT, key, truncated: rowCount > 0 };
 
   const planks: Plank[] = [];
-  const lengths: number[] = [];
+  const demand: PieceDemand[] = [];
   const cutLengths: number[] = [];
+  let covered = 0;
   let fullPieces = 0;
   let truncated = false;
 
@@ -432,8 +461,16 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       truncated = true;
       break;
     }
-    const centreY = (row + 0.5) * plankWidth;
-    if (centreY < minY || centreY > maxY) continue;
+    // The band this row occupies, clipped to the room. The last row against a wall is
+    // **ripped** narrower rather than dropped — dropping it would silently leave a strip of
+    // bare subfloor and under-report the area by up to one plank width across the room.
+    // Its own width is what makes the rip show up as waste: a ripped board still costs a
+    // full-width one.
+    const bandLow = Math.max(row * plankWidth, minY);
+    const bandHigh = Math.min((row + 1) * plankWidth, maxY);
+    const rowWidth = bandHigh - bandLow;
+    if (rowWidth <= EPS) continue;
+    const centreY = (bandLow + bandHigh) / 2;
 
     const spans = subtractIntervals(
       intervalsAt(room, centreY),
@@ -448,25 +485,30 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       const end = rawEnd - gap;
       if (end - start <= EPS) continue;
 
-      for (const piece of layRow([start, end], offset, plankLength, minEndCut)) {
+      const pieces = layRow([start, end], offset, plankLength, minEndCut);
+      for (let index = 0; index < pieces.length; index++) {
+        const piece = pieces[index];
         if (planks.length >= MAX_PLANKS) {
           truncated = true;
           break;
         }
         const length = piece.end - piece.start;
         if (length <= EPS) continue;
-        const cut = length < plankLength - EPS;
+        const cut = length < plankLength - EPS || rowWidth < plankWidth - EPS;
         planks.push({
           id: `p${row}:${column}`,
           row,
           column,
           center: toWorld(frame, { x: (piece.start + piece.end) / 2, y: centreY }),
           length,
-          width: plankWidth,
+          width: rowWidth,
           cut,
         });
-        lengths.push(length);
-        if (cut) cutLengths.push(length);
+        // A ripped board consumes a full-width one, so demand is length-only; the rip shows up
+        // as waste because `coveredSqft` counts the narrower installed strip.
+        demand.push({ length, startsRun: index === 0 });
+        covered += length * rowWidth;
+        if (length < plankLength - EPS) cutLengths.push(length);
         else fullPieces += 1;
         column += 1;
       }
@@ -475,8 +517,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     if (truncated) break;
   }
 
-  const purchasedPlanks = purchaseSimulation(lengths, plankLength);
-  const coveredSqft = lengths.reduce((sum, length) => sum + length, 0) * plankWidth;
+  const purchasedPlanks = purchaseSimulation(demand, plankLength);
+  const coveredSqft = covered;
   const purchasedSqft = purchasedPlanks * plankLength * plankWidth;
   const wastePercent =
     purchasedSqft > 0 ? ((purchasedSqft - coveredSqft) / purchasedSqft) * 100 : 0;

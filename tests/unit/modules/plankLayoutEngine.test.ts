@@ -1,0 +1,314 @@
+import { describe, it, expect } from 'vitest';
+import type { Obstacle, Vector2, WallSegment } from '../../../src/floorplan/types/geometry';
+import type { LayoutInputs } from '../../../src/modules/flooring/PlankLayoutEngine';
+import { computePlankLayout, layoutKey } from '../../../src/modules/flooring/PlankLayoutEngine';
+import { defaultFlooringData } from '../../../src/modules/flooring/codec';
+import type { LayoutConfig, PlankSpec } from '../../../src/modules/flooring/types';
+import { makeObstacle, rectWalls } from '../../helpers/documents';
+
+/**
+ * The engine as a pure table: no store, no Svelte, no DOM, no THREE.
+ *
+ * Everything asserted here is a property of `(boundary, obstacles, plank, layout, origin)`, and
+ * nothing here constructs a document — which is the whole claim about derived data. If any of
+ * these needed a session to run, the layout would not be a projection.
+ */
+
+const defaults = defaultFlooringData();
+
+function inputs(over: Partial<LayoutInputs> = {}): LayoutInputs {
+  return {
+    walls: rectWalls(20, 20),
+    isClosed: true,
+    obstacles: [],
+    plank: defaults.plank,
+    layout: defaults.layout,
+    origin: defaults.origin,
+    ...over,
+  };
+}
+
+const layoutOf = (config: Partial<LayoutConfig>, over: Partial<LayoutInputs> = {}) =>
+  computePlankLayout(inputs({ layout: { ...defaults.layout, ...config }, ...over }));
+
+describe('a room with no floor', () => {
+  it('lays nothing on an open boundary', () => {
+    expect(computePlankLayout(inputs({ isClosed: false })).planks).toHaveLength(0);
+  });
+
+  it('lays nothing on fewer than three walls', () => {
+    expect(
+      computePlankLayout(inputs({ walls: rectWalls(10, 10).slice(0, 2) })).planks
+    ).toHaveLength(0);
+  });
+
+  it('lays nothing for a degenerate plank', () => {
+    const plank: PlankSpec = { widthIn: 0, lengthIn: 48, name: 'bad' };
+    expect(computePlankLayout(inputs({ plank })).planks).toHaveLength(0);
+  });
+});
+
+describe('coverage', () => {
+  it('covers a rectangular room to within the expansion gap', () => {
+    const layout = layoutOf({ expansionGapIn: 0 });
+    // 20 x 20 with no gap: rows tile the height exactly, planks tile each row exactly.
+    expect(layout.coveredSqft).toBeCloseTo(400, 1);
+  });
+
+  it('the expansion gap comes off the covered area, not out of nowhere', () => {
+    const withGap = layoutOf({ expansionGapIn: 0.5 });
+    const without = layoutOf({ expansionGapIn: 0 });
+    expect(withGap.coveredSqft).toBeLessThan(without.coveredSqft);
+    // One inch off the length of every row: 20 ft high / (7/12) ft rows ≈ 34.3 rows.
+    expect(without.coveredSqft - withGap.coveredSqft).toBeCloseTo((1 / 12) * 20, 0);
+  });
+
+  it('an obstacle is a cutout, with no code in this module that knows what an obstacle is', () => {
+    const island: Obstacle = makeObstacle('island', { x: 6, y: 6 }, 4);
+    const clear = layoutOf({});
+    const around = layoutOf({}, { obstacles: [island] });
+    // A 4x4 island removes 16 sq ft, less the part of each row it only partly covers.
+    expect(clear.coveredSqft - around.coveredSqft).toBeGreaterThan(13);
+    expect(clear.coveredSqft - around.coveredSqft).toBeLessThan(17);
+  });
+
+  it('a concave room is handled by the scan line, not by convex clipping', () => {
+    // An L: 20x20 with the top-right 10x10 removed.
+    const corners: Vector2[] = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 10, y: 10 },
+      { x: 10, y: 20 },
+      { x: 0, y: 20 },
+    ];
+    const walls: WallSegment[] = corners.map((start, i) => {
+      const end = corners[(i + 1) % corners.length];
+      return {
+        id: `w${i}`,
+        start,
+        end,
+        length: Math.hypot(end.x - start.x, end.y - start.y),
+      };
+    });
+    const layout = computePlankLayout(
+      inputs({ walls, layout: { ...defaults.layout, expansionGapIn: 0 } })
+    );
+    // 300 sq ft, less the one-row band that straddles the inside step: a row is sampled on
+    // one line, so the band spanning y = 10 is laid as if the whole band were the narrow part.
+    // The bound is (step length) x (one plank width); the actual error here is 0.83 sq ft. The
+    // engine's doc comment names it — the price of a scan line over a polygon boolean — and it
+    // under-reports rather than over-reports.
+    expect(layout.coveredSqft).toBeLessThanOrEqual(300);
+    expect(layout.coveredSqft).toBeGreaterThan(300 - 10 * (7 / 12));
+  });
+
+  it('rips the last row rather than dropping it', () => {
+    // 20 ft of height is 34.28 rows of 7": the last row must be ripped to 2", not skipped.
+    const layout = layoutOf({ expansionGapIn: 0 });
+    const widths = new Set(layout.planks.map((p) => p.width.toFixed(6)));
+    expect(widths.size).toBe(2);
+    expect(Math.min(...[...widths].map(Number)) * 12).toBeCloseTo(2, 4);
+  });
+});
+
+describe('stagger', () => {
+  const startsOfRow = (config: Partial<LayoutConfig>): Map<number, number> => {
+    const layout = layoutOf(config);
+    const firstJoint = new Map<number, number>();
+    for (const plank of layout.planks) {
+      if (plank.column !== 0) continue;
+      // The far end of the first plank in the row is the row's first joint.
+      firstJoint.set(plank.row, plank.center.x + plank.length / 2);
+    }
+    return firstJoint;
+  };
+
+  it('none puts every row on the same joint', () => {
+    const joints = [...startsOfRow({ stagger: 'none', expansionGapIn: 0 }).values()];
+    expect(new Set(joints.map((j) => j.toFixed(4))).size).toBe(1);
+  });
+
+  it('half alternates between two joints', () => {
+    const joints = [...startsOfRow({ stagger: 'half', expansionGapIn: 0 }).values()];
+    expect(new Set(joints.map((j) => j.toFixed(4))).size).toBe(2);
+  });
+
+  it('thirds cycles three', () => {
+    const joints = [...startsOfRow({ stagger: 'thirds', expansionGapIn: 0 }).values()];
+    expect(new Set(joints.map((j) => j.toFixed(4))).size).toBe(3);
+  });
+
+  it('random is deterministic in the seed, so the layout is still a pure function', () => {
+    const a = layoutOf({ stagger: 'random', seed: 42 });
+    const b = layoutOf({ stagger: 'random', seed: 42 });
+    const c = layoutOf({ stagger: 'random', seed: 43 });
+    expect(a.planks.map((p) => p.length)).toEqual(b.planks.map((p) => p.length));
+    expect(a.planks.map((p) => p.length)).not.toEqual(c.planks.map((p) => p.length));
+  });
+
+  it('a custom pattern cycles its own length', () => {
+    const joints = [
+      ...startsOfRow({
+        stagger: 'pattern',
+        rowOffsetPattern: [0, 0.2, 0.4, 0.6],
+        expansionGapIn: 0,
+      }).values(),
+    ];
+    expect(new Set(joints.map((j) => j.toFixed(4))).size).toBe(4);
+  });
+});
+
+describe('the minimum end cut', () => {
+  it('shifts the row rather than leaving a sliver', () => {
+    // 20 ft rows, 4 ft planks, aligned: every row would end exactly on a joint with no sliver,
+    // so nudge the origin to force a short end piece.
+    const short = layoutOf(
+      { stagger: 'none', expansionGapIn: 0, minEndCutIn: 0 },
+      { origin: { x: 0.1, y: 0 } }
+    );
+    const enforced = layoutOf(
+      { stagger: 'none', expansionGapIn: 0, minEndCutIn: 8 },
+      { origin: { x: 0.1, y: 0 } }
+    );
+
+    const shortestOf = (planks: readonly { length: number }[]) =>
+      Math.min(...planks.map((p) => p.length));
+
+    expect(shortestOf(short.planks) * 12).toBeLessThan(8);
+    expect(shortestOf(enforced.planks) * 12).toBeGreaterThanOrEqual(8 - 1e-6);
+    // Nothing was invented or thrown away to do it.
+    expect(enforced.coveredSqft).toBeCloseTo(short.coveredSqft, 6);
+  });
+
+  it('keeps the original when both ends would be too short to fix', () => {
+    // A room narrower than the minimum end cut cannot satisfy it; the engine must terminate.
+    const layout = computePlankLayout(
+      inputs({
+        walls: rectWalls(0.4, 6),
+        layout: { ...defaults.layout, minEndCutIn: 24, expansionGapIn: 0 },
+      })
+    );
+    expect(layout.planks.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the cut list and the waste figure', () => {
+  it('counts every cut piece and nothing else', () => {
+    const layout = layoutOf({});
+    const listed = layout.cutList.reduce((sum, entry) => sum + entry.count, 0);
+    expect(listed).toBe(layout.cutPieces);
+    expect(layout.cutPieces + layout.fullPieces).toBe(layout.planks.length);
+  });
+
+  it('reports lengths to the nearest eighth of an inch, descending', () => {
+    const layout = layoutOf({});
+    for (const entry of layout.cutList) {
+      expect(Math.round(entry.lengthIn * 8)).toBeCloseTo(entry.lengthIn * 8, 9);
+    }
+    const lengths = layout.cutList.map((e) => e.lengthIn);
+    expect([...lengths].sort((a, b) => b - a)).toEqual(lengths);
+  });
+
+  it('buys fewer boards than there are pieces, because off-cuts start the next run', () => {
+    const layout = layoutOf({});
+    expect(layout.purchasedPlanks).toBeLessThan(layout.planks.length);
+    expect(layout.purchasedPlanks).toBeGreaterThanOrEqual(layout.fullPieces);
+  });
+
+  it('waste is what was bought and not installed', () => {
+    const layout = layoutOf({});
+    expect(layout.purchasedSqft).toBeGreaterThanOrEqual(layout.coveredSqft);
+    expect(layout.wastePercent).toBeCloseTo(
+      ((layout.purchasedSqft - layout.coveredSqft) / layout.purchasedSqft) * 100,
+      9
+    );
+    expect(layout.wastePercent).toBeGreaterThanOrEqual(0);
+  });
+
+  it('an awkward room wastes more than a room that tiles', () => {
+    const tiles = layoutOf({ stagger: 'none', expansionGapIn: 0 });
+    const awkward = computePlankLayout(
+      inputs({
+        walls: rectWalls(17.3, 13.7),
+        layout: { ...defaults.layout, stagger: 'none', expansionGapIn: 0 },
+      })
+    );
+    expect(awkward.wastePercent).toBeGreaterThan(tiles.wastePercent);
+  });
+});
+
+describe('the run frame', () => {
+  it('every plank shares the run angle', () => {
+    const layout = layoutOf({ runAngleDeg: 45 });
+    expect(layout.angle).toBeCloseTo(Math.PI / 4, 9);
+  });
+
+  it('a diagonal run still covers the room', () => {
+    const straight = layoutOf({ runAngleDeg: 0, expansionGapIn: 0 });
+    const diagonal = layoutOf({ runAngleDeg: 45, expansionGapIn: 0 });
+    expect(diagonal.coveredSqft).toBeCloseTo(straight.coveredSqft, 0);
+    // A diagonal run cuts more pieces against the walls — that is the point of the choice.
+    expect(diagonal.cutPieces).toBeGreaterThan(straight.cutPieces);
+  });
+
+  it('each start corner produces a different floor and the same coverage', () => {
+    const corners = ['bottomLeft', 'bottomRight', 'topLeft', 'topRight'] as const;
+    const layouts = corners.map((startCorner) =>
+      layoutOf({ startCorner, expansionGapIn: 0, stagger: 'thirds' })
+    );
+    for (const layout of layouts) {
+      expect(layout.coveredSqft).toBeCloseTo(400, 1);
+    }
+    const signatures = layouts.map((l) => l.planks.map((p) => p.length.toFixed(4)).join(','));
+    expect(new Set(signatures).size).toBeGreaterThan(1);
+  });
+
+  it('moving the origin moves the joints, which is why it is draggable', () => {
+    const at0 = layoutOf({ stagger: 'none', expansionGapIn: 0 });
+    const at1 = layoutOf({ stagger: 'none', expansionGapIn: 0 }, { origin: { x: 1.5, y: 0 } });
+    expect(at1.planks.map((p) => p.length)).not.toEqual(at0.planks.map((p) => p.length));
+  });
+});
+
+describe('layoutKey — the cache key', () => {
+  it('is stable for value-equal inputs reached by different routes', () => {
+    const a = inputs();
+    const b = inputs({ walls: rectWalls(20, 20), obstacles: [] });
+    expect(layoutKey(a)).toBe(layoutKey(b));
+  });
+
+  it('changes for every input the layout depends on', () => {
+    const base = layoutKey(inputs());
+    expect(layoutKey(inputs({ walls: rectWalls(21, 20) }))).not.toBe(base);
+    expect(layoutKey(inputs({ obstacles: [makeObstacle('o', { x: 2, y: 2 }, 3)] }))).not.toBe(base);
+    expect(layoutKey(inputs({ origin: { x: 1, y: 0 } }))).not.toBe(base);
+    expect(
+      layoutKey(inputs({ plank: { ...defaults.plank, widthIn: defaults.plank.widthIn + 1 } }))
+    ).not.toBe(base);
+    expect(layoutKey(inputs({ layout: { ...defaults.layout, stagger: 'half' } }))).not.toBe(base);
+    expect(layoutKey(inputs({ layout: { ...defaults.layout, seed: 99 } }))).not.toBe(base);
+  });
+
+  it('is the key the layout reports, so a cache cannot serve the wrong floor', () => {
+    const value = inputs({ origin: { x: 3, y: 4 } });
+    expect(computePlankLayout(value).key).toBe(layoutKey(value));
+  });
+});
+
+describe('bounded work', () => {
+  it('a degenerate plank truncates instead of hanging the tab', () => {
+    const plank: PlankSpec = { widthIn: 0.005, lengthIn: 0.005, name: 'absurd' };
+    const layout = computePlankLayout(inputs({ plank }));
+    expect(layout.truncated).toBe(true);
+    expect(layout.planks.length).toBeLessThanOrEqual(20000);
+  });
+
+  it('an aborted signal stops the run rather than finishing it', () => {
+    const controller = new AbortController();
+    controller.abort();
+    const layout = computePlankLayout(inputs(), controller.signal);
+    expect(layout.planks).toHaveLength(0);
+    expect(layout.truncated).toBe(true);
+  });
+});
