@@ -1,6 +1,6 @@
 # Studio Modularization Plan
 
-**Status:** proposed, not started.
+**Status:** in progress — see [Implementation progress log](#implementation-progress-log).
 **Created:** 2026-08-02
 **Rejected alternatives and decision history:** [ADR 0001](../adr/0001-studio-modularization.md)
 
@@ -1078,3 +1078,27 @@ Phase-specific risks sit with their phases. These span the whole effort:
   its name through 1a and 1b deliberately: every read site depends on it, and renaming while replacing
   the write model doubles the blast radius for no structural gain. Do them as mechanical codemods after
   the structural phases land, or never.
+
+---
+
+## Implementation progress log
+
+Each phase agent appends one entry here **before finishing**, so the next phase inherits what actually
+happened rather than what was planned. Record deviations from the spec above, anything the next phase
+must know, and anything deliberately deferred. Keep entries short and factual.
+
+| Phase | Status      | Branch / commit | Notes |
+| ----- | ----------- | --------------- | ----- |
+| 0     | not started |                 |       |
+| 1a    | not started |                 |       |
+| 1b    | not started |                 |       |
+| 2     | not started |                 |       |
+| 3a    | not started |                 |       |
+| 3b    | not started |                 |       |
+| 4     | not started |                 |       |
+| 5     | not started |                 |       |
+| 6     | not started |                 |       |
+
+### Deviations
+
+_(none yet)_
