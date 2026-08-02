@@ -33,6 +33,9 @@ import { PlankIndex } from '../../../src/modules/flooring/PlankIndex';
 import { computePlankLayout } from '../../../src/modules/flooring/PlankLayoutEngine';
 import { addDivider, setSurfaces } from '../../../src/modules/flooring/commands';
 import { solveRegions } from '../../../src/modules/flooring/RegionSolver';
+import { DividerPlacementHandler } from '../../../src/modules/flooring/handlers';
+import type { InteractionContext } from '../../../src/floorplan/types/interaction';
+import type { InputEvent } from '../../../src/floorplan/core/InputManager';
 import { defaultFlooringData } from '../../../src/modules/flooring/codec';
 import { makeDoor, rectWalls, squareRoom } from '../../helpers/documents';
 
@@ -331,5 +334,61 @@ describe('the transitions layer draws what the solver derived', () => {
 
     for (const layer of layers) layer.dispose();
     expect(scene.children).toHaveLength(0);
+  });
+});
+
+describe('the divider tool does not leave a line behind', () => {
+  const walls = rectWalls(10, 10);
+  let pending: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
+  let added: number;
+  let handler: DividerPlacementHandler;
+
+  const ctx = (tool: string) => ({ activeTool: tool }) as unknown as InteractionContext;
+  const at = (x: number, y: number) =>
+    ({ worldPos: { x, y }, key: undefined }) as unknown as InputEvent;
+
+  beforeEach(() => {
+    pending = null;
+    added = 0;
+    handler = new DividerPlacementHandler({
+      getWalls: () => walls,
+      getDividers: () => [],
+      setPending: (next) => {
+        pending = next;
+      },
+      addDivider: () => {
+        added += 1;
+      },
+    });
+  });
+
+  it('shows a rubber band after the first click and clears it after the second', () => {
+    handler.handleClick(at(0, 4), ctx('flooring.divider'));
+    expect(pending).not.toBeNull();
+    handler.handleClick(at(10, 4), ctx('flooring.divider'));
+    expect(added).toBe(1);
+    expect(pending).toBeNull();
+  });
+
+  it('abandons the half-drawn line when another tool takes over', () => {
+    // The reported symptom: a line left across the room with no way to dismiss it, because
+    // neither the second click nor Escape reaches a handler whose tool is no longer active.
+    handler.handleClick(at(0, 4), ctx('flooring.divider'));
+    expect(pending).not.toBeNull();
+
+    handler.handleMouseMove(at(3, 3), ctx('select'));
+    expect(pending).toBeNull();
+
+    // And the abandoned point is not resurrected as the start of the next line.
+    handler.handleClick(at(10, 4), ctx('flooring.divider'));
+    expect(added).toBe(0);
+    expect(pending).toEqual({ from: { x: 10, y: 4 }, to: { x: 10, y: 4 } });
+  });
+
+  it('clears on Escape', () => {
+    handler.handleClick(at(0, 4), ctx('flooring.divider'));
+    const escape = { worldPos: { x: 0, y: 0 }, key: 'Escape' } as unknown as InputEvent;
+    expect(handler.handleKeyDown(escape, ctx('flooring.divider'))).toBe(true);
+    expect(pending).toBeNull();
   });
 });

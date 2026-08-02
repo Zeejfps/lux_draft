@@ -120,7 +120,10 @@ export class DividerPlacementHandler extends BaseInteractionHandler {
   }
 
   handleClick(event: InputEvent, context: InteractionContext): boolean {
-    if (!this.canHandle(event, context)) return false;
+    if (!this.canHandle(event, context)) {
+      this.abandon();
+      return false;
+    }
     const snapped = this.snap(event.worldPos);
     // Consume regardless: the tool owns the pointer while it is selected, so a miss must not
     // fall through to core's selection handler.
@@ -140,7 +143,11 @@ export class DividerPlacementHandler extends BaseInteractionHandler {
 
   /** Observes only — returning false keeps the rubber band from swallowing anything else. */
   handleMouseMove(event: InputEvent, context: InteractionContext): boolean {
-    if (!this.canHandle(event, context) || !this.from) return false;
+    if (!this.canHandle(event, context)) {
+      this.abandon();
+      return false;
+    }
+    if (!this.from) return false;
     this.config.setPending({ from: this.from, to: this.snap(event.worldPos) ?? event.worldPos });
     return false;
   }
@@ -154,6 +161,19 @@ export class DividerPlacementHandler extends BaseInteractionHandler {
   private reset(): void {
     this.from = null;
     this.config.setPending(null);
+  }
+
+  /**
+   * Drop a half-drawn line because the tool is no longer ours.
+   *
+   * Switching tools mid-draw is not a gesture anyone finishes later: the first point was placed
+   * with this tool selected, and picking another one abandons it. Without this the rubber band
+   * stays on the canvas — a line across the room with no obvious cause and no way to dismiss it,
+   * since the only other exits are the second click and Escape, and neither reaches a handler
+   * whose tool is inactive. Cheap to check: it only does anything when a point is actually held.
+   */
+  private abandon(): void {
+    if (this.from) this.reset();
   }
 
   /** The nearest point on any boundary wall or existing divider. */
