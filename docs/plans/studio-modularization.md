@@ -1093,7 +1093,7 @@ must know, and anything deliberately deferred. Keep entries short and factual.
 | 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.         |
 | 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone. |
 | 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.       |
-| 3a    | not started |                     |                                                                                                                                                                               |
+| 3a    | done        | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass. |
 | 3b    | not started |                     |                                                                                                                                                                               |
 | 4     | not started |                     |                                                                                                                                                                               |
 | 5     | not started |                     |                                                                                                                                                                               |
@@ -1538,3 +1538,210 @@ unregistered kind is silent, duplicate key throws), `tests/unit/stores/selection
 obstacle-vertex fallback; box selection; tool switch and `open` clearing; a repeat selection emits
 nothing). 396 tests pass; the 352 inherited from 1b were not changed except for the two that
 constructed a `SelectionState` bag.
+
+#### Phase 3a
+
+Commits: `dc5dd84` (infrastructure + codecs + fixtures), `5c23096` (fixture and contract tests),
+`aa7b1a6` (dev backstops).
+
+**No live data moved.** `EditorDocument.lights` / `.rafterConfig` are untouched at the document
+root, the legacy `light.*` core commands still exist, `legacyDocumentAdapter.ts` still exists, and
+no entry point calls `decodeDocument`. Everything below is built, tested, and unused by production
+code — except the eager barrel, which `main.ts` imports so the registry is populated.
+
+**Where things live** (the `src/floorplan/` move is still phase 4's; core files sit where their
+neighbours already are).
+
+| File                                    | What                                                                                                                                                                                                                   |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/types/deepReadonly.ts`             | `DeepReadonly<T>`, `asMutable<T>`                                                                                                                                                                                      |
+| `src/types/module.ts`                   | `ModuleBlob`, `DecodeResult`, `ModuleCodec`, `readModule`/`withModule`/`hasModuleSlice`/`buildModuleSlices`/`moduleSliceIds`, `ModuleDataStatus`/`moduleDataStatus`, `RegisteredCommand`/`CommandKind`/`defineCommand` |
+| `src/types/moduleRegistry.ts`           | `ModuleDefinition`, `registerModule`, `registeredCodecs`, `codecFor`, `registeredModuleCommands`, `moduleCommandHandler`, `clearModuleRegistry`                                                                        |
+| `src/types/command.ts`                  | `ModuleCommandEnvelope`, `EditorCommand = CoreCommand \| ModuleCommandEnvelope`, `isModuleCommand`                                                                                                                     |
+| `src/persistence/envelope.ts`           | `DocumentEnvelopeV3`, `ENVELOPE_VERSION`, `toEnvelopeV3`                                                                                                                                                               |
+| `src/persistence/documentCodec.ts`      | `decodeDocument`, `encodeDocument`, `EncodeTarget`, `geometryFingerprint`                                                                                                                                              |
+| `src/persistence/geometryValidation.ts` | `validateGeometry`, `validateSpace`, `validateDisplayPreferences`                                                                                                                                                      |
+| `src/persistence/ValidationError.ts`    | moved out of `jsonImport.ts` (which now re-exports it)                                                                                                                                                                 |
+| `src/modules/lighting/codec.ts`         | `LightingData`, `lightingCodec`, `defaultLightingData`, `referencedDefinitions`, `resolveDefinition`, `isBuiltinDefinitionId`                                                                                          |
+| `src/modules/lighting/commands.ts`      | eight `CommandKind`s + `lightingCommands`                                                                                                                                                                              |
+| `src/modules/codecs.ts`                 | the eager barrel; `installModules()`, called at import time                                                                                                                                                            |
+| `tests/fixtures/`                       | seven JSON fixtures + `load.ts` + a README table                                                                                                                                                                       |
+
+**The registry is core-owned and the barrel pushes into it.** The plan says "the registry in
+`modules/codecs.ts`", but `documentCodec` has to read it and `floorplan/**` may not import
+`modules/**`. So `src/types/moduleRegistry.ts` holds the table, and `modules/codecs.ts` is the
+eager barrel that statically imports each module's `codec.ts` + `commands.ts` and calls
+`registerModule`. It registers at module-evaluation time, so importing it anywhere in the entry
+graph is enough; `main.ts` does. **This is deliberate and phase 4 should keep it** — it is what
+lets `documentCodec` stay boundary-clean. Each definition is a module-level constant, so
+`installModules()` is idempotent (re-registering the identical object is a no-op, a _different_
+module under a taken id throws).
+
+**`LightingData` as built** — exactly the plan's shape:
+
+```ts
+export interface LightingData {
+  fixtures: LightFixture[];
+  rafterConfig: RafterConfig; // always present; defaults merged on decode
+  deadZone: DeadZoneConfig; // always present; defaults merged on decode
+  spacing: SpacingConfig; // always present; defaults merged on decode
+  definitions: LightDefinition[]; // closure of NON-BUILTIN definitions referenced by fixtures
+}
+```
+
+`schemaVersion` is 1. Decisions inside it worth knowing:
+
+- **`definitions` is normalized to the closure on every decode and on every fixture command.**
+  `referencedDefinitions(fixtures, definitions)` drops any definition no fixture references, so
+  decode → encode → decode is stable and prune-on-save can actually reach the default. "Non-builtin"
+  means "not an id in `DEFAULT_LIGHT_DEFINITIONS`", not the `custom-` prefix.
+- **Optional sub-configs merge onto a fresh default rather than failing**, field by field. A v1/v2
+  document has no `deadZone` or `spacing` at all, and quarantining every legacy document would have
+  been absurd. `fixtures` and `definitions` are validated strictly — a bad one is `invalid`.
+- **`v < 1` is `invalid`, not `unsupported`.** `toEnvelopeV3` coerces a structurally broken module
+  entry to `{ v: 0, data: <whatever was there> }`, which is how a non-`{v,data}` entry gets
+  preserved rather than dropped.
+- `resolveDefinition(data, id, library)` prefers the document's copy and falls back to the library.
+  It is pure and takes the library as a parameter — 3b wires the picker store in at the call site.
+- `compactForShare` keeps fixtures, `rafterConfig` and the definition closure; resets `deadZone`
+  and `spacing` to defaults (authoring state, not viewing state).
+
+**The codec/command API as built.** `ModuleCodec` and `DecodeResult` are verbatim from the plan.
+Additions and shape changes:
+
+- `defineCommand(codec, verb, spec, options?)` takes a fourth argument, `{ absolute?: boolean }`,
+  which is the module-side equivalent of `MOVE_AND_SET_COMMAND_TYPES`. The contract test asserts
+  applying an `absolute` command twice equals applying it once.
+- `CommandKind<P>` extends a non-generic `RegisteredCommand` (`type`, `moduleId`, `verb`,
+  `absolute`, `handler`). `CommandKind<P>` is invariant in `P`, so a heterogeneous registry needs
+  the payload type _erased_, not widened to `unknown`. `ModuleDefinition.commands` is
+  `readonly RegisteredCommand[]`.
+- `EditorCommand` is now `CoreCommand | ModuleCommandEnvelope`. `CommandType` narrowed to
+  `CoreCommand['type']`, so the exhaustive core handler table and `registeredCommandTypes` are
+  unchanged and every existing test kept working. `applyCommand`/`commandLabel` branch on
+  `isModuleCommand` and fall through to `moduleCommandHandler(type)`.
+- **`withModule` on an absent slice is a no-op returning the same document reference**, plus a dev
+  `console.warn`. That is how "dispatching a module command whose slice is quarantined is a no-op
+  and a dev assert" is implemented. `readModule` on an absent slice returns a _fresh_
+  `codec.defaultData()`.
+- Registration throws on: duplicate module id, an id containing `.`, `schemaVersion < 1`, a command
+  whose `moduleId` disagrees with the codec, a command type not namespaced with the module id, and
+  a duplicate command type. **It does not check module-vs-core command-type collisions** — that
+  would need `moduleRegistry` to import `commands/registry.ts`, which imports it back. The contract
+  test asserts it instead.
+
+**`DeepReadonly` — introduced, deliberately not retrofitted.**
+
+```ts
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends ReadonlyArray<infer U>
+    ? readonly DeepReadonly<U>[]
+    : T extends object
+      ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+      : T;
+```
+
+It is used on the _new_ API only: `readModule`, `withModule`, `hasModuleSlice`, `moduleSliceIds`,
+`ModuleCommandSpec.apply`, `encodeDocument`, `geometryFingerprint`. `Session` and `EditorDocument`
+still carry bare `readonly` fields as they did after 1b. This works without churn because a mutable
+`T` is assignable to `DeepReadonly<T>` — only the reverse needs a cast, and those are confined to
+`withModule` and the `defineCommand` wrapper. `asMutable<T>` exists for that and is deliberately
+ugly. **Widening `Session.document` to `DeepReadonly<EditorDocument>` is still open**; it is now a
+mechanical, separately-reviewable change rather than a blocker.
+
+**Fixtures live in `tests/fixtures/`** (`legacy-flat.json`, `envelope-v1.json`, `envelope-v2.json`,
+`envelope-v2-custom-definition.json`, `envelope-v3-future-module.json`,
+`envelope-v3-corrupt-blob.json`, `envelope-v3-unknown-module.json`), read via
+`loadFixture(name)` in `tests/fixtures/load.ts`, which re-parses on every call so no test can hand
+another a mutated object. `tests/fixtures/README.md` says what each one proves.
+
+An eighth shape was added beyond the plan's list: **`legacy-flat.json`, the unversioned `RoomState`**
+that local storage has always written. The plan calls local storage "the weakest and the most common
+source of pre-migration documents", and it has no `version` field at all, so it needed its own
+fixture. Its door has no `swingSide`, which exercises that migration.
+
+**v1 and v2 read identically.** The number versions the _light-definition envelope_, not the
+document schema, and the existing `processImportData` already treated them the same. `envelope-v1`
+is simply the older-looking document (no doors, obstacles, rafters or display preferences).
+
+**Failure policy and merge precedence, as implemented.** Table rows all hold. Notes:
+
+- Only `validateGeometry` / `validateSpace` throw (`ValidationError`). A legacy document whose
+  `lights` array is broken now **quarantines** where `jsonImport` used to throw — a deliberate
+  behavior change under invariant 8, and one 3b inherits when it deletes `jsonImport`'s validator.
+- `unknownModule` produces no warning. `unsupported` and `invalid` each produce one.
+- `quarantineFlags` is written only for `file`/`local`, only when something is quarantined, and the
+  drift bit is computed once from `geometryFingerprint(document.geometry) !== carried.geometryFingerprint`.
+- `geometryFingerprint` is FNV-1a over a key-sorted stringification of `geometry` (8 hex chars). It
+  is a change detector, not a digest.
+- Share: quarantined blobs and every non-target live slice are omitted; `encodeDocument` **throws**
+  if the share target is itself quarantined.
+- Live-vs-quarantined for the same id throws in dev (it is a decode bug), and live wins in prod.
+
+**Dev backstops added here** (both behind a bare `if (import.meta.env.DEV)`):
+
+- `withModule` runs `assertPlainData` on the slice it writes and deep-freezes it. `assertPlainData`
+  is now exported from `src/commands/serializable.ts`.
+- `decodeDocument` deep-freezes both the document and the carried state it returns.
+
+**Phase 2's core→module import note.** Nothing in 3a makes it better or worse: no files moved, and
+`src/floorplan/` still does not exist. It is, however, now clear that `documentCodec` must _not_
+import `modules/codecs.ts` — the push-not-pull registry above is the pattern the rest of core should
+follow, and `src/lighting/selection.ts`'s importers are the remaining exception for phase 4.
+
+**Deliberately not done.**
+
+- No entry point routes through `documentCodec` (3b). `jsonImport`, `jsonExport`, `localStorage` and
+  `shareUrl` are byte-for-byte unchanged except for the `ValidationError` move.
+- `decodeDocument` sets `document.lights = []`. It does **not** mirror the lighting slice back to
+  the legacy root fields — wiring it up before 3b deletes those fields would lose fixtures. See the
+  3b checklist below.
+- No `ModuleRuntime`, `ModuleView`, `ActivationScope`, panels, tools or layers (phase 4).
+- `Interaction` still has two variants; `drawing`/`measuring` still live in `WallBuilder` and
+  `MeasurementController`.
+- The `light.*` / `lighting.setRafterConfig` **core** commands still exist and are still what the UI
+  dispatches. The new `lighting.*` module commands are registered but unreachable.
+
+**Exactly what phase 3b must do.**
+
+1. Delete `lights` and `rafterConfig` from `EditorDocument` (`src/types/document.ts`) and from
+   `createEmptyDocument`. Delete the `lights: []` line in `decodeDocument` and its comment. Fix
+   `tests/helpers/documents.ts` (`makeDocument` takes `lights`) to seed
+   `modules: buildModuleSlices({ lighting: { ...defaultLightingData(), fixtures } })`.
+2. Delete the `light.*` and `lighting.setRafterConfig` core commands (`src/commands/lightCommands.ts`,
+   the entries in `registry.ts`, the union members in `types/command.ts`, and their entries in
+   `MOVE_AND_SET_COMMAND_TYPES`), and repoint every producer at
+   `src/modules/lighting/commands.ts`. Producers: `roomStore.ts`'s thin command helpers,
+   `settingsStore.ts` (`readRafterConfig` + the four rafter setters), `UnifiedDragOperation`,
+   `GrabModeDragOperation`, and the light property panels. Note `addFixture`'s payload carries an
+   optional `definition` — pass the picker's definition when placing a fixture from the library, or
+   the closure will not be closed.
+3. Repoint every reader of `$roomStore.lights` / `.rafterConfig` at
+   `readModule(doc, lightingCodec).fixtures` / `.rafterConfig`. A narrow guarded `Readable` in
+   `sessionStore.ts` (follow the existing hand-written pattern — **not** Svelte `derived`) is the
+   cheap way to keep component code unchanged in shape.
+4. Route persistence through the codec, deleting `legacyDocumentAdapter.ts`:
+   - `loadFromLocalStorage` → `decodeDocument(JSON.parse(raw))`, returning `LoadedDocument`;
+     `saveToLocalStorage` → `JSON.stringify(encodeDocument(doc, carried, { kind: 'local' }))`.
+   - `importFromString` / `importFromJSON` → `decodeDocument(JSON.parse(text))`. Delete
+     `validateRoomState` and everything under it in `jsonImport.ts`; keep `ValidationError`
+     re-exported or update the importers.
+   - `jsonExport.createExportData` → `encodeDocument(doc, carried, { kind: 'file' })`.
+   - `shareUrl.createSharePayload` → `encodeDocument(doc, carried, { kind: 'share', moduleId })`;
+     `decodeShareData` → `decodeDocument`. The module-in-the-path URL change is phase 5.
+   - Every load path ends in `sessionStore.open(loaded)` with the real `LoadedDocument`;
+     `asLoadedDocument` in `types/session.ts` should end up with no callers but
+     `createEmptySession`.
+   - **`encodeDocument` needs `carried`**, which lives on the session. `saveNow`, `setupAutoSave`
+     and the export/share callers currently take a bare document — they must take the session or a
+     `(document, carried)` pair. `sessionStore.current()` is the escape hatch if a call site cannot
+     be threaded.
+5. Demote `lightDefinitionsStore` to a picker library: delete `mergeLightDefinitions` and its call
+   in `processImportData`, and replace it with an explicit post-`open` adoption step that dispatches
+   `lighting.definitions.set` (or leaves the document's definitions alone and offers to add unknown
+   incoming ones to the local library). `resolveDefinition` from the codec, with
+   `get(lightDefinitions)` as the `library` argument, is what every photometry read should call.
+6. Re-run `tests/unit/persistence/documentCodec.test.ts` unchanged — it is the regression gate — and
+   add the 3b acceptance case: load → visit a mode → save is value-identical, and a slice equal to
+   its default is pruned.
