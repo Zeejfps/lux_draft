@@ -251,6 +251,13 @@ describe('normalize on load / prune on save', () => {
     expect(lighting(loaded)).toEqual(lightingCodec.defaultData());
   });
 
+  it('freezes what it returns in dev, so nothing can drift the normalized baseline', () => {
+    const loaded = decodeDocument(loadFixture('envelope-v3-unknown-module.json'));
+    expect(Object.isFrozen(loaded.document.geometry.boundary.walls)).toBe(true);
+    expect(Object.isFrozen(lighting(loaded))).toBe(true);
+    expect(Object.isFrozen(loaded.carried.quarantined.flooring.blob.data)).toBe(true);
+  });
+
   it('omits a slice that deep-equals a freshly allocated default', () => {
     const loaded = decodeDocument(V3_GEOMETRY_ONLY);
     const envelope = encodeDocument(loaded.document, loaded.carried, { kind: 'local' });

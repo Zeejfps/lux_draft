@@ -11,6 +11,7 @@ import type {
 import { buildModuleSlices, hasModuleSlice, readModule } from '../types/module';
 import { codecFor, registeredCodecs } from '../types/moduleRegistry';
 import { valueEqual } from '../commands/serializable';
+import { deepFreeze } from '../utils/deepFreeze';
 import type { DocumentEnvelopeV3 } from './envelope';
 import { toEnvelopeV3 } from './envelope';
 import { validateDisplayPreferences, validateGeometry, validateSpace } from './geometryValidation';
@@ -154,6 +155,15 @@ export function decodeDocument(raw: unknown): LoadedDocument {
     quarantined,
     geometryFingerprint: geometryFingerprint(geometry),
   };
+
+  if (import.meta.env.DEV) {
+    // Covers `JSON.parse` output, every `defaultData()` normalized in above, and the `as` casts
+    // in the codecs. A module that mutates the normalized baseline would drift what
+    // prune-on-save compares against and silently drop its own slice. Carried state is frozen
+    // too: a quarantined blob is written back verbatim and nothing may touch it in between.
+    deepFreeze(document);
+    deepFreeze(carried);
+  }
   const diagnostics: Diagnostics = { warnings, runtimeStatus: {} };
   return { document, carried, diagnostics };
 }

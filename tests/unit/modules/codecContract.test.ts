@@ -275,6 +275,22 @@ describe('withModule / readModule are the only doors', () => {
     warn.mockRestore();
   });
 
+  it('rejects a slice that is not plain data, at the write rather than at the save', () => {
+    const doc = documentWithSlice(lightingCodec, lightingCodec.defaultData());
+    expect(() =>
+      withModule(doc, lightingCodec, (prev) => ({
+        ...prev,
+        fixtures: new Map() as unknown as [],
+      }))
+    ).toThrow(/not serializable data/);
+  });
+
+  it('freezes the slice it writes, so a later in-place edit throws instead of losing history', () => {
+    const doc = documentWithSlice(lightingCodec, lightingCodec.defaultData());
+    const next = withModule(doc, lightingCodec, (prev) => ({ ...prev, fixtures: [] }));
+    expect(Object.isFrozen(readModule(next, lightingCodec))).toBe(true);
+  });
+
   it('withModule leaves geometry and every other slice untouched', () => {
     const doc = documentWithSlice(lightingCodec, lightingCodec.defaultData());
     const next = withModule(doc, lightingCodec, (prev) => ({ ...prev, fixtures: [] }));

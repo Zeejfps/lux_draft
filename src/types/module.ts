@@ -2,6 +2,8 @@ import type { EditorDocument, ModuleSlices } from './document';
 import type { CommandHandler, EditorCommand, ModuleCommandEnvelope } from './command';
 import type { DeepReadonly } from './deepReadonly';
 import type { Session } from './session';
+import { assertPlainData } from '../commands/serializable';
+import { deepFreeze } from '../utils/deepFreeze';
 
 /**
  * The module data contract. Core owns this file and it names no module (invariant 6/7).
@@ -106,6 +108,12 @@ export function withModule<T>(
     return document;
   }
   const next = fn(readModule(doc, codec));
+  if (import.meta.env.DEV) {
+    // A slice is persisted verbatim, so a `Map`, a class instance, or a `NaN` reaching one is a
+    // document that saves as `{}` and reloads empty. Assert at the write, not at the save.
+    assertPlainData(next, `modules.${codec.id}`);
+    deepFreeze(next);
+  }
   return { ...document, modules: buildModuleSlices({ ...slicesOf(doc), [codec.id]: next }) };
 }
 

@@ -36,7 +36,7 @@ export function valueEqual(a: unknown, b: unknown): boolean {
  * tagged callback the first time someone stuffs a Map, a Set, or a class instance into one.
  */
 /** Throws on anything that is not plain JSON data: Map, Set, class instance, function, NaN. */
-function assertPlainData(value: unknown, path: string): void {
+export function assertPlainData(value: unknown, path: string): void {
   if (value === null) return;
 
   const type = typeof value;
