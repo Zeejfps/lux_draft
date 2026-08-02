@@ -1,6 +1,9 @@
 # Studio Modularization Plan
 
-**Status:** in progress — see [Implementation progress log](#implementation-progress-log).
+**Status:** complete — all seven phases landed on `modules`; see
+[Implementation progress log](#implementation-progress-log). Lighting and flooring are both
+registered modules over a domain-agnostic core, and adding the second one changed three files in
+`src/` outside its own directory.
 **Created:** 2026-08-02
 **Rejected alternatives and decision history:** [ADR 0001](../adr/0001-studio-modularization.md)
 
@@ -1087,17 +1090,17 @@ Each phase agent appends one entry here **before finishing**, so the next phase 
 happened rather than what was planned. Record deviations from the spec above, anything the next phase
 must know, and anything deliberately deferred. Keep entries short and factual.
 
-| Phase | Status      | Branch / commit     | Notes                                                                                                                                                                               |
-| ----- | ----------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | done        | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                             |
-| 1a    | done        | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.               |
-| 1b    | done        | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone.       |
-| 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.             |
-| 3a    | done        | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass.       |
-| 3b    | done        | `modules` / 3e0d291 | Lighting data lives in `modules.lighting`; every entry point routes through `documentCodec` and ends in `sessionStore.open`. `legacyDocumentAdapter` and `RoomState` are gone.      |
-| 4     | done        | `modules` / e15e681 | Module runtime manifest, activation scope and the entity seam; `src/{floorplan,modules,app}` exist and the boundary lint is live. `EditorRenderer` is a `SceneLayer[]` loop.        |
-| 5     | done        | `modules` / 99ed779 | Routes are `#/{module}`, `#/{module}/viewer` and `#/modes`; `ModuleRuntime` gained `overlays` and `surfaces` so the shell imports no module UI. `npm run check:bundle` is the gate. |
-| 6     | not started |                     |                                                                                                                                                                                     |
+| Phase | Status | Branch / commit     | Notes                                                                                                                                                                               |
+| ----- | ------ | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | done   | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                             |
+| 1a    | done   | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.               |
+| 1b    | done   | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone.       |
+| 2     | done   | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.             |
+| 3a    | done   | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass.       |
+| 3b    | done   | `modules` / 3e0d291 | Lighting data lives in `modules.lighting`; every entry point routes through `documentCodec` and ends in `sessionStore.open`. `legacyDocumentAdapter` and `RoomState` are gone.      |
+| 4     | done   | `modules` / e15e681 | Module runtime manifest, activation scope and the entity seam; `src/{floorplan,modules,app}` exist and the boundary lint is live. `EditorRenderer` is a `SceneLayer[]` loop.        |
+| 5     | done   | `modules` / 99ed779 | Routes are `#/{module}`, `#/{module}/viewer` and `#/modes`; `ModuleRuntime` gained `overlays` and `surfaces` so the shell imports no module UI. `npm run check:bundle` is the gate. |
+| 6     | done   | `modules` / 5867daa | The flooring module: types, codec, five commands, a pure `PlankLayoutEngine`, the projection, an `InstancedMesh` renderer with a spatial index, and three panels. 625 tests pass.   |
 
 ### Deviations
 
@@ -2380,3 +2383,260 @@ One more constraint the plan already names and phase 6 will meet first: **planks
 entities.** `EntityDescriptor` is for selectable, movable _points_; planks are derived output.
 Transitions and the layout origin fit the seam, planks want `SceneLayer.inputs?` and the
 projection requirements in "Derived data is a projection over narrow inputs".
+
+#### Phase 6
+
+Commits: `a7b7f80` (the module, plus the three core/shell files a second module forced),
+`5867daa` (the engine, projection, runtime and store tests, and the engine changes those tests
+forced).
+
+**What shipped, and what it is made of.**
+
+```
+src/modules/flooring/
+  types.ts              PlankSpec, LayoutConfig, Transition, defaults, presets   EAGER-safe
+  codec.ts              FlooringData, flooringCodec, liveTransitions            EAGER
+  commands.ts           five defineCommand handlers                             EAGER
+  constants.ts selection.ts entities.ts                                         EAGER-safe
+  PlankLayoutEngine.ts  pure (boundary, obstacles, plank, layout, origin) -> floor
+  PlankIndex.ts         uniform-grid spatial index over the derived floor
+  layoutProjection.ts   Projection<I,O> + layoutInputsOf + createLayoutProjection
+  store.ts              guarded reads, one command per write, the layout service
+  layers.ts handlers.ts runtime.ts                                              LAZY
+  rendering/            PlankRenderer (InstancedMesh), TransitionRenderer, OriginMarkerRenderer
+  ui/                   FloorLayoutPanel, CutListPanel, OriginPropertiesPanel
+```
+
+`FlooringData` is `{ plank, layout, origin, transitions }` — four small values. There is no field
+for planks, a cut list, waste or square footage anywhere on it, and `defaultData()` has exactly
+those four keys (asserted).
+
+Commands, all namespaced by `defineCommand`: `flooring.layout.configure`, `flooring.plank.set`,
+`flooring.origin.move` (all `{ absolute: true }`), `flooring.transition.add`,
+`flooring.transition.remove`. `plank.set` is one beyond the plan's list and is unavoidable — the
+plank spec is editable and the plan's list only names the layout. `layout.configure` sets the
+whole config rather than one field per command, because the undo entry a user wants is "Change
+floor layout", not eight of them.
+
+**Deliberately deferred, and why.** Depth was cut, not pieces — everything listed in the phase
+scope works end to end.
+
+- **The transition is a decision, not cut geometry.** A `Transition` names a `Door` and a kind;
+  it is drawn as a strip on that doorway and listed in the summary, but it does **not** break the
+  plank run or add a threshold-width gap to the layout. Doing that properly means a second class
+  of interval subtraction and a rule for which side of the threshold each room's floor stops on,
+  which is a connected-rooms feature (`boundary: WallLoop` -> `boundaries: WallLoop[]`) rather
+  than a flooring one.
+- **No H-joint rule.** The stagger rules position each row's first joint; they do not enforce a
+  minimum offset between joints in _adjacent_ rows, which is the check an installer actually
+  makes. `random` in particular can put two rows' joints within an inch of each other. The seam
+  for it is `rowOffset`, one function.
+- **The purchase model has no defect allowance.** It simulates off-cut reuse and reports the
+  geometric waste (typically 0.3-3% for a room that tiles well); the trade's "add 10%" is
+  purchasing judgement and inventing a number for it would make the figure look more
+  authoritative than it is. This is written down in the engine.
+- **No worker.** The projection is _relocatable_ — `schedule` and an output-only `subscribe` are
+  the seam, and a test drives it with a scheduler that never runs — but the relocation is not
+  done because a 700-plank layout computes in single-digit milliseconds.
+- Also not done: 3D, plank textures or a material library, box/SKU counting, editing a
+  transition's kind after placement (the tool toggles trim on and off), and a fix-it action for
+  the `MAX_PLANKS` truncation banner.
+- **A named approximation.** Rows are laid by scan-lining one line per row, so where the room's
+  outline changes _within_ a row's band — a diagonal wall, or the inside step of an L — that row
+  is laid as if the whole band looked like its centreline. The error is bounded by (step length x
+  one plank width), it under-reports rather than over-reports, and an L-shaped 300 sqft room comes
+  out at 299.2. For a rectilinear room and for every obstacle this editor draws, the result is
+  exact. A polygon boolean would remove it and would not give a cut list, which wants piece
+  _lengths_ along the run.
+
+**The projection interface, as designed.**
+
+`Projection<I, O>` lives in `src/modules/flooring/layoutProjection.ts`, **not** in the core
+contract — ADR 0001 deferred it pending a consumer, and there is exactly one. Promoting it later
+is a file move; specifying it before flooring existed would have been the mistake the ADR
+declined with the monorepo.
+
+```ts
+interface Projection<I, O> {
+  get(inputs: I): O | null;                       // never blocks
+  subscribe(listener: (value: O) => void): () => void;
+  readonly computations: number;                  // test seam
+}
+createProjection<I, O>({ key, compute, signal, schedule?, cacheSize? })
+```
+
+| Requirement    | How it is met                                                                                                                                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Narrow inputs  | `layoutInputsOf(view)` returns `{ walls, isClosed, obstacles, plank, layout, origin }` and nothing else — no `Session`, no document, no selection, no view mode, no display preferences. A test asserts the key is unchanged across a selection change. |
+| Keyed cache    | `layoutKey(inputs)` is the full canonical structural form (not a hash — a collision would render the wrong floor silently). Insertion-order LRU where a hit moves the key to the young end, so undo _and_ redo across a config change are both hits.    |
+| Cancellable    | Takes the activation scope's `AbortSignal`. Abort cancels the pending schedule, drops the listener set, and short-circuits delivery; `computePlankLayout` also checks the signal between rows.                                                          |
+| Last-good-wins | A miss returns the previous layout and schedules the new one. 120 simulated pointer moves serve a floor on all 120 frames and run **zero** computations; the coalesced computation runs once, for the newest key, when the scheduler fires.             |
+| Relocatable    | Work goes through `schedule` (default: a macrotask, so the frame paints first) and results arrive only through `subscribe`. `compute` is a pure function of plain data — it round-trips through `JSON.parse(JSON.stringify(...))` unchanged.            |
+
+`SceneLayer.inputs?` is the seam at the render end, implemented for the first time here:
+`flooring.planks` returns `${layoutKey(...)}|${viewMode}`, so hovering, selecting the origin or
+opening a panel skips `update` entirely. Because the projection answers asynchronously, the plank
+layer also subscribes to the layout store and pushes into the renderer directly — the layer owns
+that subscription and releases it in its own `dispose`, which the scope calls.
+
+**The plan's key risk, tested.** "Plank layout blocks the frame on pointer moves" is
+`tests/unit/modules/layoutProjection.test.ts` -> `last-good-wins` -> "dragging a wall never blocks
+and never coalesces to more than one computation". It is the acceptance criterion, not a comment.
+
+**Did obstacle-as-cutout and door-as-threshold actually work? Yes, both, unchanged.**
+
+- **Obstacles.** `computePlankLayout` scan-lines each obstacle polygon exactly as it scan-lines
+  the room and subtracts the intervals. `Obstacle` needed no field, `ObstacleRenderer` needed no
+  change, and the drawing, dragging and vertex-editing machinery was already there. The flooring
+  module contains no code that knows what an obstacle _is_ beyond "a closed polygon of
+  `WallSegment`". A 4x4 island in a 20x20 room removes the right area, tested.
+- **Doors.** A `Transition` is `{ id, doorId, kind }` — no wall id, no offset, no width, because
+  `Door` has all three. Moving the door moves the threshold with **no flooring command
+  dispatched at all** (asserted: the slice is reference-identical afterwards). The transition
+  tool hit-tests core's doors through `getDoorEndpoints`, a core utility.
+- **The one cost, and it is real.** Deleting a door leaves an inert transition behind, because a
+  core command may not rewrite a module's slice and nothing else runs on `door.remove`. The fix is
+  `liveTransitions(transitions, doors)`, which every consumer resolves through instead of trusting
+  the id; the orphan is preserved (harmless, and it comes back if the user undoes the delete) but
+  never drawn or counted. This is the general shape of the problem — **a module slice may hold a
+  reference into geometry that core can invalidate** — and it will recur. Resolve-don't-trust is
+  the cheap answer; a `geometry.changed` hook that let modules prune would be the expensive one
+  and would give core a reason to know about modules again.
+
+**What in core had to change — the actual verdict on the architecture.**
+
+Three files in `src/` outside `src/modules/flooring/`, all for one reason, and nothing at all in
+the write model, session, selection, persistence, interaction, activation, entity seam or render
+loop:
+
+1. `floorplan/types/moduleRegistry.ts` — `ModuleDefinition.viewable?: boolean` and
+   `isModuleViewable(id)`. ~12 lines.
+2. `app/routerStore.ts` — one condition: `#/{module}/viewer` resolves to the picker unless the
+   module is viewable.
+3. `app/ShareDialog.svelte` — a non-viewable module's row is disabled with "no viewer for this
+   mode yet", and the default selection skips it.
+
+All three exist because **the viewer is not module-generic** (see below), not because the module
+contract was wrong. Nothing else was touched, nothing was allow-listed in the boundary lint, and
+`ModuleRuntime` did not gain a single field for the second module — it gained `overlays` and
+`surfaces` in phase 5 for the _shell's_ benefit, and flooring used them as they were.
+
+Four test-side changes were forced, all artefacts of the suite having used the string `flooring`
+as a placeholder for "a module that does not exist":
+
+- `tests/fixtures/envelope-v3-unknown-module.json` named `flooring`, so it silently started
+  proving `unsupported` instead of `unknownModule`. Renamed to `plumbing`, with a note in the
+  fixtures README.
+- `tests/helpers/documents.ts` seeded only lighting's slice, so every persistence round-trip test
+  failed once a second module normalized in on load. `makeDocument` now spreads
+  `createEmptyDocument().modules` first, which is module-agnostic and will not break again.
+- `codecContract.test.ts` asserted exactly one registered codec.
+- `routerStore.test.ts` used `flooring` as its uninstalled id; it now uses `plumbing` and gained a
+  case for an installed-but-not-viewable module.
+
+**Manifest vs. capabilities (ADR 0001): keep the manifest. Do not adopt
+`capabilities: ModuleCapability[]`.**
+
+The ADR deferred this to "when a second module can show whether the extension points actually
+diverge". They did not diverge. Evidence:
+
+- Flooring used nine of the manifest's optional members (`tools`, `overlays`, `entities`,
+  `layers`, `handlers`, `panels`, `surfaces`, `shortcuts`, `onActivate`) and needed **no new
+  one**. The interface did not grow by a single field for the second domain.
+- Where the two modules differ, they differ in _values_, not in _kinds of contribution_. Lighting
+  contributes a list of deletable point entities; flooring contributes exactly one entity that
+  cannot be deleted. The seam took both with no change — `removeCommand` returning `null` was
+  already the contract for "nothing to delete". A union of capability variants would have bought
+  nothing here, because there was no second variant to name.
+- The one thing a second module genuinely needed was **not a capability**. `viewable` is a fact
+  about the installed module that the router and the share dialog must read _synchronously,
+  before any `import()` resolves_, so it belongs on the eager `ModuleDefinition` and could not
+  have lived in a capability list on the lazy runtime. That is an asymmetry the ADR did not
+  anticipate, and it argues for keeping the eager/lazy split as the contract's primary axis
+  rather than reshaping the lazy half.
+- The one real benefit capabilities were argued to have — lifecycle per contribution — is still
+  served by the activation scope, and flooring stressed it harder than lighting did: a projection
+  cache with a pending timer and an `AbortSignal`, handed to `scope.own` in `onActivate`. It
+  worked without any per-contribution lifecycle.
+
+Revisit only if a third module needs a contribution whose _lifetime differs from activation_, or
+whose multiplicity the shell must order. Until then, adding an optional field costs one line plus
+a shell branch — the identical edit a union member would cost.
+
+**The viewer: flooring is editor-only, and that is now stated rather than broken.**
+
+Phase 5 flagged the choice. Generalizing the viewer is not a small edit disguised as one: the
+viewer page has no activation registry (`applyRoute` deactivates for viewer routes), it builds
+lighting's layers by hand, it keeps its own `selectedViewerLight` store, and its click handling
+raycasts for `userData.lightId`. Giving it an activation scope means moving all four, and it is
+its own phase-sized piece of work with no flooring content to show at the end of it — a read-only
+plank layout is a picture of a floor.
+
+So `viewable: false`, and the consequences are explicit: `#/flooring/viewer` resolves to the mode
+picker (the same answer an uninstalled module gets, for the same reason — showing the wrong
+mode's canvas under the right URL is worse than asking), and the share dialog disables the
+Flooring row rather than minting a link that opens on nothing. Both are verified in headless
+Chrome. When the viewer is generalized, `viewable` becomes `true` and nothing else changes.
+
+**Engine decisions a future contributor will meet first.**
+
+- **The run-aligned frame.** The room is rotated by `-runAngleDeg` about the origin and then
+  mirrored so the configured start corner is always the local bottom-left. Four start corners and
+  every run angle collapse into one code path. `toLocal`/`toWorld` are the only places that know.
+- **The joint grid is anchored at the layout origin, not at the room's bounding box.** That is
+  what makes dragging the origin visibly move every joint, and it is why the origin is an entity.
+- **The last row is ripped, not dropped.** A row's band is clipped to the room and the plank
+  carries the clipped width; dropping it would leave a strip of bare subfloor and under-report
+  the area by up to a plank width across the room. A ripped board still costs a full-width one,
+  which is where rip waste enters the figure.
+- **The minimum end cut shifts the row's joint grid**, left if the last piece is short and right
+  if the first is, accepted only when it does not break the other end. If neither can be fixed
+  the original stands — a slightly wrong cut list beats an infinite loop.
+- **Only a run-starting piece may consume an off-cut.** A mid-run board is full length and an end
+  piece is by definition what is left over. Without that restriction the waste figure comes out
+  at an unreachable 0.2%.
+- `MAX_PLANKS = 20000` bounds every loop; a degenerate config reports `truncated` rather than
+  hanging the tab.
+- **Planks are not entities and must not become them.** They are re-derived on every geometry
+  edit, so a selection naming one would be a reference into a value the next wall drag destroys.
+  Hit-testing exists (`PlankIndex`, a uniform grid) and drives a hover read-out; that is the part
+  that is useful without the pretence.
+- The `PlankRenderer` grows its instance buffers with 25% headroom and truncates with
+  `mesh.count`, so a wall drag re-derives allocation-free. `setHovered` rewrites colours only.
+
+**Verification.** `npm run test:run` (625 tests, 37 files — 542 inherited plus 83),
+`npm run type-check`, `npm run lint`, `npm run build`, `npm run check:bundle` and
+`npx prettier --check .` all pass. `npx svelte-check` is at the same 4 pre-existing errors
+(`FloatingPanel`, `Canvas`'s `originalPositions: null`, two in `LightInfoBottomSheet`).
+
+`check-bundle.mjs` gained two FORBIDDEN entries (flooring's layer ids and its panel strings, both
+of which pull in THREE and the engine) and two REQUIRED entries (its codec message and two
+command verbs). Every marker was verified to exist in the built output and in the expected chunk,
+because a marker that matches nothing passes a FORBIDDEN check for the wrong reason.
+
+The app was driven in headless Chrome against `vite preview` (`--headless=new
+--use-angle=swiftshader --enable-unsafe-swiftshader`; **without the swiftshader flags `Scene`
+throws on WebGL context creation and `onMount` never runs**). Through an iframe harness that
+seeded a v3 envelope into local storage — a 20x16 room with a door and a 4x3 island, plus a
+flooring slice — and then drove the real UI: the module's tool and its three overlay toggles
+reach the toolbar from the lazy runtime; the floor derives to 302.6 sqft, 130 boards, 0.3% waste
+with a three-line cut list and the door listed as a threshold; hovering the canvas reports
+"Row 16, board 5 — 48" (full)", which exercises projection -> `PlankIndex` -> handler ->
+renderer; changing the stagger through the real panel re-derives the cut list (three lines ->
+two) and produces one undo entry labelled "Change floor layout"; `#/flooring/viewer` lands on the
+mode picker; `#/modes` lists both modes; and `#/lighting` -> `#/flooring` swaps the overlay sets
+exactly, with no duplicates and no leftovers. No console errors at any point.
+
+**Tests.** Four new suites.
+`tests/unit/modules/plankLayoutEngine.test.ts` — the engine as a pure table with no store, no
+Svelte and no DOM: coverage of a rectangle, an L and an obstacle cutout, the ripped last row,
+each of the five stagger rules, the minimum end cut in both directions, the cut list and the
+waste model, the run frame and all four start corners, `layoutKey`, and bounded work.
+`tests/unit/modules/layoutProjection.test.ts` — the five requirements, one `describe` each.
+`tests/unit/modules/flooringRuntime.test.ts` — the second module through the real registry:
+registration, the single-entity seam, the spatial index, activate/deactivate leaving zero
+orphaned scene children, and lighting -> flooring -> lighting leaving exactly one module's panels
+registered. `tests/unit/stores/flooringStore.test.ts` — one command and one labelled history
+entry per setter, live-versus-committed projections, and the doors-are-thresholds behaviours
+including the inert-orphan case. `tests/helpers/moduleSamples.ts` gained a payload for each of
+the five commands, which is what puts them through the shared contract suite unchanged.
