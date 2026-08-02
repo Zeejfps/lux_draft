@@ -167,7 +167,7 @@ export const sessionStore = {
   open(loaded: LoadedDocument): void,
 
   /** One user action → one snapshot → one history entry. */
-  commit(label: string, fn: (doc: RoomState) => RoomState): void,
+  commit(label: string, fn: (doc: Readonly<RoomState>) => RoomState): void,
 
   /** Selection is not undoable; changing it records no history. */
   select(next: Selection): void,
@@ -175,6 +175,7 @@ export const sessionStore = {
   /**
    * Multi-step interactions (wall drag, vertex drag): all intermediate documents
    * are applied live, but the whole scope lands as one history entry.
+   * Synchronous only — see §3.2.1.
    */
   transact<T>(label: string, fn: (tx: Tx) => T): T,
 
@@ -198,9 +199,62 @@ to get wrong, no way to leak a pause, and no comparison against a stale `stateBe
 optimized — history is now told what happened. (This resolves what earlier drafts filed as a
 follow-up performance item; it comes free.)
 
-Migration cost is small and bounded: 27 `roomStore.set/update` call sites, 14 of which are already
-inside `roomStore.ts`'s own helper functions. Read sites — the large majority, including every
-Svelte template — are untouched because `roomStore` survives as a derived view.
+**Every writer converts in one phase.** Making `roomStore` derived is not a gradual change: the
+moment it loses `set`/`update`, every existing writer stops compiling. That is the desired property —
+the compiler produces the migration checklist — but it means phase 1 must convert all 27 sites, not
+just the ones outside `roomStore.ts`. Full inventory:
+
+| Where                                                                                                                                                                                                                                                                    | Count | Becomes                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------------------------------------------------------------- |
+| `roomStore.ts` helper internals — `updateWallLength`, `updateVertexPosition`, `insertVertexOnWall`, `moveWall`, `deleteVertex`, `addDoor`, `updateDoor`, `removeDoor`, `addObstacle`, `updateObstacle`, `removeObstacle`, `updateObstacleVertexPosition`, `moveObstacle` | 13    | `commit(label, fn)` — bodies are already `(state) => newState`, so the lambda moves over unchanged |
+| `roomStore.resetRoom`                                                                                                                                                                                                                                                    | 1     | `open(emptyDocument())`                                                                            |
+| `historyStore.undo` / `.redo`                                                                                                                                                                                                                                            | 2     | deleted with `historyStore`                                                                        |
+| Load paths — `App.svelte:124`, `ViewerPage.svelte:27,55`, `Toolbar.svelte:158`                                                                                                                                                                                           | 4     | `open(loaded)`                                                                                     |
+| Genuine edits — `settingsStore:22,28`, `PropertyPanel:32`, `LightPropertiesPanel:32,54`, `Canvas.svelte:574,616,667,709`                                                                                                                                                 | 9     | `commit(label, fn)`                                                                                |
+
+The helper conversions are the cheap ones — those functions already take the shape `commit` wants
+and merely need a label. The four `roomStore.set` load paths are the ones that change semantics, and
+that is the point: they are exactly the sites that push a spurious undo entry today.
+
+Read sites — the large majority, including every Svelte template and every
+`get(roomStore)` — are untouched, because `roomStore` survives as a derived view.
+
+### 3.2.1 Transaction semantics
+
+`transact` replaces `pauseRecording`/`resumeRecording`, so its edge cases have to be pinned down or
+it inherits the failure modes it was meant to remove.
+
+```ts
+export interface Tx {
+  /** Applies immediately and emits, so the canvas updates live. Records no history. */
+  apply(fn: (doc: Readonly<RoomState>) => RoomState): void;
+  /** Abandon the scope: restore the entry snapshot, push nothing. */
+  cancel(): void;
+}
+```
+
+Rules:
+
+- **Synchronous only.** `transact` throws immediately if `fn` returns a thenable. An `async`
+  callback would close the scope at the first `await`, so later `apply` calls would land as
+  individual history entries — precisely the leak this API exists to prevent. Rejecting the shape at
+  runtime is cheaper than debugging that.
+- **`try` / `finally`.** The scope always closes. If `fn` throws, the entry snapshot is restored,
+  nothing is pushed, and the error propagates. A drag handler that throws mid-gesture leaves the
+  document at the last committed state, never partially applied.
+- **Nesting throws.** A nested `transact` is a programming error — an inner scope either
+  silently joins the outer one (surprising) or splits the gesture into two entries (wrong). Both are
+  worse than a loud failure at the call site. Escalate to depth-counted, outermost-snapshot semantics
+  only if a real interaction turns out to need composition.
+- **No-op scopes push nothing.** If the exit document is reference-equal to the entry snapshot — no
+  `apply` call, or a drag that ends where it started — no history entry is recorded. A click that
+  registers as a zero-distance drag must not consume an undo step.
+- **One entry, on exit.** The entry snapshot plus `label` is pushed once, when the scope closes
+  normally with a changed document.
+
+Tests for this are non-optional, and they are cheap: no-op scope, throwing callback, `async`
+callback rejected, nested call rejected, N `apply` calls → exactly one history entry, and a
+per-drag-op test that intermediate frames still reach the renderer.
 
 ### 3.3 Normalize on load, prune on save
 
@@ -231,14 +285,19 @@ mistake. Carry identity in a value instead.
 export interface ModuleCodec<T> {
   readonly id: string;
   readonly schemaVersion: number;
+  /** MUST return a freshly-allocated value on every call. See §3.4.1. */
   defaultData(): T;
   decode(blob: ModuleBlob): DecodeResult<T>;
-  compactForShare?(data: T): unknown;
+  compactForShare?(data: Readonly<T>): unknown;
 }
 
 /** `ModuleSlices` is opaque — no index signature is exported, so these are the only doors. */
-export function readModule<T>(doc: RoomState, codec: ModuleCodec<T>): T;
-export function commitModule<T>(codec: ModuleCodec<T>, label: string, fn: (prev: T) => T): void;
+export function readModule<T>(doc: Readonly<RoomState>, codec: ModuleCodec<T>): Readonly<T>;
+export function commitModule<T>(
+  codec: ModuleCodec<T>,
+  label: string,
+  fn: (prev: Readonly<T>) => T
+): void;
 ```
 
 Call sites read `readModule(doc, lightingCodec)` and get `LightingData`, not `unknown`. The id string
@@ -247,6 +306,36 @@ is written once, in the codec.
 This also makes "`modules[id]` holds input, never output" a fact rather than a rule. `T` is named by
 `codec.ts`, and the boundary lint rule (§4) forbids `codec.ts` from importing `runtime.ts` — so the
 plank-layout _output_ type is not nameable from anywhere that can write a slice.
+
+### 3.4.1 Documents and defaults are immutable
+
+The commit model assumes callers do not mutate what they are handed. Left implicit, it breaks in two
+ways, and the second is nasty:
+
+1. A caller mutates the value from `readModule` (or a `commit` callback's `doc`) in place. The
+   document changes with no snapshot and no history entry, and undo silently skips the edit.
+2. `defaultData()` returns a shared object — a module-level `const`, or an object literal captured
+   by a closure. Normalization (§3.3) stores that same reference into the document, a caller mutates
+   it, and now the baseline that prune-on-save deep-compares against has drifted to match the
+   document. The slice is pruned on save and the user's data is silently dropped. This one survives
+   review easily and shows up as data loss much later.
+
+Three defenses, none expensive:
+
+- **`Readonly<T>` at every boundary.** `readModule` returns `Readonly<T>`; `commit` and
+  `commitModule` hand their callbacks readonly input and require a new value back. This catches
+  top-level field assignment at compile time. It is shallow — `doc.walls.push(w)` still type-checks
+  — so it is a first line, not the guarantee.
+- **Deep-freeze in development.** `open`, every `commit`, and every `defaultData()` result pass
+  through a recursive `Object.freeze` under `import.meta.env.DEV`, stripped in production builds.
+  This is what actually catches the nested mutations `Readonly<T>` misses, and it converts silent
+  drift into a `TypeError` at the mutation site rather than a wrong result three operations later.
+  Existing helper bodies already build new objects (`{ ...state, walls: [...] }`), so the expected
+  number of violations to fix is small.
+- **Fresh-default test, applied to every codec.** A shared contract test — run against each
+  registered codec, not written per module — asserting `defaultData() !== defaultData()` and that
+  mutating one result leaves a second call unaffected. This is the test that closes failure (2), and
+  it must be part of the codec registration suite so a new module gets it for free.
 
 **Selections** — same trick, and it retires the hand-written validating guard:
 
@@ -527,9 +616,9 @@ All three converge on one module:
 /** Normalizes module slices to defaults (§3.3). Synchronous. */
 export function decodeDocument(raw: unknown): LoadedDocument;
 
-/** Prunes slices that equal their default (§3.3). */
+/** Prunes slices that deep-equal a freshly-allocated `defaultData()` (§3.3, §3.4.1). */
 export function encodeDocument(
-  document: RoomState,
+  document: Readonly<RoomState>,
   carried: CarriedState,
   target: EncodeTarget
 ): unknown;
@@ -556,6 +645,10 @@ current signatures and no caller changes.
 into it — today it independently reads `state.lights` and owns its own version constant. Taking
 `carried` as a required positional parameter (rather than reading it from a store) means a save path
 that forgets it fails to compile.
+
+Pruning calls `codec.defaultData()` fresh at save time and never caches the baseline across calls —
+a cached baseline is reachable from module code through the same reference that was normalized into
+the document, which is the data-loss path described in §3.4.1(2).
 
 **Merge precedence — `carried.quarantined` vs. live `modules`:**
 
@@ -652,17 +745,26 @@ Phases 3 and 4 divide cleanly: **phase 3 is the data plane, phase 4 is the UI pl
   no directories to police. Landing the rule before the moves means each subsequent phase is
   validated as it lands.
 
-### Phase 1 — session store + commit spine (3–4 days) ← **start here**
+### Phase 1 — session store + commit spine (4–5 days) ← **start here**
 
-- Introduce `Session`, `sessionStore`, `commit` / `transact` / `open` / `undo` / `redo` (§3.1–3.2).
-  `modules` starts as an empty opaque map; no module system yet.
+- Introduce `Session`, `sessionStore`, `commit` / `transact` / `open` / `undo` / `redo` (§3.1–3.2),
+  and `Tx` with the semantics in §3.2.1. `modules` starts as an empty opaque map; no module system
+  yet.
 - Keep `roomStore` as `derived(sessionStore, s => s.document)` so every read site and every Svelte
   template is untouched.
-- Convert the 13 external `roomStore.set/update` sites to `commit(label, fn)`, and the existing
-  `pauseRecording`/`resumeRecording` drag pairs to `transact`.
+- **Convert all 27 writers in this phase — the §3.2 inventory is the checklist.** Making `roomStore`
+  derived breaks every writer at once, including the 13 helper internals in `roomStore.ts`
+  (`updateWallLength`, `moveWall`, `addDoor`, the obstacle operations, …). There is no partial
+  landing: `roomStore.ts` cannot compile against a derived `roomStore` until its own bodies move to
+  `commit`. Sequence within the phase: land `sessionStore` alongside the writable `roomStore` first,
+  migrate writers, then flip `roomStore` to derived as the last commit.
+- Convert the existing `pauseRecording`/`resumeRecording` drag pairs to `transact`.
 - Delete `statesAreEqual`, the `roomStore` subscription in `historyStore`, and the pause/resume
   primitives.
 - `resetRoom()` becomes `open(emptyDocument())`.
+- Add dev-mode deep-freeze on `open` and `commit` (§3.4.1) and fix the mutations it surfaces.
+- **Tests:** the §3.2.1 transaction suite (no-op, throw, `async` rejected, nesting rejected, N
+  applies → one entry), plus a per-drag-op test for one-undo-entry and live intermediate frames.
 - **Risk:** the drag paths are the subtle ones — verify that a wall drag still lands as one undo
   entry and that the canvas still updates on every intermediate frame.
 - **Ships value alone:** removes the O(document) `JSON.stringify` on every emission, gives undo
@@ -697,7 +799,8 @@ doing it twice.
   `sessionStore.open(loaded)`.
 - Add `RoomState.modules` and `CarriedState`; move `lights`, `rafterConfig`, dead-zone and spacing
   config into `modules.lighting`; route lighting's writes through `commitModule`.
-- Implement normalize-on-load / prune-on-save (§3.3).
+- Implement normalize-on-load / prune-on-save (§3.3), with the fresh-`defaultData()` baseline rule
+  (§7.1) and the shared fresh-default contract test applied to every registered codec (§3.4.1).
 - Envelope `version: 3` with permanent readers for 1 and 2 (§7.3).
 - **Test first**, before changing any types: fixtures for envelope v1, v2, a future-version module
   blob, a corrupt module blob, and an unknown module id — asserting the migrated shape, the
@@ -749,8 +852,9 @@ doing it twice.
 | Risk                                                                 | Mitigation                                                                                     |
 | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Big-bang refactor stalls mid-way                                     | Six implementation phases plus scaffolding, each shippable; phases 1–3 stand alone.            |
-| Phase 1 touches every write path at once                             | Reads are untouched (`roomStore` survives as a derived view); 13 external write sites only.    |
-| Drag interactions regress on the pause/resume → `transact` swap      | Explicit test per drag op: one undo entry, live intermediate frames.                           |
+| Phase 1 must convert all 27 writers atomically — no partial landing  | Reads untouched; inventory enumerated in §3.2; flip `roomStore` to derived last.               |
+| Drag interactions regress on the pause/resume → `transact` swap      | §3.2.1 pins down throw/async/nesting/no-op; test per drag op for one entry + live frames.      |
+| In-place mutation bypasses history, or drifts the prune baseline     | `Readonly<T>` at boundaries, dev deep-freeze, fresh-default contract test per codec (§3.4.1).  |
 | Existing share URLs break                                            | Envelope 1/2 readers are permanent; fixture tests land before the type change.                 |
 | Undecodable module data silently lost on save                        | Quarantine held in `CarriedState`; value-identical round-trip test in phase 3.                 |
 | Prune-on-save drops a slice a user meant to keep                     | Prune only on exact deep-equality with `defaultData()`; round-trip test in phase 3.            |
