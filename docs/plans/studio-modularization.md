@@ -5,7 +5,7 @@ domain (LVP flooring layout) can be built on top of it without forking or duplic
 
 **Status:** proposed, not started.
 **Created:** 2026-08-02
-**Revised:** 2026-08-02 — rev 3, after two design reviews. See §10 for what changed.
+**Revised:** 2026-08-02 — rev 4, after three design reviews. See §10 for what changed.
 
 ---
 
@@ -506,6 +506,45 @@ comparison once profiling justifies it — track separately from this plan.
   — a share link is a single-module view, and the size budget (8000-char warning threshold) does not
   survive carrying both. The dialog says so when the document has more than one populated module.
 
+### 6.6 Loading is one coordinated operation
+
+Splitting editable state (`roomStore`) from carried state (`quarantineStore`, warnings) means a load
+now touches several stores. Doing that piecemeal produces two bugs that are easy to ship and hard to
+diagnose: **quarantine from the previous document attaching to the next save**, and **loading pushing
+an undo entry** so the user's first Ctrl-Z resurrects the project they just closed.
+
+The second one is not hypothetical — it falls out of the current implementation. `historyStore`
+subscribes to `roomStore` and, on any change where `statesAreEqual` is false, pushes `lastSavedState`
+onto the stack. A bare `roomStore.set(newDoc)` therefore pushes the _old_ document into undo.
+
+One coordinator, and it is the only way a document enters the app:
+
+```ts
+// src/floorplan/persistence/loadDocument.ts
+export function loadDocument(loaded: LoadedDocument): void {
+  historyStore.pauseRecording(); // suppress the load itself
+  roomStore.set(loaded.room);
+  quarantineStore.set(loaded.quarantined);
+  documentWarnings.set(loaded.warnings);
+  disabledModules.set(loaded.disabledModules);
+  selection.set({ kind: 'none' }); // stale ids do not survive a document swap
+  historyStore.clear(); // discards the stack and rebaselines
+}
+```
+
+Ordering is load-bearing, and it works with the primitives `historyStore` already exposes:
+
+- `pauseRecording()` gates the subscription so the swap records nothing.
+- `clear()` empties `past` / `future`, re-baselines `lastSavedState` to the **new** document, and
+  resets `isRecordingPaused` to `false` — so it both un-pauses and rebaselines in one call.
+- Consequently **do not call `resumeRecording()` here.** It compares against `stateBeforePause` (the
+  _previous_ document) and would push exactly the spurious entry this is meant to prevent. `clear()`
+  is the correct terminator; `resumeRecording()` is for transient pauses like drag operations.
+
+Call sites: initial boot from local storage, JSON file import, share-URL open, and "new project".
+`resetRoom()` in `roomStore` currently bypasses all of this and must be folded in — otherwise a new
+project inherits the previous document's quarantine.
+
 ---
 
 ## 7. Phasing
@@ -543,10 +582,12 @@ Phases 2 and 3 divide cleanly: **phase 2 is the data plane, phase 3 is the UI pl
 - Write `lighting/codec.ts` — the only module codec at this point.
 - Build `documentCodec.ts` (§6.1) and route **all three** entry points through it: `jsonImport`,
   `jsonExport`, `localStorage`, plus `shareUrl` on both sides.
-- `RoomState.modules` + `RoomState.quarantined`; move `lights`, `rafterConfig`, dead-zone and
-  spacing config into `modules.lighting`.
+- Add `RoomState.modules`, the `LoadedDocument` wrapper, and the session-scoped `quarantineStore`;
+  move `lights`, `rafterConfig`, dead-zone and spacing config into `modules.lighting`.
 - Envelope `version: 3` with permanent readers for 1 and 2 (§6.3).
-- Enforce §6.4(c): absent slices resolve to `defaultData()` at read time.
+- Add the `loadDocument` coordinator (§6.6) — every load path goes through it.
+- Enforce §6.4(c): absent slices resolve to `defaultData()` at read time; add `readModuleData` /
+  `updateModuleData` (§6.1a) and route lighting's writes through them.
 - **Test first**, before changing any types: fixtures for envelope v1, v2, a future-version module
   blob, a corrupt module blob, and an unknown module id — asserting the migrated shape, the
   quarantine behavior, and **value-identical** round-trip of quarantined blobs (deep equality after
@@ -617,6 +658,20 @@ Phases 2 and 3 divide cleanly: **phase 2 is the data plane, phase 3 is the UI pl
 
 ## 10. Revision log
 
+**Rev 4 (2026-08-02)** — third design review. Changes:
+
+1. **Added the `loadDocument` coordinator** (§6.6). Rev 3 split editable from carried state but never
+   said how a load sets both atomically, leaving two shippable bugs: previous-document quarantine
+   attaching to the next save, and the load itself pushing an undo entry — the latter falls directly
+   out of `historyStore`'s existing `roomStore` subscription. Specified the exact ordering against
+   the primitives that already exist, including the trap that `resumeRecording()` must **not** be
+   used to terminate the pause (it compares against the previous document and would push the very
+   entry being prevented); `clear()` both rebaselines and un-pauses. Noted that `resetRoom()`
+   currently bypasses this and must be folded in.
+2. **Stale phase-2 line fixed** — it still said `RoomState.quarantined`, which rev 3 removed.
+3. **Rev 2 log entry annotated** as superseded rather than left asserting a design that was
+   corrected.
+
 **Rev 3 (2026-08-02)** — second design review. Changes:
 
 1. **Quarantine moved out of `RoomState`** into a `LoadedDocument` wrapper and a session-scoped
@@ -646,8 +701,10 @@ Phases 2 and 3 divide cleanly: **phase 2 is the data plane, phase 3 is the UI pl
    synchronous and needs no dynamic import; only UI and rendering are lazy.
 2. **`DecodeResult` status union + per-module `v`** (§4.1, §6.2, §6.3), replacing
    `migrate(raw): unknown` which could not distinguish absent / valid / future / corrupt / unknown,
-   and could not implement "preserve verbatim". Added `RoomState.quarantined` so preserved blobs are
-   structurally separate from live state. Failure policy: only geometry failure rejects a document.
+   and could not implement "preserve verbatim". Added an initial quarantine mechanism as a field on
+   `RoomState` — **later corrected in rev 3**, which moved it out of the document because a field on
+   `RoomState` is not in fact separate from live state at runtime. Failure policy: only geometry
+   failure rejects a document.
 3. **History rules** (§6.4). Rev 1 did not consider that `historyStore` `structuredClone`s the whole
    `RoomState` 50 times over. Resolved at the source: derived data never enters the document
    (planks are computed from config), undo stays global with labeled entries, and mode switching
