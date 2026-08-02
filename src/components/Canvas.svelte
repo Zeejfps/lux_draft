@@ -362,10 +362,20 @@
   // Context Builder
   // ============================================
 
+  /**
+   * The selection as of *right now*, not as of the last Svelte flush. Handlers select and then
+   * immediately re-read to detect a shift-click toggle-off, and `$:` assignments are batched to
+   * the microtask flush, so the mirrored `currentSelection` would still hold the old value.
+   * The mirror is for rendering; this is for input.
+   */
+  function liveSelection(): Selection {
+    return get(selection);
+  }
+
   function buildInteractionContext(): InteractionContext {
     return {
       document: currentRoomState,
-      selection: currentSelection,
+      selection: liveSelection(),
       isDrawingEnabled: isDrawing,
       isPlacingLights: isPlacingLights,
       isPlacingDoors: isPlacingDoors,
@@ -797,7 +807,7 @@
             position: pos,
             modifiers: EMPTY_MODIFIERS,
             document: currentRoomState,
-            selection: currentSelection,
+            selection: liveSelection(),
           });
         },
         getWallAtPosition: (pos, walls, tolerance) =>
@@ -830,7 +840,7 @@
         setGrabModeActive: (active) => {
           isGrabMode = active;
         },
-        getSelection: () => currentSelection,
+        getSelection: () => liveSelection(),
         getCurrentMousePos: () => currentMousePos,
         getVertices: () => getVertices(currentRoomState),
         getLights: () => currentRoomState.lights,
@@ -856,7 +866,7 @@
         createDoorDragOperation,
         createObstacleVertexDragOperation,
         createObstacleDragOperation,
-        getSelection: () => currentSelection,
+        getSelection: () => liveSelection(),
         getCurrentMousePos: () => currentMousePos,
       },
       {
