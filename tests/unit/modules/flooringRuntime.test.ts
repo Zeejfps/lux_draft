@@ -13,7 +13,7 @@ import { claimLayerIds, validateRuntime } from '../../../src/floorplan/types/mod
 import { bindEntities } from '../../../src/floorplan/types/entity';
 import { readModule } from '../../../src/floorplan/types/module';
 import { NO_SELECTION } from '../../../src/floorplan/types/selection';
-import { DEFAULT_DISPLAY_PREFERENCES } from '../../../src/floorplan/types/state';
+import { CORE_TOOL_SELECT, DEFAULT_DISPLAY_PREFERENCES } from '../../../src/floorplan/types/state';
 import { sessionStore } from '../../../src/floorplan/stores/sessionStore';
 import { asLoadedDocument } from '../../../src/floorplan/types/session';
 import { resolvePanel } from '../../../src/floorplan/ui/panelRegistry';
@@ -34,6 +34,9 @@ import { computePlankLayout } from '../../../src/modules/flooring/PlankLayoutEng
 import { addDivider, setSurfaces } from '../../../src/modules/flooring/commands';
 import { solveRegions } from '../../../src/modules/flooring/RegionSolver';
 import { DividerPlacementHandler } from '../../../src/modules/flooring/handlers';
+import { setActiveTool } from '../../../src/floorplan/stores/appStore';
+
+import { FLOORING_TOOL_DIVIDER } from '../../../src/modules/flooring/constants';
 import type { InteractionContext } from '../../../src/floorplan/types/interaction';
 import type { InputEvent } from '../../../src/floorplan/core/InputManager';
 import { defaultFlooringData } from '../../../src/modules/flooring/codec';
@@ -275,6 +278,9 @@ describe('flooring activated through the registry', () => {
 });
 
 describe('the transitions layer draws what the solver derived', () => {
+  // The tool is global state; leaving it set would leak into whatever runs next.
+  afterEach(() => setActiveTool(CORE_TOOL_SELECT));
+
   const viewOf = (document: EditorDocument) =>
     moduleViewOf(
       document,
@@ -309,8 +315,17 @@ describe('the transitions layer draws what the solver derived', () => {
       })
     );
     transitions.update(viewOf(withDivider));
-    // One more mesh: the guide. No trim yet — the same floor runs either side of the line.
+    // Nothing new on screen. The same floor runs either side of the line, so there is no trim,
+    // and a line that changes neither the floor nor the cut list is not drawn over the floor —
+    // it lives in the panel and comes back under the divider tool.
+    expect(meshCount(scene)).toBe(baseline);
+
+    setActiveTool(FLOORING_TOOL_DIVIDER);
+    transitions.update(viewOf(withDivider));
     expect(meshCount(scene)).toBe(baseline + 1);
+    setActiveTool(CORE_TOOL_SELECT);
+    transitions.update(viewOf(withDivider));
+    expect(meshCount(scene)).toBe(baseline);
 
     const solution = solveRegions({
       walls: withDivider.geometry.boundary.walls,
@@ -329,11 +344,37 @@ describe('the transitions layer draws what the solver derived', () => {
       })
     );
     transitions.update(viewOf(painted));
-    // Guide plus the derived strip, now that there is trim to buy.
-    expect(meshCount(scene)).toBe(baseline + 2);
+    // The derived strip, and only that: real trim draws with no tool selected, because it is
+    // something you would actually buy and nail down.
+    expect(meshCount(scene)).toBe(baseline + 1);
 
     for (const layer of layers) layer.dispose();
     expect(scene.children).toHaveLength(0);
+  });
+
+  it('keeps an unattached divider on screen whatever tool is up', () => {
+    // An error is not an affordance. A line left dangling by a wall edit stays visible until it
+    // is dealt with, and the panel flags it in words as well.
+    const scene = new THREE.Scene();
+    const layers = flooringRuntime.layers!(scene);
+    const transitions = layers.find((l) => l.id === 'flooring.transitions')!;
+
+    const plain = squareRoom();
+    transitions.update(viewOf(plain));
+    const baseline = meshCount(scene);
+
+    const dangling = applyCommand(
+      plain,
+      addDivider.make({
+        // Both ends in open space: it reaches no wall, so it splits nothing.
+        divider: { id: 'd1', a: { x: 3, y: 5 }, b: { x: 7, y: 5 }, kind: 'tMolding' },
+      })
+    );
+    setActiveTool(CORE_TOOL_SELECT);
+    transitions.update(viewOf(dangling));
+    expect(meshCount(scene)).toBe(baseline + 1);
+
+    for (const layer of layers) layer.dispose();
   });
 });
 

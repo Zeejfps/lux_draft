@@ -3,6 +3,8 @@ import type { Door, Vector2, WallSegment } from '../../floorplan/types/geometry'
 import type { ModuleView, SceneLayer } from '../../floorplan/types/moduleRuntime';
 import type { FlooringData } from './codec';
 import { liveTransitions } from './codec';
+import { activeTool } from '../../floorplan/stores/appStore';
+import { FLOORING_TOOL_DIVIDER } from './constants';
 import { layoutInputsOf, regionsOf } from './layoutProjection';
 import { layoutKey } from './PlankLayoutEngine';
 import { isOriginSelected } from './selection';
@@ -78,6 +80,7 @@ export function createFlooringLayers(scene: THREE.Scene): FlooringLayers {
   // A divider being drawn is pointer state, not document state, so it reaches the renderer the
   // same way a hover does: through a session store, redrawn on the next frame the layer updates.
   let pending: { from: Vector2; to: Vector2 } | null = null;
+  let guides = false;
   let lastView: View | null = null;
   const drawDividers = (v: View): void => {
     const solution = regionsOf(v);
@@ -85,12 +88,24 @@ export function createFlooringLayers(scene: THREE.Scene): FlooringLayers {
       solution.transitions,
       v.data.dividers,
       solution.unattached,
-      pending
+      pending,
+      guides
     );
+  };
+  const redraw = (): void => {
+    if (lastView && lastView.viewMode === 'editor') drawDividers(lastView);
   };
   const stopPending = pendingDivider.subscribe((next) => {
     pending = next;
-    if (lastView && lastView.viewMode === 'editor') drawDividers(lastView);
+    redraw();
+  });
+  // Guides are an affordance of the tool that draws them, exactly as an untrimmed door is only
+  // outlined while the transition tool is up.
+  const stopTool = activeTool.subscribe((tool) => {
+    const next = tool === FLOORING_TOOL_DIVIDER;
+    if (next === guides) return;
+    guides = next;
+    redraw();
   });
 
   const transitions: SceneLayer = {
@@ -113,6 +128,7 @@ export function createFlooringLayers(scene: THREE.Scene): FlooringLayers {
     setVisible: (next) => transitionRenderer.setVisible(next),
     dispose: () => {
       stopPending();
+      stopTool();
       lastView = null;
       transitionRenderer.dispose();
     },

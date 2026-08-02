@@ -532,3 +532,78 @@ describe('laying over part of the room', () => {
     expect(layoutKey(inputs({ regions: [] }))).not.toBe(a);
   });
 });
+
+describe('a wall that runs along the rows is not a transition', () => {
+  /**
+   * The room from the report, simplified: a rectangle with a notch dropping out of its bottom
+   * edge, so the wall at x = -1 runs **along** the rows once the run is turned to 90°.
+   *
+   * The bug: the row grid was broken at every vertex of the region ring, and a region's ring is
+   * mostly made of the room's own walls. That put a permanent row boundary on the notch wall —
+   * a plank split down its length at an inside corner, fixed in world space, immune to both the
+   * plank width and the layout origin, which is exactly how it was spotted.
+   */
+  const notched: Vector2[] = [
+    { x: -6, y: 6 },
+    { x: 6, y: 6 },
+    { x: 6, y: -6 },
+    { x: -1, y: -6 },
+    { x: -1, y: -11 },
+    { x: -6, y: -11 },
+  ];
+  const walls: WallSegment[] = notched.map((start, i) => {
+    const end = notched[(i + 1) % notched.length];
+    return { id: `w${i}`, start, end, length: Math.hypot(end.x - start.x, end.y - start.y) };
+  });
+  // A diagonal divider cutting off the notch, so the region clip is live.
+  const region: Vector2[] = [
+    { x: -6, y: 6 },
+    { x: 6, y: 6 },
+    { x: 6, y: -6 },
+    { x: -1, y: -6 },
+    { x: -6, y: -8 },
+  ];
+
+  /** Run 90°: rows stack along world x, so a row boundary is a world-x value. */
+  const rowEdges = (widthIn: number, origin: Vector2): number[] => {
+    const layout = computePlankLayout(
+      inputs({
+        walls,
+        origin,
+        plank: { ...defaults.plank, widthIn },
+        layout: { ...defaults.layout, runAngleDeg: 90 },
+        regions: [region],
+      })
+    );
+    return [...new Set(layout.planks.map((p) => Number((p.center.x - p.width / 2).toFixed(9))))]
+      .sort((a, b) => a - b)
+      .filter((v) => v > -5.9 && v < 5.9);
+  };
+
+  it('puts no row boundary on the notch wall, whatever the plank width or the origin', () => {
+    for (const widthIn of [7, 15.5]) {
+      for (const origin of [
+        { x: 0, y: 0 },
+        { x: 0.68, y: 0.97 },
+        { x: 2.5, y: -1.5 },
+      ]) {
+        const edges = rowEdges(widthIn, origin);
+        expect(edges.length).toBeGreaterThan(3);
+        // Every interior boundary lands on the grid the origin anchors — no stray one at the
+        // notch wall (x = -1), and none anywhere else the room merely turns a corner.
+        const step = widthIn / 12;
+        for (const edge of edges) {
+          const offGrid = Math.abs(edge - origin.x - Math.round((edge - origin.x) / step) * step);
+          expect(offGrid).toBeLessThan(1e-6);
+        }
+      }
+    }
+  });
+
+  it('still moves every boundary when the origin moves', () => {
+    // The counterpart to the above: a boundary that ignored the origin was the symptom.
+    const a = rowEdges(15.5, { x: 0, y: 0 });
+    const b = rowEdges(15.5, { x: 0.4, y: 0 });
+    for (const edge of a) expect(b).not.toContain(edge);
+  });
+});

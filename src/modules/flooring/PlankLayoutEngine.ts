@@ -8,8 +8,8 @@ import {
   intervalsAt,
   signedArea,
   subtractIntervals,
+  nearestOnSegment,
   unionIntervals,
-  verticalIntervalsAt,
 } from './geometry2d';
 
 /**
@@ -476,39 +476,64 @@ function buildCutList(cutLengthsFt: readonly number[]): CutListEntry[] {
     .sort((a, b) => b.lengthIn - a.lengthIn);
 }
 
+/** Below this, a region edge counts as running along the rows rather than across them. */
+const FLAT_EPS = 1e-6;
+
+/** How close a region edge must sit to a wall to *be* that wall rather than a transition. */
+const ON_WALL_FT = 1e-4;
+
+function distanceToRing(ring: readonly Vector2[], p: Vector2): number {
+  let best = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const d = nearestOnSegment(ring[i], ring[(i + 1) % ring.length], p).distance;
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 /**
- * How far a row may extend across a **region** edge: not at all.
+ * The heights at which a row must not be allowed to straddle: where **this floor stops and
+ * another begins**, and nowhere else.
  *
- * The room clamps every band to `[minY, maxY]`, which is what rips the row against the far wall
- * instead of letting it hang past it. A region has no such clamp — its edges are wherever the
- * user drew a divider — so without this a row whose band straddles a transition is laid at full
- * width straight across it. Worse, *which* rows straddle depends on the row grid, and the row
- * grid is anchored at the layout origin: dragging the origin swings the floor's edge either side
- * of the transition by up to half a plank width, so the expansion gap at the transition opens,
- * closes and inverts as the marker moves.
+ * The room already clamps every band to `[minY, maxY]`, which rips the last row against the far
+ * wall instead of letting it hang past. A region has no such clamp — its edges are wherever the
+ * user drew a divider — so a band straddling a transition is laid at full width straight across
+ * it, or dropped and left bare, depending on where the grid happens to fall. The grid is
+ * anchored at the layout origin, so dragging the origin swung the floor's edge either side of
+ * the transition, opening and closing the expansion gap as it went.
  *
- * The vertical scan answers the question the horizontal one cannot: at this point along the run,
- * how far does this area actually extend across the rows? The band is clipped to that, and the
- * row is ripped at the transition exactly as it is ripped at a wall.
+ * Two filters, and the second is the one that matters:
  *
- * Sampled at the span's midpoint, and only applied when the sample brackets the row's own
- * centreline — an unreliable sample leaves the band alone rather than clipping it to something
- * that is not there. It therefore only ever *narrows* a row, never widens one.
+ * - **Flat in the run-aligned frame.** A region edge running *across* the rows is already cut
+ *   exactly by the horizontal scan; only one running *along* them is invisible to it.
+ * - **Not on a wall.** A region's ring is mostly made of the room's own walls, and a wall that
+ *   happens to run along the rows — the vertical side of a notch, the inside step of an L — is
+ *   not a transition. Breaking there rips a board lengthwise at an inside corner, which is not
+ *   something anyone does and shows up as a plank split down its length for no visible reason.
+ *   The room's own outline keeps the approximation it always had.
+ *
+ * What is left over is a diagonal transition, which gets no break and so keeps the same
+ * centreline approximation a diagonal wall gets. Consistent, and bounded by one plank width.
  */
-function bandWithin(
+function transitionHeights(
   clips: readonly (readonly Vector2[])[],
-  x: number,
-  centreY: number,
-  low: number,
-  high: number
-): { low: number; high: number } {
+  room: readonly Vector2[]
+): number[] {
+  const out: number[] = [];
   for (const clip of clips) {
-    for (const [spanLow, spanHigh] of verticalIntervalsAt(clip, x)) {
-      if (centreY < spanLow - EPS || centreY > spanHigh + EPS) continue;
-      return { low: Math.max(low, spanLow), high: Math.min(high, spanHigh) };
+    for (let i = 0; i < clip.length; i++) {
+      const a = clip[i];
+      const b = clip[(i + 1) % clip.length];
+      if (Math.abs(a.y - b.y) > FLAT_EPS) continue;
+      if (Math.abs(b.x - a.x) <= EPS) continue;
+      // The midpoint, so a shared corner's mitre cannot make a wall edge look interior. A ring
+      // edge that came from a wall lies on the room's inset outline; one that came from a
+      // divider lies inside it.
+      if (distanceToRing(room, { x: (a.x + b.x) / 2, y: a.y }) <= ON_WALL_FT) continue;
+      out.push(a.y);
     }
   }
-  return { low, high };
+  return out;
 }
 
 // ============================================
@@ -614,10 +639,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     if (y > minY + EPS && y < maxY - EPS) boundaries.add(y);
   }
   if (clips !== null) {
-    for (const clip of clips) {
-      for (const p of clip) {
-        if (p.y > minY + EPS && p.y < maxY - EPS) boundaries.add(p.y);
-      }
+    for (const y of transitionHeights(clips, room)) {
+      if (y > minY + EPS && y < maxY - EPS) boundaries.add(y);
     }
   }
   const bandEdges = [...boundaries].sort((a, b) => a - b);
@@ -666,15 +689,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     for (const [start, end] of spans) {
       if (end - start <= EPS) continue;
 
-      // The band, ripped against whatever area this span falls in. Per span rather than per row,
-      // because one row can cross two areas that end at different places.
-      const band =
-        clips === null
-          ? { low: bandLow, high: bandHigh }
-          : bandWithin(clips, (start + end) / 2, centreY, bandLow, bandHigh);
-      const spanWidth = band.high - band.low;
-      if (spanWidth <= EPS) continue;
-      const spanCentreY = (band.low + band.high) / 2;
+      const spanWidth = bandHigh - bandLow;
+      const spanCentreY = centreY;
 
       const pieces = layRow([start, end], offset, plankLength, minEndCut);
       for (let index = 0; index < pieces.length; index++) {

@@ -90,17 +90,26 @@ export class TransitionRenderer {
     segments: readonly TransitionSegment[],
     dividers: readonly Divider[],
     unattached: readonly string[],
-    pending: { from: Vector2; to: Vector2 } | null
+    pending: { from: Vector2; to: Vector2 } | null,
+    guides: boolean
   ): void {
     clearGroup(this.dividerGroup);
     const orphaned = new Set(unattached);
 
     for (const divider of dividers) {
+      const orphan = orphaned.has(divider.id);
+      // A divider with the same floor either side produces no trim, so outside the divider tool
+      // it draws nothing: a line across the room that changes neither the floor nor the cut
+      // list reads as a rendering fault, not as data. It is still listed in the panel, and the
+      // tool brings every line back the moment you go looking for one — the same bargain the
+      // door candidates above make. An **unattached** divider is different: that is an error,
+      // and an error stays on screen until it is dealt with.
+      if (!orphan && !guides) continue;
       this.addStrip(
         divider.a,
         divider.b,
-        orphaned.has(divider.id) ? UNATTACHED_COLOR : CANDIDATE_COLOR,
-        orphaned.has(divider.id) ? 0.9 : 0.5,
+        orphan ? UNATTACHED_COLOR : CANDIDATE_COLOR,
+        orphan ? 0.9 : 0.5,
         GUIDE_DEPTH_FT,
         this.dividerGroup
       );
