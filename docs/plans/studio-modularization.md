@@ -1095,7 +1095,7 @@ must know, and anything deliberately deferred. Keep entries short and factual.
 | 2     | done        | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.        |
 | 3a    | done        | `modules` / aa7b1a6 | Codec pipeline built and proven against fixtures; no live data moved. `documentCodec` reads a core registry the eager barrel `modules/codecs.ts` pushes into. 454 tests pass.  |
 | 3b    | done        | `modules` / 3e0d291 | Lighting data lives in `modules.lighting`; every entry point routes through `documentCodec` and ends in `sessionStore.open`. `legacyDocumentAdapter` and `RoomState` are gone. |
-| 4     | not started |                     |                                                                                                                                                                                |
+| 4     | done        | `modules` / e15e681 | Module runtime manifest, activation scope and the entity seam; `src/{floorplan,modules,app}` exist and the boundary lint is live. `EditorRenderer` is a `SceneLayer[]` loop.   |
 | 5     | not started |                     |                                                                                                                                                                                |
 | 6     | not started |                     |                                                                                                                                                                                |
 
@@ -1903,3 +1903,249 @@ fixtures. `tests/helpers/documents.ts` gained `lightsOf` / `lightingOf` and seed
 
 `npm run test:run`, `npm run type-check`, `npm run lint`, `npm run build` and `npx prettier --check .`
 all pass. `npx svelte-check` is down to four pre-existing errors, none in the lighting path.
+
+#### Phase 4
+
+Commits: `f051356` (the move), `1a6e4c3` (runtime manifest, activation, entity seam),
+`0c4ae72` (the viewer), `1befd1f` (tests + the diagnostics banner), `166eb8d` (tool ids),
+`e15e681` (the `invalidate` fix).
+
+**The directory layout, as built.**
+
+```
+src/
+  main.ts                     entry; imports ./modules/codecs first, then mounts app/App.svelte
+  floorplan/                  domain-agnostic core
+    commands/ constants/ controllers/ core/ geometry/ interactions/ persistence/
+    rendering/ services/ stores/ types/ utils/
+    ui/                       Canvas.svelte, the core property panels, DoorToolPanel,
+                              FloatingPanel, LengthInput, panelRegistry.ts, coreTools.ts
+  modules/
+    codecs.ts                 eager barrel; also carries each module's `loadRuntime`
+    lighting/
+      codec.ts commands.ts    EAGER
+      entities.ts selection.ts constants.ts types.ts   EAGER-safe (no three, no svelte)
+      runtime.ts layers.ts    LAZY
+      store.ts definitionsStore.ts statsStore.ts
+      LightManager.ts LightCalculator.ts LightingStatsCalculator.ts SpacingAnalyzer.ts
+      LightIcon.ts IESParser.ts LightPlacementHandler.ts
+      rendering/              the six lighting renderers + shaders/
+      ui/                     the light panels and RafterControls
+  app/                        Studio shell
+    App.svelte Toolbar.svelte StatusBar.svelte PropertyPanel.svelte
+    DiagnosticsBanner.svelte routerStore.ts viewer/
+```
+
+Placement decisions worth knowing:
+
+- **`panelRegistry.ts` is in `floorplan/ui/`, not `app/`** (phase 2 guessed `app/`). The
+  activation registry registers and unregisters a module's panels, and `floorplan/stores/` may
+  not import `app/`. The dispatch seam and the key strings are unchanged, exactly as phase 2
+  promised.
+- **The viewer is `app/viewer/`.** It is lighting-heavy (heatmap, shadows, a light info sheet)
+  but it is a page, and `app/**` may import anything, so nothing had to be generalized.
+- **`PropertyPanel` and `StatusBar` are `app/`** — both read a module's data (fixture count, the
+  active tool's label). Keeping them in `floorplan/ui/` would have needed another seam for no
+  gain.
+- `src/types/lighting.ts` became `src/modules/lighting/types.ts`, which is where `RafterConfig`
+  and `DEFAULT_RAFTER_CONFIG` moved too. `floorplan/types/index.ts` no longer re-exports any of
+  it, so ~20 files had their barrel import split in two.
+
+**Contract changes, and why.** The plan says to change the contract if it does not fit lighting.
+Four things changed.
+
+1. **`ModuleView` gained `displayPreferences` and `viewMode`.**
+   `LightRenderer` needs `displayPreferences.lightRadiusVisibility`; the unit format drives
+   dimension labels. Both are document data core owns, so the view is the right place. `viewMode`
+   is app presentation state and is there so **a layer decides its own visibility** — that is
+   what let `EditorRenderer` drop `setLightsVisible` and `updateViewMode`, which were the last
+   lighting-shaped methods on it. The alternative (a module subscribing to `appStore`) violates
+   invariant 6.
+2. **`EntityDescriptor` / `EntityAccess` — the replacement for `InteractionContext.fixtures`.**
+   The plan's `ModuleView` + module-owned handlers is not enough on its own: core's box
+   selection, grab mode, unified drag, snapping, measurement and the Delete key all operate on
+   room vertices **and** the module's entities in one gesture. Those are core handlers and they
+   stay core. So a module declares
+   ```ts
+   interface EntityDescriptor<T> {
+     selection: SelectionKind<{ ids: string[] }>; // supplies moduleId, type, panelKey
+     hitTolerance: number;
+     list(view: ModuleView<T>): readonly ModuleEntity[]; // { id, position }
+     moveCommand(id, position): EditorCommand; // absolute
+     removeCommand(ids): EditorCommand | null; // one command, one history entry
+   }
+   ```
+   and the registry binds it to the live view as an `EntityAccess`
+   (`list/find/at/inBox/selectedIds/selectionOf/moveCommand/removeCommand`). `NO_ENTITIES` is a
+   total no-module implementation, so core never branches on "is a module active". This is what
+   removed **every** core→module import phase 3b listed, in one go. Flooring's transitions and
+   layout origin fit it; planks do not, and should not — they are derived output, not selectable
+   point entities, and phase 6 will need a different seam for them (`SceneLayer.inputs?`).
+3. **`ToolDescriptor` carries its own SVG icon markup and an optional `key`.** A tool the toolbar
+   cannot draw is a tool core has to know about. Core's three toolbar tools use the identical
+   descriptor (`floorplan/ui/coreTools.ts`), so `Toolbar.svelte` is one `{#each $toolbarTools}`.
+   `enabled?(view)` is re-evaluated against the live view.
+4. **`Tool` is `string`, not a closed union.** `'light'` was a member of a core type. Core owns
+   `select`/`draw`/`door`/`obstacle` (`CORE_TOOL_*` in `floorplan/types/state.ts`) and everything
+   else is `${moduleId}.${verb}`; lighting's is `lighting.place`. `InteractionContext` lost
+   `isPlacingLights` and gained `activeTool` plus `isModuleToolActive` — core knows _that_ a
+   module tool owns the pointer, never which.
+
+Smaller shape changes: `SnapController.snapToLights` → `snapToEntities(pos, ModuleEntity[], id)`;
+`MeasurementController`'s `light` source/target variant → `entity`
+(`startFromEntity`, `setTargetEntity`, `isFromEntity`, `sourceEntityId`);
+`selectionStore.selectFixture/setFixtureSelection` → `selectEntity/setEntitySelection(entities, …)`
+and `selectInBox`/`retainBoxCandidates` take the `EntityAccess` as their first argument;
+`getSelectionOriginFromRoomState` → `getSelectionOriginFromDocument`;
+`RoomStateWithLights` → `RoomStateWithEntities` (`getEntities`, not `getLights`);
+`LIGHT_HIT_TOLERANCE_FT` moved to `modules/lighting/constants.ts`.
+
+**What the activation scope actually owns.** `floorplan/stores/moduleActivation.ts`.
+
+- Scene layers (`dispose()` each), input handlers, panel registrations, shortcut bindings, the
+  `AbortSignal`, and anything a module hands it in `onActivate`. Lighting registers a
+  `pickerDefinitions` subscription there — the "derived subscription" the plan warns about.
+- `Scope.own(fn)` after disposal **runs `fn` immediately** rather than retaining it.
+- `dispose()` aborts the signal _first_, then runs disposers in reverse order.
+- The registry is the only caller of `dispose`. `EditorRenderer.dispose()` disposes core layers
+  only; `setModuleLayers` is a pointer swap.
+- `sessionStore.beforeOpen(hook)` is new: `open` runs its hooks synchronously before the reducer
+  action, and activation registers one that deactivates and schedules a re-activation. No layer
+  ever sees two unrelated documents.
+- **Registration validation lives in `moduleRegistry.ts`**, split in two because runtimes are
+  lazy: `registerModule` (eager) checks module id, label, schema version and command namespacing
+  as before; `validateRuntime(runtime)` (on first resolution) checks tool namespacing, duplicate
+  tool ids, panel keys, shortcut bindings and that contributed entities are selected under the
+  module's own id; `claimLayerIds(moduleId, ids)` runs at activation because layer ids are only
+  knowable once a scene exists. Core claims its own strings with `claimCoreLayerIds` /
+  `claimCorePanelKeys`.
+- **Claims are permanent for the session, not released on deactivate.** Only one module is active
+  at a time, so releasing them would make a module-vs-module conflict undetectable. `CORE_RESERVED_SHORTCUTS`
+  in `floorplan/types/moduleRuntime.ts` encodes "core wins"; a test asserts it matches the
+  bindings `createDefaultKeyboardShortcuts` actually produces. **Tool keys are deliberately not
+  in the shortcut table** — they resolve core-first through the tool list, so `L` can select
+  lighting's tool while core keeps `L` for "type a wall length" while drawing.
+
+**`ModuleRuntime` as built** (`floorplan/types/moduleRuntime.ts`): `id`, `label`, `tools?`,
+`entities?`, `layers?(scene)`, `handlers?(ctx)`, `panels?`, `statsPanel?`, `shortcuts?`,
+`onActivate?(ctx, scope)`. Every generic is erased to `unknown` at the boundary and method
+syntax makes the contribution assignable — a module writes `ModuleView<LightingData>` and the
+registry holds `ModuleView<unknown>`.
+
+`ModuleDefinition` gained `label: string` (required) and `loadRuntime?(): Promise<ModuleRuntime>`.
+**`loadRuntime` is already a real dynamic `import()`** — `() => import('./lighting/runtime')` in
+`modules/codecs.ts`. Writing it any other way would have pulled `three` into the eager barrel and
+needed rewriting in phase 5. The build already emits a separate `runtime-*.js` chunk; the _bundle
+check_ and routing are still phase 5's.
+
+**`EditorRenderer`.** It holds `coreLayers: SceneLayer[]` (from `rendering/coreLayers.ts`:
+`core.walls`, `core.doors`, `core.obstacles`) plus `moduleLayers`, and `render(view)` loops over
+both honoring `SceneLayer.inputs?`. What stayed imperative and named: the phantom line, the
+preview vertex, snap guides, the selection box, the measurement line and the door preview. Those
+are gesture visuals, not projections of the document, so a layer would have nothing to derive
+them from. `updateWalls`/`updateLights`/`updateDoors`/`updateObstacles`/`setPreviewLight`/
+`setLightsVisible`/`setLightRadiusVisibility` are gone.
+
+Lighting contributes six layers: `lighting.{fixtures,heatmap,shadows,rafters,deadZones,spacingWarnings}`.
+`spacingWarnings` is computed inside its layer from the view and never stored (invariant 5); the
+`spacingWarnings` store in `modules/lighting/store.ts` is now unused by the editor and kept only
+for the panels.
+
+**Two real bugs the phase surfaced.**
+
+- **Renderers emptied their group but never unparented it.** Harmless when a renderer is built
+  once per canvas; a leak that grows with every mode switch now that a module's renderers are
+  rebuilt per activation. Fixed in `LightRenderer` and in the core renderers with the same shape.
+  `tests/unit/stores/moduleActivation.test.ts` asserts zero orphaned scene children across
+  activate → deactivate → activate.
+- **A guarded slice must not forward `invalidate`.** Svelte's `derived` marks a dependency
+  pending on `invalidate` and clears it on the matching `run`, and refuses to recompute while
+  anything is pending. `slice()` in `sessionStore.ts` and `documentSlice()` forwarded
+  `invalidate` straight through while suppressing the `run`, so the **first suppressed emission
+  wedged every `derived` above them permanently**. Latent since 1b — `canPlaceLights`,
+  `roomBounds` and `spacingWarnings` were all affected — and phase 4 is the first code to put a
+  `derived` over one in a way that shows (the module's tool never appeared in the toolbar). Both
+  now ignore `invalidate`. **Any future guarded store must do the same.**
+
+**`Diagnostics.warnings` got UI.** `src/app/DiagnosticsBanner.svelte` — a dismissible panel
+listing decode warnings and any failed runtime, with the reassurance that unreadable data is
+preserved on save. Session-scoped; a new load brings it back.
+
+**What is live in the boundary lint, and what is allow-listed.** Everything phase 0 wrote is now
+enforced for real and nothing needed allow-listing:
+
+- `floorplan/**` may not import `modules/**` or `app/**` — clean, via the entity seam.
+- `modules/a/**` may not import `modules/b/**` — nothing to test yet; `MODULE_IDS` in
+  `eslint.config.js` still needs a new module id added by hand.
+- `modules/*/codec.ts` and `commands.ts` may not import `three`, `*.svelte` or `runtime` — clean.
+  Note the rule covers only those two filenames: `entities.ts`, `selection.ts`, `constants.ts`
+  and `types.ts` are also eager-safe by construction but are not policed. If phase 5's bundle
+  check finds `three` in the initial chunk, widen `EAGER_MODULE_ENTRYPOINTS`.
+- `app/**` may import from anywhere — used by `Toolbar` (lighting's overlay toggles) and the
+  viewer.
+
+`eslint.config.js` itself is unchanged.
+
+**Deliberately not done / deferred.**
+
+- **The eager chunk still contains most of lighting**, because `app/Toolbar.svelte` imports
+  `modules/lighting/store` and `statsStore` for the Rafters / Dead Zones / Spacing / Stats /
+  Lights buttons, and `App.svelte` renders `LightToolPanel`, `RafterControls` and
+  `LightDefinitionManager` directly. That is legal (`app/**` may import anything) but it is what
+  will fail phase 5's bundle check. The fix is a module-contributed "overlay toggles" and
+  "tool panel" surface, or lazy `<svelte:component>` behind `$activeModule`. **Phase 5 must
+  budget for this.**
+- `ModuleRuntime.statsPanel` is rendered by `App.svelte` off `$activeModule`, but the _toggle_
+  for it is still a hardcoded lighting button in `Toolbar.svelte`.
+- `Interaction` still has two variants; `drawing`/`measuring` remain in `WallBuilder` and
+  `MeasurementController`. `Session.document` is still `EditorDocument`, not
+  `DeepReadonly<EditorDocument>`.
+- `DisplayPreferences.lightRadiusVisibility` is still a lighting-shaped field on a core document
+  type, and `roomStore` still exports `canPlaceLights` (identical to `canPlaceDoors`). Both are
+  cosmetic; a codemod, not a phase.
+- Share URLs are still `#/viewer?d=…`; routing, the mode picker and module-aware share links are
+  phase 5.
+- `LightManager`'s internal map is now write-only (hit-testing moved to `EntityAccess`); it
+  survives only as the fixture factory `LightPlacementHandler` uses.
+
+**Exactly what phase 5 must know.**
+
+1. **Activation is already async and already lazy.** `activateModule(id)` /
+   `deactivateModule()` / `activeModule` / `toolbarTools` / `activeView` / `activeEntities()` are
+   exported from `floorplan/stores/moduleActivation.ts`. Routing means calling `activateModule`
+   from the route instead of `App.svelte`'s `onMount`, which is one line (`src/app/App.svelte`,
+   inside the `currentRoute === 'editor'` branch).
+2. **The scene must be set before layers can be built.** `Canvas.svelte` calls
+   `setModuleScene(scene.scene)` in `onMount` and `setModuleScene(null)` in `onDestroy`.
+   Activating with no scene yields an active module with zero layers — it does not throw, but it
+   also does not draw. Child-before-parent `onMount` ordering is what makes today's sequence work.
+3. **`sessionStore.beforeOpen` already handles "a document open lands mid-activation."** The
+   rapid-navigation half of phase 5's acceptance criteria is covered by the generation token and
+   tested in `tests/unit/stores/moduleActivation.test.ts`; the routing half is not.
+4. **The bundle check will fail until the shell stops importing lighting eagerly** — see above.
+5. `generateShareUrl(input, moduleId)` already takes the module id; `encodeDocument` already
+   takes `{ kind: 'share', moduleId }` and throws when that module is quarantined. What is
+   missing is the `#/{module}` path and the picker UI.
+6. `registeredModules()` returns `{ codec, commands, label, loadRuntime }` — enough for a mode
+   picker without loading any runtime.
+7. **Adding a module** now means: `codec.ts` + `commands.ts` + `runtime.ts`, a `ModuleDefinition`
+   in `modules/codecs.ts`, and its id in `MODULE_IDS` in `eslint.config.js`. Everything else —
+   tool button, panels, layers, shortcuts, entity hit-testing, delete, snapping — falls out of
+   the manifest.
+
+**Tests.** 516 pass (477 inherited plus 39). New suites:
+`tests/unit/types/moduleRegistry.test.ts` (every registration failure, core-wins shortcut
+precedence, and `CORE_RESERVED_SHORTCUTS` checked against the shell's actual bindings),
+`tests/unit/stores/moduleActivation.test.ts` (the three acceptance criteria plus dedup and
+open-deactivates-first), `tests/unit/modules/lightingRuntime.test.ts` (the real module through
+the real registry, and fixtures as entities), `tests/unit/rendering/sceneLayers.test.ts` (the
+loop, the `inputs` guard, and who disposes what). `tests/helpers/entities.ts` binds lighting's
+entities to a test-controlled document, which is how the drag and selection-store tables get an
+`EntityAccess`. `sessionStore.test.ts` gained the `derived`-over-a-guarded-slice regression.
+
+`npm run test:run`, `npm run type-check`, `npm run lint`, `npm run build` and
+`npx prettier --check .` all pass. `npx svelte-check` is at 4 pre-existing errors
+(`FloatingPanel`, `Canvas`'s `originalPositions: null`, and two in `LightInfoBottomSheet`), the
+same count phase 3b left. The app was additionally smoke-tested by loading it in headless
+Chrome and asserting the module's tool button reaches the toolbar — which is how the
+`invalidate` bug was found.
