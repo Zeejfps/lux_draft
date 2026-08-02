@@ -29,7 +29,8 @@ export const DRAWING_VERTEX_RADIUS = 0.1;
 // Input handling
 export const ZOOM_IN_FACTOR = 1.1;
 export const ZOOM_OUT_FACTOR = 0.9;
-export const PAN_SCALE_FACTOR = 0.002;
+// Multiplier on wheel deltaY for pinch-to-zoom (trackpad pinch arrives as ctrl+wheel)
+export const PINCH_ZOOM_SENSITIVITY = 0.01;
 
 // Scene configuration
 export const DEFAULT_FRUSTUM_SIZE = 20;

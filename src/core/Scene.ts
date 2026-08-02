@@ -6,7 +6,6 @@ import {
   MIN_ZOOM,
   MAX_ZOOM,
   FIT_BOUNDS_PADDING,
-  PAN_SCALE_FACTOR,
 } from '../constants/editor';
 import { getTheme } from '../constants/themes';
 
@@ -99,10 +98,28 @@ export class Scene {
     return this.zoom;
   }
 
+  /**
+   * Zooms while keeping the world point under (screenX, screenY) pinned to that
+   * screen position, so pinching/scrolling zooms toward the cursor or pinch center.
+   */
+  zoomAt(zoom: number, screenX: number, screenY: number): void {
+    const before = this.screenToWorld(screenX, screenY);
+    this.setZoom(zoom);
+    const after = this.screenToWorld(screenX, screenY);
+
+    this.panOffset.x += before.x - after.x;
+    this.panOffset.y += before.y - after.y;
+    this.handleResize();
+  }
+
+  /** Pans the camera by a screen-space delta in CSS pixels (1:1 with the cursor). */
   pan(dx: number, dy: number): void {
-    const scale = DEFAULT_FRUSTUM_SIZE / this.zoom;
-    this.panOffset.x += dx * scale * PAN_SCALE_FACTOR;
-    this.panOffset.y += dy * scale * PAN_SCALE_FACTOR;
+    const height = this.container.clientHeight;
+    if (height <= 0) return;
+
+    const worldPerPixel = DEFAULT_FRUSTUM_SIZE / this.zoom / height;
+    this.panOffset.x += dx * worldPerPixel;
+    this.panOffset.y += dy * worldPerPixel;
     this.handleResize();
   }
 

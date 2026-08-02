@@ -9,6 +9,7 @@
   import { shouldFitCamera } from '../stores/appStore';
   import { selectedViewerLight } from '../stores/viewerStore';
   import type { BoundingBox, RoomState, ViewMode, LightFixture } from '../types';
+  import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, PINCH_ZOOM_SENSITIVITY } from '../constants/editor';
 
   export let viewMode: ViewMode = 'editor';
 
@@ -203,8 +204,20 @@
   function handleWheel(e: WheelEvent): void {
     e.preventDefault();
     if (!scene) return;
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    scene.setZoom(scene.getZoom() * zoomFactor);
+
+    if (e.ctrlKey || e.metaKey) {
+      // Trackpad pinch arrives as a wheel event with ctrlKey set
+      scene.zoomAt(
+        scene.getZoom() * Math.exp(-e.deltaY * PINCH_ZOOM_SENSITIVITY),
+        e.clientX,
+        e.clientY
+      );
+    } else if (e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) {
+      const zoomFactor = e.deltaY > 0 ? ZOOM_OUT_FACTOR : ZOOM_IN_FACTOR;
+      scene.zoomAt(scene.getZoom() * zoomFactor, e.clientX, e.clientY);
+    } else {
+      scene.pan(e.deltaX, -e.deltaY);
+    }
   }
 
   // Touch handlers
@@ -261,7 +274,7 @@
 
       if (lastTouchDist > 0) {
         const scale = dist / lastTouchDist;
-        scene.setZoom(scene.getZoom() * scale);
+        scene.zoomAt(scene.getZoom() * scale, center.x, center.y);
       }
 
       const dx = center.x - lastTouchCenter.x;
@@ -317,6 +330,11 @@
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     canvas.addEventListener('touchend', handleTouchEnd);
     canvas.addEventListener('touchcancel', handleTouchEnd);
+    // Safari fires non-standard gesture events for a trackpad pinch; suppressing them
+    // stops the page from zooming while we handle the ctrl+wheel version.
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+      canvas.addEventListener(type, (e: Event) => e.preventDefault());
+    }
 
     editorRenderer = new EditorRenderer(scene.scene);
     heatmapRenderer = new HeatmapRenderer(scene.scene);

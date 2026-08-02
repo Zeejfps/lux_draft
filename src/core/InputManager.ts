@@ -1,6 +1,6 @@
 import type { Vector2 } from '../types';
 import type { Scene } from './Scene';
-import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR } from '../constants/editor';
+import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, PINCH_ZOOM_SENSITIVITY } from '../constants/editor';
 
 export type InputEventType =
   | 'click'
@@ -49,6 +49,12 @@ export class InputManager {
     // passive: false is required because we call preventDefault() to handle zoom
     canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
     canvas.addEventListener('contextmenu', this.handleContextMenu.bind(this));
+
+    // Safari also emits non-standard gesture events for a trackpad pinch; suppressing
+    // them stops the page itself from zooming while we handle the ctrl+wheel version.
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+      canvas.addEventListener(type, (e: Event) => e.preventDefault());
+    }
 
     window.addEventListener('keydown', this.handleKeyDown.bind(this));
     window.addEventListener('keyup', this.handleKeyUp.bind(this));
@@ -125,9 +131,24 @@ export class InputManager {
   private handleWheel(e: WheelEvent): void {
     e.preventDefault();
 
-    const zoomFactor = e.deltaY > 0 ? ZOOM_OUT_FACTOR : ZOOM_IN_FACTOR;
     const currentZoom = this.scene.getZoom();
-    this.scene.setZoom(currentZoom * zoomFactor);
+
+    if (e.ctrlKey || e.metaKey) {
+      // A trackpad pinch is delivered as a wheel event with ctrlKey set, so this
+      // covers both pinch-to-zoom and cmd/ctrl + scroll.
+      this.scene.zoomAt(
+        currentZoom * Math.exp(-e.deltaY * PINCH_ZOOM_SENSITIVITY),
+        e.clientX,
+        e.clientY
+      );
+    } else if (e.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) {
+      // Line/page deltas come from a physical mouse wheel, which keeps notch zooming.
+      const zoomFactor = e.deltaY > 0 ? ZOOM_OUT_FACTOR : ZOOM_IN_FACTOR;
+      this.scene.zoomAt(currentZoom * zoomFactor, e.clientX, e.clientY);
+    } else {
+      // Two-finger trackpad scroll pans the camera.
+      this.scene.pan(e.deltaX, -e.deltaY);
+    }
 
     const worldPos = this.scene.screenToWorld(e.clientX, e.clientY);
     const event: InputEvent = {
