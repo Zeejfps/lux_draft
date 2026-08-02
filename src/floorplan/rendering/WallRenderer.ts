@@ -120,5 +120,9 @@ export class WallRenderer {
     this.disposeVertexMeshes();
     clearGroup(this.wallsGroup);
     clearGroup(this.labelsGroup);
+    // Unparent too: a renderer that only empties its group leaves an orphan behind on every
+    // dispose, which across mode switches is a growing scene graph.
+    this.wallsGroup.parent?.remove(this.wallsGroup);
+    this.labelsGroup.parent?.remove(this.labelsGroup);
   }
 }

@@ -107,5 +107,6 @@ export class DrawingPreviewRenderer {
     }
 
     clearGroup(this.drawingVerticesGroup);
+    this.drawingVerticesGroup.parent?.remove(this.drawingVerticesGroup);
   }
 }

@@ -40,6 +40,7 @@
   import RafterControls from '../modules/lighting/ui/RafterControls.svelte';
   import LightDefinitionManager from '../modules/lighting/ui/LightDefinitionManager.svelte';
   import ViewerPage from './viewer/ViewerPage.svelte';
+  import DiagnosticsBanner from './DiagnosticsBanner.svelte';
   import { openLoaded } from '../floorplan/stores/roomStore';
   import { saveInput } from '../floorplan/stores/sessionStore';
   import { adoptIncomingDefinitions } from '../modules/lighting/store';
@@ -217,6 +218,7 @@
         <LightToolPanel on:openLightManager={handleOpenLightManager} />
         <DoorToolPanel />
         <PropertyPanel />
+        <DiagnosticsBanner />
         {#each panelsForSelection($selection) as panel (panel.key)}
           <svelte:component this={panel.component} />
         {/each}

@@ -82,5 +82,7 @@ export class DoorRenderer {
   dispose(): void {
     clearGroup(this.doorsGroup);
     clearGroup(this.doorPreviewGroup);
+    this.doorsGroup.parent?.remove(this.doorsGroup);
+    this.doorPreviewGroup.parent?.remove(this.doorPreviewGroup);
   }
 }

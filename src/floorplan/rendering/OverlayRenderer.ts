@@ -61,5 +61,7 @@ export class OverlayRenderer {
     }
 
     clearGroup(this.selectionBoxGroup);
+    this.snapGuidesGroup.parent?.remove(this.snapGuidesGroup);
+    this.selectionBoxGroup.parent?.remove(this.selectionBoxGroup);
   }
 }

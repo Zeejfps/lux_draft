@@ -129,5 +129,9 @@ export class LightRenderer {
       disposeObject3D(this.previewLightGroup);
       this.previewLightGroup = null;
     }
+
+    // Unparent the group as well: a module's renderers are rebuilt on every activation, so a
+    // group left in the scene is a leak that grows with each mode switch.
+    this.scene.remove(this.lightsGroup);
   }
 }

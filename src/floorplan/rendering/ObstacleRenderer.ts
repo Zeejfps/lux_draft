@@ -226,5 +226,7 @@ export class ObstacleRenderer {
     this.disposeVertexMeshes();
     clearGroup(this.obstaclesGroup);
     clearGroup(this.labelsGroup);
+    this.obstaclesGroup.parent?.remove(this.obstaclesGroup);
+    this.labelsGroup.parent?.remove(this.labelsGroup);
   }
 }
