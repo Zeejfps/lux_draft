@@ -39,6 +39,10 @@ export function makeDocument(parts: DocumentParts = {}): EditorDocument {
     },
     space: { ceilingHeight: parts.ceilingHeight ?? doc.space.ceilingHeight },
     modules: buildModuleSlices({
+      // Every installed module's default, then lighting's overridden — so a helper-built
+      // document is shaped exactly like a decoded one. Naming only lighting here made the
+      // persistence round-trip tests fail the moment a second module was installed.
+      ...(doc.modules as Record<string, unknown>),
       [lightingCodec.id]: {
         ...defaultLightingData(),
         fixtures: parts.lights ?? [],

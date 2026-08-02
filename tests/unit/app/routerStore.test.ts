@@ -49,7 +49,11 @@ describe('parseRoutePath', () => {
     ['lighting/viewer/extra', { kind: 'picker' }],
     ['lighting/nonsense', { kind: 'picker' }],
     // Not installed in this build: ask rather than silently show a different mode.
-    ['flooring', { kind: 'picker' }],
+    ['plumbing', { kind: 'picker' }],
+    ['plumbing/viewer', { kind: 'picker' }],
+    // Installed but editor-only: its viewer route resolves to the picker, not to lighting's
+    // canvas under a flooring URL.
+    ['flooring', { kind: 'editor', moduleId: 'flooring' }],
     ['flooring/viewer', { kind: 'picker' }],
   ];
 
@@ -60,10 +64,21 @@ describe('parseRoutePath', () => {
   }
 
   it('resolves a module once it is installed', () => {
-    expect(parseRoutePath('flooring')).toEqual({ kind: 'picker' });
-    registerModule({ codec: stubCodec('flooring'), commands: [], label: 'Flooring' });
-    expect(parseRoutePath('flooring')).toEqual({ kind: 'editor', moduleId: 'flooring' });
-    expect(parseRoutePath('flooring/viewer')).toEqual({ kind: 'viewer', moduleId: 'flooring' });
+    expect(parseRoutePath('plumbing')).toEqual({ kind: 'picker' });
+    registerModule({
+      codec: stubCodec('plumbing'),
+      commands: [],
+      label: 'Plumbing',
+      viewable: true,
+    });
+    expect(parseRoutePath('plumbing')).toEqual({ kind: 'editor', moduleId: 'plumbing' });
+    expect(parseRoutePath('plumbing/viewer')).toEqual({ kind: 'viewer', moduleId: 'plumbing' });
+  });
+
+  it('an installed module with no viewer routes its viewer path to the picker', () => {
+    registerModule({ codec: stubCodec('roofing'), commands: [], label: 'Roofing' });
+    expect(parseRoutePath('roofing')).toEqual({ kind: 'editor', moduleId: 'roofing' });
+    expect(parseRoutePath('roofing/viewer')).toEqual({ kind: 'picker' });
   });
 });
 

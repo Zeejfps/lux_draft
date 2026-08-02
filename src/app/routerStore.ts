@@ -1,5 +1,5 @@
 import { writable, type Readable } from 'svelte/store';
-import { registeredModules } from '../floorplan/types/moduleRegistry';
+import { isModuleViewable, registeredModules } from '../floorplan/types/moduleRegistry';
 import { LIGHTING_MODULE_ID } from '../modules/lighting/codec';
 
 /**
@@ -19,7 +19,10 @@ import { LIGHTING_MODULE_ID } from '../modules/lighting/codec';
  * They resolve to lighting because that is what the app was before it had modes.
  *
  * A hash naming a module this build does not have installed resolves to the picker rather than
- * to lighting — silently showing a different mode's document is worse than asking.
+ * to lighting — silently showing a different mode's document is worse than asking. So does
+ * `#/{module}/viewer` for a module with no viewer (`ModuleDefinition.viewable`), for the same
+ * reason: the viewer page builds one module's layers by hand, so rendering it for another mode
+ * would show the wrong canvas under the right URL.
  *
  * `app/` may import anything, which is why the default module id is named here and nowhere in
  * `floorplan/`.
@@ -73,7 +76,10 @@ export function parseRoutePath(path: string): Route {
   const [moduleId, second] = segments;
   if (!isInstalled(moduleId)) return { kind: 'picker' };
   if (segments.length === 1) return { kind: 'editor', moduleId };
-  if (segments.length === 2 && second === VIEWER_SEGMENT) return { kind: 'viewer', moduleId };
+  if (segments.length === 2 && second === VIEWER_SEGMENT) {
+    // A mode with no viewer resolves to the picker rather than rendering another mode's canvas.
+    return isModuleViewable(moduleId) ? { kind: 'viewer', moduleId } : { kind: 'picker' };
+  }
   return { kind: 'picker' };
 }
 

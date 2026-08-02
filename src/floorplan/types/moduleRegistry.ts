@@ -28,6 +28,21 @@ export interface ModuleDefinition<T> {
    * 5 is what makes the routing lazy and adds the bundle check. Omit for a data-only module.
    */
   loadRuntime?(): Promise<ModuleRuntime>;
+  /**
+   * Whether the read-only viewer page can render this mode.
+   *
+   * The viewer is a second page that builds a module's layers **by hand** — it has no editor
+   * session and therefore no activation registry — so it is lighting-shaped end to end and a
+   * second module does not get one for free. This flag is what a second module needed core to
+   * grow (phase 6), and it is deliberately a fact about the *installed module* rather than
+   * about its lazy runtime: the share dialog has to know before any `import()` resolves, and a
+   * route has to resolve synchronously.
+   *
+   * Consequences of `false`: `#/{module}/viewer` resolves to the mode picker instead of
+   * rendering the wrong mode's canvas, and the share dialog will not offer a link nobody could
+   * open. Defaults to `false` — a new module is editor-only until its viewer exists.
+   */
+  readonly viewable?: boolean;
 }
 
 /** The erased form the table stores. `ModuleCodec<T>` is invariant in `T`. */
@@ -84,6 +99,11 @@ export function registeredModules(): readonly ModuleDefinition<unknown>[] {
 
 export function registeredCodecs(): readonly ModuleCodec<unknown>[] {
   return [...definitions.values()].map((d) => d.codec);
+}
+
+/** True when the viewer page can render this mode. See `ModuleDefinition.viewable`. */
+export function isModuleViewable(moduleId: string): boolean {
+  return definitions.get(moduleId)?.viewable === true;
 }
 
 export function codecFor(moduleId: string): ModuleCodec<unknown> | undefined {

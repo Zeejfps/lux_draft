@@ -14,5 +14,9 @@ or could write, so none of them may be "fixed" — change the decoder instead.
 | `envelope-v3-corrupt-blob.json`      | A well-formed blob whose payload fails the codec's validation → `invalid`. |
 | `envelope-v3-unknown-module.json`    | A blob for a module id this build has no codec for → `unknownModule`.      |
 
+The unknown-module fixture names `plumbing` and must keep naming a module that is **not**
+installed. It said `flooring` until phase 6 installed one, at which point it silently started
+proving `unsupported` instead — pick an id no build is likely to grow.
+
 Read them with `loadFixture(name)` from `tests/fixtures/load.ts`, which returns freshly parsed
 `unknown` — never a shared object, so a test cannot mutate another test's input.

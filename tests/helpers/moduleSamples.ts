@@ -3,6 +3,7 @@ import type { ModuleCodec } from '../../src/floorplan/types/module';
 import { buildModuleSlices } from '../../src/floorplan/types/module';
 import { createEmptyDocument } from '../../src/floorplan/types/document';
 import * as lighting from '../../src/modules/lighting/commands';
+import * as flooring from '../../src/modules/flooring/commands';
 
 /**
  * Sample payloads for the shared command contract test.
@@ -45,6 +46,23 @@ export const COMMAND_SAMPLES: Record<string, unknown> = {
   [lighting.setDefinitions.type]: {
     definitions: [{ id: 'custom-sample', name: 'Sample', lumen: 900, beamAngle: 45, warmth: 3000 }],
   },
+  [flooring.configureLayout.type]: {
+    config: {
+      runAngleDeg: 45,
+      startCorner: 'topRight',
+      stagger: 'random',
+      minEndCutIn: 6,
+      expansionGapIn: 0.5,
+      rowOffsetPattern: [0, 0.25, 0.5, 0.75],
+      seed: 7,
+    },
+  },
+  [flooring.setPlankSpec.type]: { plank: { widthIn: 6, lengthIn: 36, name: 'Sample plank' } },
+  [flooring.moveOrigin.type]: { position: { x: 2, y: 3 } },
+  [flooring.addTransition.type]: {
+    transition: { id: 'sample-transition', doorId: 'sample-door', kind: 'reducer' },
+  },
+  [flooring.removeTransition.type]: { transitionId: 'sample-transition' },
 };
 
 /** A document carrying one live module slice and nothing else. */

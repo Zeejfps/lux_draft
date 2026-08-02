@@ -22,12 +22,20 @@
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
+  /**
+   * A link opens the viewer, so a mode with no viewer cannot be shared — the recipient would
+   * land on the mode picker holding a payload nothing renders. That is a *runtime capability*
+   * of the build, distinct from the data being unreadable below, and both disable the row.
+   */
   const modes = registeredModules().map((definition) => ({
     id: definition.codec.id,
     label: definition.label,
+    viewable: definition.viewable === true,
   }));
 
-  let selectedModuleId: string = DEFAULT_MODULE_ID;
+  const firstViewable = modes.find((mode) => mode.viewable)?.id ?? DEFAULT_MODULE_ID;
+
+  let selectedModuleId: string = firstViewable;
   let copied = false;
   let error = '';
   let result: { url: string; length: number; warning?: string } | null = null;
@@ -35,7 +43,8 @@
   // Default to the active mode, without overriding a choice the user already made.
   let defaulted = false;
   $: if (visible && !defaulted) {
-    selectedModuleId = $activeModule?.id ?? modes[0]?.id ?? DEFAULT_MODULE_ID;
+    const active = modes.find((mode) => mode.id === $activeModule?.id && mode.viewable)?.id;
+    selectedModuleId = active ?? firstViewable;
     defaulted = true;
   }
   $: if (!visible) {
@@ -97,17 +106,19 @@
 
       <div class="modes">
         {#each modes as mode (mode.id)}
-          <label class="mode-row" class:disabled={quarantined.has(mode.id)}>
+          <label class="mode-row" class:disabled={quarantined.has(mode.id) || !mode.viewable}>
             <input
               type="radio"
               name="share-module"
               value={mode.id}
               bind:group={selectedModuleId}
-              disabled={quarantined.has(mode.id)}
+              disabled={quarantined.has(mode.id) || !mode.viewable}
             />
             <span class="mode-label">{mode.label}</span>
             {#if quarantined.has(mode.id)}
               <span class="mode-note">unreadable in this build — cannot be shared</span>
+            {:else if !mode.viewable}
+              <span class="mode-note">no viewer for this mode yet</span>
             {/if}
           </label>
         {/each}

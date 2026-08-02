@@ -28,12 +28,11 @@
         "definitions": []
       }
     },
-    "flooring": {
+    "plumbing": {
       "v": 2,
       "data": {
-        "layout": { "runAngle": 30, "startCorner": "north-west", "stagger": "third" },
-        "plank": { "widthInches": 7, "lengthInches": 48 },
-        "transitions": [{ "id": "t1", "wallId": "w1", "offset": 4, "width": 3 }]
+        "fixtures": [{ "id": "sink-1", "position": { "x": 4, "y": 2 }, "kind": "sink" }],
+        "runs": [{ "id": "r1", "from": "sink-1", "diameterInches": 1.5 }]
       }
     }
   }

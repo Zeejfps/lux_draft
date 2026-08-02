@@ -3,6 +3,9 @@ import { registerModule } from '../floorplan/types/moduleRegistry';
 import type { LightingData } from './lighting/codec';
 import { lightingCodec } from './lighting/codec';
 import { lightingCommands } from './lighting/commands';
+import type { FlooringData } from './flooring/codec';
+import { flooringCodec } from './flooring/codec';
+import { flooringCommands } from './flooring/commands';
 
 /**
  * The eager barrel: every installed module's codec and command table, statically imported.
@@ -28,10 +31,23 @@ const lightingModule: ModuleDefinition<LightingData> = {
    * out of the eager chunk this barrel is in. Phase 5 routes on it and adds the bundle check.
    */
   loadRuntime: () => import('./lighting/runtime').then((m) => m.lightingRuntime),
+  // The viewer page builds lighting's layers by hand; see `ModuleDefinition.viewable`.
+  viewable: true,
+};
+
+const flooringModule: ModuleDefinition<FlooringData> = {
+  codec: flooringCodec,
+  commands: flooringCommands,
+  label: 'Flooring',
+  loadRuntime: () => import('./flooring/runtime').then((m) => m.flooringRuntime),
+  // Editor-only for now: the viewer is not module-generic, and giving it an activation scope is
+  // its own piece of work. `#/flooring/viewer` resolves to the mode picker meanwhile.
+  viewable: false,
 };
 
 export function installModules(): void {
   registerModule(lightingModule);
+  registerModule(flooringModule);
 }
 
 installModules();

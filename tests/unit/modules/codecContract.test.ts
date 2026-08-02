@@ -151,11 +151,13 @@ describe('registry contract: registration validates and fails fast', () => {
   });
 
   it('re-running the eager barrel is a no-op, not a duplicate', () => {
+    const installed = registeredCodecs().length;
+    expect(installed).toBeGreaterThan(1); // lighting and flooring: the contract has two subjects
     expect(() => {
       installModules();
       installModules();
     }).not.toThrow();
-    expect(registeredCodecs()).toHaveLength(1);
+    expect(registeredCodecs()).toHaveLength(installed);
   });
 
   it('rejects a command whose type is not namespaced with its module id', () => {

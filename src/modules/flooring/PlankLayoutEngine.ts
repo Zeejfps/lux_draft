@@ -1,0 +1,499 @@
+import type { Obstacle, Vector2, WallSegment } from '../../floorplan/types/geometry';
+import type { LayoutConfig, PlankSpec, StartCorner } from './types';
+import { INCHES_PER_FOOT, MAX_PLANKS } from './types';
+
+/**
+ * `PlankLayoutEngine` — a **pure** function of (boundary, obstacles, plank, layout, origin) to
+ * planks, a cut list and a waste percentage.
+ *
+ * Nothing here reads a store, a document, a session or a selection, and nothing here is stored
+ * (invariant 5): there is no field for a layout on `FlooringData`, no persistence API accepts
+ * one, and the codec round-trip test asserts the persisted shape. Store the config, derive the
+ * floor — which also gives correct undo granularity for free, stepping through user intent
+ * rather than machine output.
+ *
+ * It is also free of `three` and of `svelte`, which is what makes it testable as a table and
+ * what makes moving it into a worker a change confined to `layoutProjection.ts`.
+ *
+ * ## Method
+ *
+ * Rows are laid in a **run-aligned frame**: the room is rotated by `-runAngleDeg` about the
+ * layout origin and then mirrored so that the configured start corner is always the local
+ * bottom-left. From there the run is always `+x` and rows always stack in `+y`, so the four
+ * start corners and every run angle collapse into one code path and one set of tests.
+ *
+ * Within that frame each row is a horizontal band. The engine scan-lines the band's centreline
+ * against the room polygon to get the intervals that are inside the room, subtracts the same
+ * scan against every obstacle polygon, and lays planks along what is left. A scan line rather
+ * than a polygon boolean because the room is frequently concave (an L-shaped kitchen) and
+ * Sutherland–Hodgman clipping is only correct against a convex clip region — and because a cut
+ * list wants piece *lengths* along the run, which is exactly what an interval gives.
+ *
+ * That approximation is named, not hidden: a plank straddling a diagonal wall is cut square at
+ * the interval end rather than mitred, so a strongly non-rectilinear room reports slightly less
+ * covered area than it needs. For a rectilinear room — every room this editor draws by default,
+ * and every obstacle it draws — the result is exact.
+ */
+
+// ============================================
+// Inputs and outputs
+// ============================================
+
+/**
+ * The **narrow inputs** the projection requirement names. Note what is absent: no `Session`, no
+ * `EditorDocument`, no `ModuleView`, no selection, no display preferences, no view mode. A
+ * selection change cannot invalidate a layout because a selection is not reachable from here.
+ */
+export interface LayoutInputs {
+  readonly walls: readonly WallSegment[];
+  readonly isClosed: boolean;
+  readonly obstacles: readonly Obstacle[];
+  readonly plank: PlankSpec;
+  readonly layout: LayoutConfig;
+  readonly origin: Vector2;
+}
+
+export interface Plank {
+  readonly id: string;
+  readonly row: number;
+  readonly column: number;
+  /** World-space centre of the piece. */
+  readonly center: Vector2;
+  /** Along-run length, feet. */
+  readonly length: number;
+  /** Across-run width, feet. Always the full plank width. */
+  readonly width: number;
+  /** True when the piece is shorter than a full plank. */
+  readonly cut: boolean;
+}
+
+/** One line of the cut list: "14 pieces at 23 1/2 in". */
+export interface CutListEntry {
+  /** Rounded to the nearest 1/8 in — the finest mark on a tape measure. */
+  readonly lengthIn: number;
+  readonly count: number;
+}
+
+export interface PlankLayout {
+  /** The structural key of the inputs this was computed from. */
+  readonly key: string;
+  readonly planks: readonly Plank[];
+  readonly cutList: readonly CutListEntry[];
+  /** Run angle in radians, world space. Every plank shares it. */
+  readonly angle: number;
+  readonly fullPieces: number;
+  readonly cutPieces: number;
+  /** Boards that must actually be bought, after re-using off-cuts. */
+  readonly purchasedPlanks: number;
+  readonly coveredSqft: number;
+  readonly purchasedSqft: number;
+  readonly wastePercent: number;
+  /** True when `MAX_PLANKS` stopped the run; the figures below it are then a floor, not a total. */
+  readonly truncated: boolean;
+}
+
+export const EMPTY_LAYOUT: PlankLayout = {
+  key: '',
+  planks: [],
+  cutList: [],
+  angle: 0,
+  fullPieces: 0,
+  cutPieces: 0,
+  purchasedPlanks: 0,
+  coveredSqft: 0,
+  purchasedSqft: 0,
+  wastePercent: 0,
+  truncated: false,
+};
+
+// ============================================
+// The structural key
+// ============================================
+
+/**
+ * A key over exactly the inputs the layout depends on.
+ *
+ * It is what makes the cache a **hit** rather than a recompute when the user undoes past a
+ * config change and back: the same inputs produce the same string, whichever route the document
+ * took to get there. It is deliberately the full canonical form rather than a hash — a hash
+ * collision here would silently render the wrong floor, and a room has tens of vertices, not
+ * thousands.
+ */
+export function layoutKey(inputs: LayoutInputs): string {
+  if (!inputs.isClosed || inputs.walls.length < 3) return 'open';
+  const n = (v: number): string => (Math.round(v * 1e6) / 1e6).toString();
+  const poly = (walls: readonly WallSegment[]): string =>
+    walls.map((w) => `${n(w.start.x)},${n(w.start.y)}`).join(' ');
+  const { plank, layout, origin } = inputs;
+  return [
+    poly(inputs.walls),
+    inputs.obstacles.map((o) => poly(o.walls)).join('|'),
+    `${n(plank.widthIn)}x${n(plank.lengthIn)}`,
+    [
+      n(layout.runAngleDeg),
+      layout.startCorner,
+      layout.stagger,
+      n(layout.minEndCutIn),
+      n(layout.expansionGapIn),
+      layout.rowOffsetPattern.map(n).join(','),
+      layout.seed,
+    ].join('/'),
+    `${n(origin.x)},${n(origin.y)}`,
+  ].join(';');
+}
+
+// ============================================
+// The run-aligned frame
+// ============================================
+
+const EPS = 1e-9;
+
+/** Signs that map the configured start corner onto the local bottom-left. */
+function cornerSigns(corner: StartCorner): { sx: number; sy: number } {
+  return {
+    sx: corner === 'bottomRight' || corner === 'topRight' ? -1 : 1,
+    sy: corner === 'topLeft' || corner === 'topRight' ? -1 : 1,
+  };
+}
+
+interface Frame {
+  readonly cos: number;
+  readonly sin: number;
+  readonly sx: number;
+  readonly sy: number;
+  readonly origin: Vector2;
+}
+
+function toLocal(frame: Frame, p: Vector2): Vector2 {
+  const dx = p.x - frame.origin.x;
+  const dy = p.y - frame.origin.y;
+  return {
+    x: frame.sx * (dx * frame.cos + dy * frame.sin),
+    y: frame.sy * (-dx * frame.sin + dy * frame.cos),
+  };
+}
+
+function toWorld(frame: Frame, p: Vector2): Vector2 {
+  const lx = frame.sx * p.x;
+  const ly = frame.sy * p.y;
+  return {
+    x: frame.origin.x + lx * frame.cos - ly * frame.sin,
+    y: frame.origin.y + lx * frame.sin + ly * frame.cos,
+  };
+}
+
+// ============================================
+// Scan lines
+// ============================================
+
+/** Ascending x values where the polygon's edges cross the horizontal line `y`. */
+function crossings(polygon: readonly Vector2[], y: number): number[] {
+  const xs: number[] = [];
+  const n = polygon.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const a = polygon[j];
+    const b = polygon[i];
+    if (a.y > y !== b.y > y) {
+      xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+    }
+  }
+  return xs.sort((p, q) => p - q);
+}
+
+type Interval = readonly [number, number];
+
+function intervalsAt(polygon: readonly Vector2[], y: number): Interval[] {
+  const xs = crossings(polygon, y);
+  const out: Interval[] = [];
+  for (let i = 0; i + 1 < xs.length; i += 2) {
+    if (xs[i + 1] - xs[i] > EPS) out.push([xs[i], xs[i + 1]]);
+  }
+  return out;
+}
+
+/** `spans` minus `holes`. Both ascending and non-overlapping; the result is too. */
+function subtractIntervals(spans: Interval[], holes: Interval[]): Interval[] {
+  if (holes.length === 0) return spans;
+  let current = spans;
+  for (const [hs, he] of holes) {
+    const next: Interval[] = [];
+    for (const [s, e] of current) {
+      if (he <= s + EPS || hs >= e - EPS) {
+        next.push([s, e]);
+        continue;
+      }
+      if (hs - s > EPS) next.push([s, hs]);
+      if (e - he > EPS) next.push([he, e]);
+    }
+    current = next;
+  }
+  return current;
+}
+
+// ============================================
+// Stagger
+// ============================================
+
+function mod(value: number, m: number): number {
+  return ((value % m) + m) % m;
+}
+
+/** Deterministic in `(seed, row)`, so `random` stagger is still a pure function of the config. */
+function hashFraction(seed: number, row: number): number {
+  let h = (Math.trunc(seed) ^ 0x9e3779b9) >>> 0;
+  h = Math.imul(h ^ (row + 0x85ebca6b), 0xcc9e2d51) >>> 0;
+  h = Math.imul((h << 15) | (h >>> 17), 0x1b873593) >>> 0;
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+function rowOffset(row: number, config: LayoutConfig, plankLength: number): number {
+  switch (config.stagger) {
+    case 'none':
+      return 0;
+    case 'half':
+      return mod(row, 2) * (plankLength / 2);
+    case 'thirds':
+      return mod(row, 3) * (plankLength / 3);
+    case 'pattern': {
+      const pattern = config.rowOffsetPattern;
+      if (pattern.length === 0) return 0;
+      return mod(pattern[mod(row, pattern.length)], 1) * plankLength;
+    }
+    case 'random':
+      return hashFraction(config.seed, row) * plankLength;
+  }
+}
+
+// ============================================
+// Laying one row
+// ============================================
+
+interface Piece {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Cut one interval into pieces against the joint grid `offset + k * length`.
+ *
+ * The grid is anchored at the layout **origin**, not at the room's bounding box, so moving the
+ * origin visibly shifts every joint — which is the whole point of it being draggable.
+ */
+function cutInterval(span: Interval, offset: number, length: number): Piece[] {
+  const [a, b] = span;
+  const pieces: Piece[] = [];
+  let x = a;
+  let guard = 0;
+  while (b - x > EPS) {
+    if (++guard > MAX_PLANKS) break;
+    const k = Math.ceil((x - offset + EPS) / length);
+    const joint = offset + k * length;
+    const end = Math.min(joint > x + EPS ? joint : x + length, b);
+    pieces.push({ start: x, end });
+    x = end;
+  }
+  return pieces;
+}
+
+/**
+ * Cut a row, honouring the minimum end cut.
+ *
+ * A run that ends in a 1" sliver is unusable — it snaps on install and it looks like a mistake.
+ * The fix a real installer uses is to move the row's starting offset so the short piece lands
+ * at the other end where it can be a whole board's worth longer; that is one retry with the
+ * joint grid shifted left by the shortfall, accepted only if it does not make the *first* piece
+ * too short in turn. If both ends would be short — a room narrower than the minimum — the
+ * original is kept, because a slightly wrong cut list beats an infinite loop.
+ */
+function layRow(span: Interval, offset: number, length: number, minEndCut: number): Piece[] {
+  const pieces = cutInterval(span, offset, length);
+  if (pieces.length < 2 || minEndCut <= 0) return pieces;
+
+  const last = pieces[pieces.length - 1];
+  const lastLength = last.end - last.start;
+  if (lastLength >= minEndCut - EPS) return pieces;
+
+  const deficit = minEndCut - lastLength;
+  const firstLength = pieces[0].end - pieces[0].start;
+  if (firstLength - deficit < minEndCut - EPS) return pieces;
+
+  return cutInterval(span, offset - deficit, length);
+}
+
+// ============================================
+// Waste
+// ============================================
+
+/** An off-cut shorter than this is scrap, not stock. Feet. */
+const MIN_USABLE_OFFCUT_FT = 0.5;
+
+/**
+ * How many boards actually get bought.
+ *
+ * Naively every cut piece would cost a whole plank, which overstates waste by a factor of two
+ * on a typical floor: the off-cut from the end of one row starts the next. This models the pool
+ * an installer actually keeps — take the **smallest** off-cut that will do, so long pieces stay
+ * available — and it is what makes the waste figure worth showing.
+ */
+function purchaseSimulation(lengths: readonly number[], plankLength: number): number {
+  const offcuts: number[] = [];
+  let purchased = 0;
+
+  for (const length of lengths) {
+    if (length >= plankLength - EPS) {
+      purchased += 1;
+      continue;
+    }
+    let best = -1;
+    for (let i = 0; i < offcuts.length; i++) {
+      if (offcuts[i] >= length - EPS && (best < 0 || offcuts[i] < offcuts[best])) best = i;
+    }
+    if (best >= 0) {
+      const rest = offcuts[best] - length;
+      offcuts.splice(best, 1);
+      if (rest > MIN_USABLE_OFFCUT_FT) offcuts.push(rest);
+    } else {
+      purchased += 1;
+      const rest = plankLength - length;
+      if (rest > MIN_USABLE_OFFCUT_FT) offcuts.push(rest);
+    }
+  }
+  return purchased;
+}
+
+function buildCutList(cutLengthsFt: readonly number[]): CutListEntry[] {
+  const counts = new Map<number, number>();
+  for (const feet of cutLengthsFt) {
+    // The finest mark on a tape measure. Two pieces 1/64" apart are one line of the cut list.
+    const eighths = Math.round(feet * INCHES_PER_FOOT * 8);
+    const lengthIn = eighths / 8;
+    counts.set(lengthIn, (counts.get(lengthIn) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([lengthIn, count]) => ({ lengthIn, count }))
+    .sort((a, b) => b.lengthIn - a.lengthIn);
+}
+
+// ============================================
+// The engine
+// ============================================
+
+/**
+ * Derive a floor. Pure, total, and synchronous — the *caller* decides when to run it, which is
+ * what `layoutProjection.ts` exists to do.
+ *
+ * `signal` is honoured between rows so a superseded computation stops rather than finishing and
+ * being thrown away. It is optional: a test calls this directly with no signal at all, which is
+ * the same reason it takes `LayoutInputs` and not a view.
+ */
+export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): PlankLayout {
+  const key = layoutKey(inputs);
+  const { walls, isClosed, obstacles, plank, layout, origin } = inputs;
+
+  const plankWidth = plank.widthIn / INCHES_PER_FOOT;
+  const plankLength = plank.lengthIn / INCHES_PER_FOOT;
+  if (!isClosed || walls.length < 3 || plankWidth <= 0 || plankLength <= 0) {
+    return { ...EMPTY_LAYOUT, key };
+  }
+
+  const theta = (layout.runAngleDeg * Math.PI) / 180;
+  const { sx, sy } = cornerSigns(layout.startCorner);
+  const frame: Frame = { cos: Math.cos(theta), sin: Math.sin(theta), sx, sy, origin };
+
+  const room = walls.map((w) => toLocal(frame, w.start));
+  const holes = obstacles.map((o) => o.walls.map((w) => toLocal(frame, w.start)));
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of room) {
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  if (!Number.isFinite(minY) || maxY - minY <= EPS) return { ...EMPTY_LAYOUT, key };
+
+  const gap = Math.max(0, layout.expansionGapIn) / INCHES_PER_FOOT;
+  const minEndCut = Math.max(0, layout.minEndCutIn) / INCHES_PER_FOOT;
+
+  const firstRow = Math.floor(minY / plankWidth);
+  const lastRow = Math.ceil(maxY / plankWidth);
+  const rowCount = lastRow - firstRow;
+  if (rowCount <= 0 || rowCount > MAX_PLANKS)
+    return { ...EMPTY_LAYOUT, key, truncated: rowCount > 0 };
+
+  const planks: Plank[] = [];
+  const lengths: number[] = [];
+  const cutLengths: number[] = [];
+  let fullPieces = 0;
+  let truncated = false;
+
+  for (let row = firstRow; row < lastRow; row++) {
+    if (signal?.aborted) {
+      truncated = true;
+      break;
+    }
+    const centreY = (row + 0.5) * plankWidth;
+    if (centreY < minY || centreY > maxY) continue;
+
+    const spans = subtractIntervals(
+      intervalsAt(room, centreY),
+      holes.flatMap((hole) => intervalsAt(hole, centreY))
+    ).sort((a, b) => a[0] - b[0]);
+
+    const offset = rowOffset(row, layout, plankLength);
+    let column = 0;
+
+    for (const [rawStart, rawEnd] of spans) {
+      const start = rawStart + gap;
+      const end = rawEnd - gap;
+      if (end - start <= EPS) continue;
+
+      for (const piece of layRow([start, end], offset, plankLength, minEndCut)) {
+        if (planks.length >= MAX_PLANKS) {
+          truncated = true;
+          break;
+        }
+        const length = piece.end - piece.start;
+        if (length <= EPS) continue;
+        const cut = length < plankLength - EPS;
+        planks.push({
+          id: `p${row}:${column}`,
+          row,
+          column,
+          center: toWorld(frame, { x: (piece.start + piece.end) / 2, y: centreY }),
+          length,
+          width: plankWidth,
+          cut,
+        });
+        lengths.push(length);
+        if (cut) cutLengths.push(length);
+        else fullPieces += 1;
+        column += 1;
+      }
+      if (truncated) break;
+    }
+    if (truncated) break;
+  }
+
+  const purchasedPlanks = purchaseSimulation(lengths, plankLength);
+  const coveredSqft = lengths.reduce((sum, length) => sum + length, 0) * plankWidth;
+  const purchasedSqft = purchasedPlanks * plankLength * plankWidth;
+  const wastePercent =
+    purchasedSqft > 0 ? ((purchasedSqft - coveredSqft) / purchasedSqft) * 100 : 0;
+
+  return {
+    key,
+    planks,
+    cutList: buildCutList(cutLengths),
+    // The mirror is a frame detail; a renderer only needs the world-space run direction, and
+    // a plank rotated by 180° looks identical, so the un-mirrored angle is the right one.
+    angle: theta,
+    fullPieces,
+    cutPieces: cutLengths.length,
+    purchasedPlanks,
+    coveredSqft,
+    purchasedSqft,
+    wastePercent,
+    truncated,
+  };
+}

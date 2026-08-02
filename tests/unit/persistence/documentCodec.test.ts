@@ -197,8 +197,8 @@ describe('quarantine: a corrupt blob', () => {
 describe('quarantine: an unknown module id', () => {
   it('is preserved with no warning — expected in a single-module build', () => {
     const loaded = decodeDocument(loadFixture('envelope-v3-unknown-module.json'));
-    expect(loaded.carried.quarantined.flooring.reason).toBe('unknownModule');
-    expect(loaded.carried.quarantined.flooring.message).toBeUndefined();
+    expect(loaded.carried.quarantined.plumbing.reason).toBe('unknownModule');
+    expect(loaded.carried.quarantined.plumbing.message).toBeUndefined();
     expect(loaded.diagnostics.warnings).toEqual([]);
     // The module this build *does* know stays live alongside it.
     expect(hasModuleSlice(loaded.document, lightingCodec)).toBe(true);
@@ -255,7 +255,7 @@ describe('normalize on load / prune on save', () => {
     const loaded = decodeDocument(loadFixture('envelope-v3-unknown-module.json'));
     expect(Object.isFrozen(loaded.document.geometry.boundary.walls)).toBe(true);
     expect(Object.isFrozen(lighting(loaded))).toBe(true);
-    expect(Object.isFrozen(loaded.carried.quarantined.flooring.blob.data)).toBe(true);
+    expect(Object.isFrozen(loaded.carried.quarantined.plumbing.blob.data)).toBe(true);
   });
 
   it('omits a slice that deep-equals a freshly allocated default', () => {
@@ -293,7 +293,7 @@ describe('merge precedence: quarantined vs live', () => {
     };
     const loaded = decodeDocument(raw);
     const envelope = encodeDocument(loaded.document, loaded.carried, { kind: 'file' });
-    expect(envelope.modules.flooring).toEqual(raw.modules.flooring);
+    expect(envelope.modules.plumbing).toEqual(raw.modules.plumbing);
   });
 
   it('quarantined blobs round-trip value-identically through decode → encode → decode', () => {
@@ -315,7 +315,7 @@ describe('merge precedence: quarantined vs live', () => {
   it('records no drift flag when geometry has not changed since load', () => {
     const loaded = decodeDocument(loadFixture('envelope-v3-unknown-module.json'));
     const envelope = encodeDocument(loaded.document, loaded.carried, { kind: 'local' });
-    expect(envelope.quarantineFlags).toEqual({ flooring: { geometryChangedSinceLoad: false } });
+    expect(envelope.quarantineFlags).toEqual({ plumbing: { geometryChangedSinceLoad: false } });
   });
 
   it('records the drift flag once a geometry command has landed', () => {
@@ -326,14 +326,14 @@ describe('merge precedence: quarantined vs live', () => {
       position: { x: -1, y: -1 },
     });
     const envelope = encodeDocument(edited, loaded.carried, { kind: 'local' });
-    expect(envelope.quarantineFlags).toEqual({ flooring: { geometryChangedSinceLoad: true } });
+    expect(envelope.quarantineFlags).toEqual({ plumbing: { geometryChangedSinceLoad: true } });
   });
 
   it('a non-geometry edit does not set the drift flag', () => {
     const loaded = decodeDocument(loadFixture('envelope-v3-unknown-module.json'));
     const edited = applyCommand(loaded.document, { type: 'space.setCeilingHeight', height: 12 });
     const envelope = encodeDocument(edited, loaded.carried, { kind: 'local' });
-    expect(envelope.quarantineFlags?.flooring.geometryChangedSinceLoad).toBe(false);
+    expect(envelope.quarantineFlags?.plumbing.geometryChangedSinceLoad).toBe(false);
   });
 
   it('omits quarantineFlags entirely when nothing is quarantined', () => {
