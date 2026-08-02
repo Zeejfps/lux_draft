@@ -67,12 +67,12 @@
     </label>
     <div class="property-row info">
       <span>Walls</span>
-      <span>{currentRoom.walls.length}</span>
+      <span>{currentRoom.geometry.boundary.walls.length}</span>
     </div>
     <div class="property-row info">
       <span>Status</span>
-      <span class:closed={currentRoom.isClosed}>
-        {currentRoom.isClosed ? 'Closed' : 'Open'}
+      <span class:closed={currentRoom.geometry.boundary.isClosed}>
+        {currentRoom.geometry.boundary.isClosed ? 'Closed' : 'Open'}
       </span>
     </div>
     <div class="property-row info">
@@ -81,7 +81,7 @@
     </div>
     <div class="property-row info">
       <span>Doors</span>
-      <span>{currentRoom.doors.length}</span>
+      <span>{currentRoom.geometry.doors.length}</span>
     </div>
     <div class="property-row">
       <span>Units</span>

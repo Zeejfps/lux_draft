@@ -40,7 +40,15 @@
   }
 
   async function handleShare(): Promise<void> {
-    const result = generateShareUrl($saveInput, LIGHTING_MODULE_ID);
+    // `encodeDocument` refuses to share a module whose data this build could not decode — a
+    // link for it would fail on open.
+    let result: ReturnType<typeof generateShareUrl>;
+    try {
+      result = generateShareUrl($saveInput, LIGHTING_MODULE_ID);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'This design cannot be shared.');
+      return;
+    }
     await navigator.clipboard.writeText(result.url);
     shareCopied = true;
     setTimeout(() => {

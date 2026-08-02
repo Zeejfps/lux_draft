@@ -644,7 +644,9 @@
     wallBuilder = new WallBuilder();
     obstacleWallBuilder = new WallBuilder();
     polygonValidator = new PolygonValidator();
-    lightManager = new LightManager();
+    // Resolve photometry through the picker view, which prefers the document's own copy of
+    // a shared definition id over the local library's.
+    lightManager = new LightManager((id) => get(pickerDefinitions).find((d) => d.id === id));
     snapController = new SnapController();
     measurementController = new MeasurementController();
 
