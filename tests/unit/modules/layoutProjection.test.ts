@@ -86,6 +86,7 @@ describe('narrow inputs', () => {
       'obstacles',
       'origin',
       'plank',
+      'regions',
       'walls',
     ]);
   });

@@ -1,10 +1,13 @@
 import type { Vector2 } from '../../floorplan/types/geometry';
 import type { DecodeResult, ModuleBlob, ModuleCodec } from '../../floorplan/types/module';
 import type {
+  Divider,
   LayoutConfig,
   PlankSpec,
   StaggerRule,
   StartCorner,
+  SurfaceAssignment,
+  SurfaceKind,
   Transition,
   TransitionKind,
 } from './types';
@@ -14,6 +17,7 @@ import {
   DEFAULT_PLANK_SPEC,
   STAGGER_LABELS,
   START_CORNER_LABELS,
+  SURFACE_LABELS,
   TRANSITION_LABELS,
 } from './types';
 
@@ -31,8 +35,14 @@ import {
 
 export const FLOORING_MODULE_ID = 'flooring';
 
-/** Bumped by this module alone. The envelope version and other modules are unaffected. */
-export const FLOORING_SCHEMA_VERSION = 1;
+/**
+ * Bumped by this module alone. The envelope version and other modules are unaffected.
+ *
+ * v2 adds `dividers` and `surfaces`. Both default to empty, and empty means "one area, plank" —
+ * so a v1 document decodes to the floor it always had, and this build reads it without a
+ * migration step.
+ */
+export const FLOORING_SCHEMA_VERSION = 2;
 
 /**
  * Everything the flooring module owns. Four small values; the floor itself is derived.
@@ -46,6 +56,17 @@ export interface FlooringData {
   layout: LayoutConfig;
   origin: Vector2;
   transitions: Transition[];
+  /**
+   * Where the floor changes, in document order. Order matters: `RegionSolver` applies them in
+   * sequence, so a divider that lands on an earlier one T-joins it, and one that would need a
+   * later divider to exist first does not attach.
+   */
+  dividers: Divider[];
+  /**
+   * Which area is which surface, stored against a seed point rather than a face id — faces are
+   * derived and have no id to store. An empty list is the whole room in plank.
+   */
+  surfaces: SurfaceAssignment[];
 }
 
 /** Freshly allocated on every call, all the way down. Never share a literal. */
@@ -58,6 +79,8 @@ export function defaultFlooringData(): FlooringData {
     },
     origin: { ...DEFAULT_LAYOUT_ORIGIN },
     transitions: [],
+    dividers: [],
+    surfaces: [],
   };
 }
 
@@ -166,9 +189,7 @@ export function normalizeAngle(degrees: number): number {
 
 function readOrigin(value: unknown): Vector2 {
   if (value === undefined || value === null) return { ...DEFAULT_LAYOUT_ORIGIN };
-  if (!isRecord(value)) fail('origin must be an object');
-  if (!isFiniteNumber(value.x) || !isFiniteNumber(value.y)) fail('origin must have numeric x/y');
-  return { x: value.x, y: value.y };
+  return readVector2(value, 'origin');
 }
 
 function readTransition(value: unknown, path: string): Transition {
@@ -181,6 +202,36 @@ function readTransition(value: unknown, path: string): Transition {
     fail(`${path}.kind "${String(value.kind)}" is not a known transition kind`);
   }
   return { id: value.id, doorId: value.doorId, kind: value.kind as TransitionKind };
+}
+
+function readVector2(value: unknown, path: string): Vector2 {
+  if (!isRecord(value)) fail(`${path} must be an object`);
+  if (!isFiniteNumber(value.x) || !isFiniteNumber(value.y)) fail(`${path} must have numeric x/y`);
+  return { x: value.x, y: value.y };
+}
+
+function readDivider(value: unknown, path: string): Divider {
+  if (!isRecord(value)) fail(`${path} must be an object`);
+  if (typeof value.id !== 'string' || value.id === '') fail(`${path}.id must be a string`);
+  if (typeof value.kind !== 'string' || !(value.kind in TRANSITION_LABELS)) {
+    fail(`${path}.kind "${String(value.kind)}" is not a known transition kind`);
+  }
+  const a = readVector2(value.a, `${path}.a`);
+  const b = readVector2(value.b, `${path}.b`);
+  // A zero-length divider cannot split anything and would make the solver's normal undefined.
+  if (Math.hypot(b.x - a.x, b.y - a.y) <= 0) fail(`${path} has zero length`);
+  return { id: value.id, a, b, kind: value.kind as TransitionKind };
+}
+
+function readSurfaceAssignment(value: unknown, path: string): SurfaceAssignment {
+  if (!isRecord(value)) fail(`${path} must be an object`);
+  if (typeof value.surface !== 'string' || !(value.surface in SURFACE_LABELS)) {
+    fail(`${path}.surface "${String(value.surface)}" is not a known surface`);
+  }
+  return {
+    seed: readVector2(value.seed, `${path}.seed`),
+    surface: value.surface as SurfaceKind,
+  };
 }
 
 function decodeFlooring(blob: ModuleBlob): DecodeResult<FlooringData> {
@@ -216,6 +267,25 @@ function decodeFlooring(blob: ModuleBlob): DecodeResult<FlooringData> {
       seen.add(transition.id);
     }
 
+    if (raw.dividers !== undefined && !Array.isArray(raw.dividers)) {
+      fail('dividers must be an array');
+    }
+    const dividers = ((raw.dividers as unknown[]) ?? []).map((d, i) =>
+      readDivider(d, `dividers[${i}]`)
+    );
+    const dividerIds = new Set<string>();
+    for (const divider of dividers) {
+      if (dividerIds.has(divider.id)) fail(`duplicate divider id "${divider.id}"`);
+      dividerIds.add(divider.id);
+    }
+
+    if (raw.surfaces !== undefined && !Array.isArray(raw.surfaces)) {
+      fail('surfaces must be an array');
+    }
+    const surfaces = ((raw.surfaces as unknown[]) ?? []).map((s, i) =>
+      readSurfaceAssignment(s, `surfaces[${i}]`)
+    );
+
     return {
       status: 'ok',
       data: {
@@ -223,6 +293,8 @@ function decodeFlooring(blob: ModuleBlob): DecodeResult<FlooringData> {
         layout: readLayout(raw.layout),
         origin: readOrigin(raw.origin),
         transitions,
+        dividers,
+        surfaces,
       },
     };
   } catch (e) {
@@ -244,6 +316,8 @@ function compactFlooringForShare(data: Readonly<FlooringData>): FlooringData {
     layout: { ...data.layout, rowOffsetPattern: [...data.layout.rowOffsetPattern] },
     origin: { ...data.origin },
     transitions: data.transitions.map((t) => ({ ...t })),
+    dividers: data.dividers.map((d) => ({ ...d, a: { ...d.a }, b: { ...d.b } })),
+    surfaces: data.surfaces.map((s) => ({ ...s, seed: { ...s.seed } })),
   };
 }
 

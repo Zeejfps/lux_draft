@@ -31,6 +31,8 @@ import { originEntities } from '../../../src/modules/flooring/entities';
 import { LAYOUT_ORIGIN_ID } from '../../../src/modules/flooring/constants';
 import { PlankIndex } from '../../../src/modules/flooring/PlankIndex';
 import { computePlankLayout } from '../../../src/modules/flooring/PlankLayoutEngine';
+import { addDivider, setSurfaces } from '../../../src/modules/flooring/commands';
+import { solveRegions } from '../../../src/modules/flooring/RegionSolver';
 import { defaultFlooringData } from '../../../src/modules/flooring/codec';
 import { makeDoor, rectWalls, squareRoom } from '../../helpers/documents';
 
@@ -200,8 +202,8 @@ describe('flooring activated through the registry', () => {
       'flooring.transitions',
       'flooring.origin',
     ]);
-    expect(record.handlers).toHaveLength(2);
-    expect(record.tools.map((t) => t.id)).toEqual(['flooring.transition']);
+    expect(record.handlers).toHaveLength(3);
+    expect(record.tools.map((t) => t.id)).toEqual(['flooring.transition', 'flooring.divider']);
     expect(record.overlays.map((o) => o.id)).toContain('flooring.summary');
     expect(record.surfaces).toHaveLength(2);
     expect(resolvePanel(originSelection.panelKey)).not.toBeNull();
@@ -266,5 +268,68 @@ describe('flooring activated through the registry', () => {
     expect(get(activeModule)!.id).toBe('lighting');
     expect(resolvePanel(originSelection.panelKey)).toBeNull();
     expect(resolvePanel('lighting.fixture')).not.toBeNull();
+  });
+});
+
+describe('the transitions layer draws what the solver derived', () => {
+  const viewOf = (document: EditorDocument) =>
+    moduleViewOf(
+      document,
+      readModule(document, flooringCodec),
+      NO_SELECTION,
+      DEFAULT_DISPLAY_PREFERENCES,
+      'editor'
+    );
+
+  /** Meshes under the layer's group, which is the only observable a renderer offers. */
+  const meshCount = (scene: THREE.Scene): number => {
+    let count = 0;
+    scene.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh) count += 1;
+    });
+    return count;
+  };
+
+  it('draws a guide for a divider and a strip once the floors differ', () => {
+    const scene = new THREE.Scene();
+    const layers = flooringRuntime.layers!(scene);
+    const transitions = layers.find((l) => l.id === 'flooring.transitions')!;
+
+    const plain = squareRoom();
+    transitions.update(viewOf(plain));
+    const baseline = meshCount(scene);
+
+    const withDivider = applyCommand(
+      plain,
+      addDivider.make({
+        divider: { id: 'd1', a: { x: 0, y: 4 }, b: { x: 10, y: 4 }, kind: 'tMolding' },
+      })
+    );
+    transitions.update(viewOf(withDivider));
+    // One more mesh: the guide. No trim yet — the same floor runs either side of the line.
+    expect(meshCount(scene)).toBe(baseline + 1);
+
+    const solution = solveRegions({
+      walls: withDivider.geometry.boundary.walls,
+      isClosed: true,
+      dividers: readModule(withDivider, flooringCodec).dividers,
+      surfaces: [],
+    });
+    const upper = solution.regions.find((r) => r.seed.y > 4)!;
+    const painted = applyCommand(
+      withDivider,
+      setSurfaces.make({
+        surfaces: solution.regions.map((region) => ({
+          seed: region.seed,
+          surface: region === upper ? ('carpet' as const) : ('plank' as const),
+        })),
+      })
+    );
+    transitions.update(viewOf(painted));
+    // Guide plus the derived strip, now that there is trim to buy.
+    expect(meshCount(scene)).toBe(baseline + 2);
+
+    for (const layer of layers) layer.dispose();
+    expect(scene.children).toHaveLength(0);
   });
 });

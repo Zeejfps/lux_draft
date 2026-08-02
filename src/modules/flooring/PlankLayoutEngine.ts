@@ -1,6 +1,15 @@
 import type { Obstacle, Vector2, WallSegment } from '../../floorplan/types/geometry';
 import type { LayoutConfig, PlankSpec, StartCorner } from './types';
 import { INCHES_PER_FOOT, MAX_PLANKS } from './types';
+import type { Interval } from './geometry2d';
+import {
+  EPS,
+  intersectIntervals,
+  intervalsAt,
+  signedArea,
+  subtractIntervals,
+  unionIntervals,
+} from './geometry2d';
 
 /**
  * `PlankLayoutEngine` — a **pure** function of (boundary, obstacles, plank, layout, origin) to
@@ -29,9 +38,17 @@ import { INCHES_PER_FOOT, MAX_PLANKS } from './types';
  * Sutherland–Hodgman clipping is only correct against a convex clip region — and because a cut
  * list wants piece *lengths* along the run, which is exactly what an interval gives.
  *
+ * When `regions` is given the same scan is also intersected with the areas assigned to this
+ * floor, so the run stops where the LVP stops and the carpet begins. Rows are still indexed
+ * against the **room**, not the region, which is what keeps the stagger pattern and the joint
+ * grid continuous across a transition instead of restarting on the far side of it.
+ *
  * The approximation this buys is named, not hidden. A row is sampled on **one** line, so where
- * the room's outline changes within a row's band — a diagonal wall, or the inside step of an
- * L — that row is laid as if the whole band looked like its centreline. The error is bounded by
+ * the outline changes within a row's band — a diagonal wall, the inside step of an L, or a
+ * region edge running parallel to the run — that row is laid as if the whole band looked like
+ * its centreline. At a *wall* this under-reports, because the band is clamped to the room and
+ * the last row is ripped; at a *region* edge it over-reports by up to one plank width along the
+ * edge, because a row straddling a transition is laid whole rather than ripped at it. The error is bounded by
  * one plank width along the step and it under-reports rather than over-reports (an L-shaped
  * 300 sqft room comes out at 299.2). For a rectilinear room whose walls fall on row boundaries
  * — and for every obstacle this editor draws — the result is exact. Mitring against a diagonal
@@ -54,6 +71,15 @@ export interface LayoutInputs {
   readonly plank: PlankSpec;
   readonly layout: LayoutConfig;
   readonly origin: Vector2;
+  /**
+   * The areas to lay plank over, from `RegionSolver`. `null` means the whole room — which is
+   * what a document with no dividers produces, so the pre-divider floor comes out identical
+   * rather than merely equivalent. An **empty array** means every area was assigned to another
+   * surface and no plank is laid; it is not the same thing as `null`.
+   *
+   * Rings are world-space and need not be disjoint; overlaps are unioned per row.
+   */
+  readonly regions?: readonly (readonly Vector2[])[] | null;
 }
 
 export interface Plank {
@@ -128,9 +154,14 @@ export function layoutKey(inputs: LayoutInputs): string {
   const poly = (walls: readonly WallSegment[]): string =>
     walls.map((w) => `${n(w.start.x)},${n(w.start.y)}`).join(' ');
   const { plank, layout, origin } = inputs;
+  const ring = (points: readonly Vector2[]): string =>
+    points.map((p) => `${n(p.x)},${n(p.y)}`).join(' ');
   return [
     poly(inputs.walls),
     inputs.obstacles.map((o) => poly(o.walls)).join('|'),
+    // `null` is the unrestricted case and must key identically to a document written before
+    // regions existed, so it contributes a fixed token rather than the room's own ring.
+    inputs.regions == null ? 'all' : inputs.regions.map(ring).join('|'),
     `${n(plank.widthIn)}x${n(plank.lengthIn)}`,
     [
       n(layout.runAngleDeg),
@@ -148,8 +179,6 @@ export function layoutKey(inputs: LayoutInputs): string {
 // ============================================
 // The run-aligned frame
 // ============================================
-
-const EPS = 1e-9;
 
 /** Signs that map the configured start corner onto the local bottom-left. */
 function cornerSigns(corner: StartCorner): { sx: number; sy: number } {
@@ -186,67 +215,11 @@ function toWorld(frame: Frame, p: Vector2): Vector2 {
 }
 
 // ============================================
-// Scan lines
-// ============================================
-
-/** Ascending x values where the polygon's edges cross the horizontal line `y`. */
-function crossings(polygon: readonly Vector2[], y: number): number[] {
-  const xs: number[] = [];
-  const n = polygon.length;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const a = polygon[j];
-    const b = polygon[i];
-    if (a.y > y !== b.y > y) {
-      xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
-    }
-  }
-  return xs.sort((p, q) => p - q);
-}
-
-type Interval = readonly [number, number];
-
-function intervalsAt(polygon: readonly Vector2[], y: number): Interval[] {
-  const xs = crossings(polygon, y);
-  const out: Interval[] = [];
-  for (let i = 0; i + 1 < xs.length; i += 2) {
-    if (xs[i + 1] - xs[i] > EPS) out.push([xs[i], xs[i + 1]]);
-  }
-  return out;
-}
-
-/** `spans` minus `holes`. Both ascending and non-overlapping; the result is too. */
-function subtractIntervals(spans: Interval[], holes: Interval[]): Interval[] {
-  if (holes.length === 0) return spans;
-  let current = spans;
-  for (const [hs, he] of holes) {
-    const next: Interval[] = [];
-    for (const [s, e] of current) {
-      if (he <= s + EPS || hs >= e - EPS) {
-        next.push([s, e]);
-        continue;
-      }
-      if (hs - s > EPS) next.push([s, hs]);
-      if (e - he > EPS) next.push([he, e]);
-    }
-    current = next;
-  }
-  return current;
-}
-
-// ============================================
 // The expansion gap
 // ============================================
 
 /** How far a mitred vertex may travel, in gaps, before it is clamped. */
 const MAX_MITER = 4;
-
-function signedArea(polygon: readonly Vector2[]): number {
-  let sum = 0;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    sum += polygon[j].x * polygon[i].y - polygon[i].x * polygon[j].y;
-  }
-  return sum / 2;
-}
 
 /**
  * The polygon pulled inward by `distance`; a negative distance pushes it outward, which is what
@@ -515,6 +488,10 @@ function buildCutList(cutLengthsFt: readonly number[]): CutListEntry[] {
 export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): PlankLayout {
   const key = layoutKey(inputs);
   const { walls, isClosed, obstacles, plank, layout, origin } = inputs;
+  const regions = inputs.regions ?? null;
+  // Every area assigned to carpet or tile: there is nothing of ours to lay. Distinct from the
+  // unrestricted `null`, and caught before any geometry is built.
+  if (regions !== null && regions.length === 0) return { ...EMPTY_LAYOUT, key };
 
   const plankWidth = plank.widthIn / INCHES_PER_FOOT;
   const plankLength = plank.lengthIn / INCHES_PER_FOOT;
@@ -542,6 +519,24 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       -gap
     )
   );
+
+  // Each area is inset by the same gap, which is the honest reading of a floating floor: a
+  // transition strip is an expansion joint, and the floor has to be able to move at one. Where
+  // a region edge lies along a wall the two insets coincide, so nothing is taken twice. What is
+  // *not* lost is joint alignment across a transition — the joint grid is anchored at the layout
+  // origin, not at each region, so the rows either side of a T-molding still line up.
+  const clips =
+    regions === null
+      ? null
+      : regions
+          .map((ring) =>
+            insetPolygon(
+              ring.map((p) => toLocal(frame, p)),
+              gap
+            )
+          )
+          .filter((ring) => ring.length >= 3);
+  if (clips !== null && clips.length === 0) return { ...EMPTY_LAYOUT, key };
 
   let minY = Infinity;
   let maxY = -Infinity;
@@ -580,8 +575,17 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     if (rowWidth <= EPS) continue;
     const centreY = (bandLow + bandHigh) / 2;
 
-    const spans = subtractIntervals(
-      intervalsAt(room, centreY),
+    // Room, then areas, then obstacles. The areas are unioned before they intersect, so two
+    // adjacent plank areas read as one span rather than as a seam the row is cut at twice.
+    let spans = intervalsAt(room, centreY);
+    if (clips !== null) {
+      spans = intersectIntervals(
+        spans,
+        unionIntervals(clips.flatMap((clip) => intervalsAt(clip, centreY)))
+      );
+    }
+    spans = subtractIntervals(
+      spans,
       holes.flatMap((hole) => intervalsAt(hole, centreY))
     ).sort((a, b) => a[0] - b[0]);
 

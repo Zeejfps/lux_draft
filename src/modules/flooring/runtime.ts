@@ -11,16 +11,18 @@ import type {
 import type { EntityDescriptor } from '../../floorplan/types/entity';
 import type { Door, WallSegment } from '../../floorplan/types/geometry';
 import { FLOORING_MODULE_ID, type FlooringData } from './codec';
-import { FLOORING_TOOL_TRANSITION } from './constants';
+import { FLOORING_TOOL_DIVIDER, FLOORING_TOOL_TRANSITION } from './constants';
 import { originEntities } from './entities';
 import { originSelection } from './selection';
 import { createFlooringLayers } from './layers';
-import { PlankHoverHandler, TransitionPlacementHandler } from './handlers';
+import { DividerPlacementHandler, PlankHoverHandler, TransitionPlacementHandler } from './handlers';
 import {
   addDoorTransition,
+  addFloorDivider,
   currentPlankIndex,
   hoveredPlank,
   layoutPanelVisible,
+  pendingDivider,
   planksVisible,
   removeDoorTransition,
   startLayoutService,
@@ -56,6 +58,12 @@ const TRANSITION_ICON = `<path d="M3 12h18" />
   <path d="M16 8v8" />
   <path d="M3 6v12" />
   <path d="M21 6v12" />`;
+
+const DIVIDER_ICON = `<path d="M4 4v16" />
+  <path d="M20 4v16" />
+  <path d="M4 12h16" />
+  <path d="M7 7h2" />
+  <path d="M15 17h2" />`;
 
 const LAYOUT_ICON = `<rect x="3" y="3" width="18" height="18" rx="2" />
   <path d="M3 9h18" />
@@ -110,6 +118,16 @@ export const flooringRuntime: ModuleRuntime = {
       // A doorway to trim is core's `Door`, so the tool's own enablement reads core geometry.
       enabled: (view: ModuleView<unknown>) => view.geometry.doors.length > 0,
     },
+    {
+      id: FLOORING_TOOL_DIVIDER,
+      label: 'Divider',
+      title: 'Draw where this floor ends and another begins (D)',
+      disabledTitle: 'Close the room first',
+      key: 'd',
+      icon: DIVIDER_ICON,
+      // A divider is a chord of the room, so there has to be a room to cut.
+      enabled: (view: ModuleView<unknown>) => view.geometry.boundary.isClosed,
+    },
   ],
 
   overlays: OVERLAYS,
@@ -141,6 +159,12 @@ export const flooringRuntime: ModuleRuntime = {
         addTransition: (doorId) => addDoorTransition(doorId),
         removeTransition: (id) => removeDoorTransition(id),
       }),
+      new DividerPlacementHandler({
+        getWalls: () => view().geometry.boundary.walls as WallSegment[],
+        getDividers: () => view().data.dividers,
+        setPending: (pending) => pendingDivider.set(pending),
+        addDivider: (a, b) => addFloorDivider(a, b),
+      }),
       new PlankHoverHandler({
         plankAt: (position) => currentPlankIndex()?.at(position) ?? null,
         setHovered: (plank) => hoveredPlank.set(plank),
@@ -156,5 +180,7 @@ export const flooringRuntime: ModuleRuntime = {
     // rather than delivered into a disposed renderer.
     scope.own(startLayoutService(scope.signal));
     scope.own(() => hoveredPlank.set(null));
+    // A half-drawn divider is a gesture, and a gesture does not survive a mode switch.
+    scope.own(() => pendingDivider.set(null));
   },
 };

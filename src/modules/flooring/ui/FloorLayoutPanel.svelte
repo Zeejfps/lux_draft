@@ -1,15 +1,26 @@
 <script lang="ts">
   import FloatingPanel from '../../../floorplan/ui/FloatingPanel.svelte';
   import {
+    floorRegions,
+    flooringData,
     layoutConfig,
     layoutPanelVisible,
     plankSpec,
+    removeFloorDivider,
+    setFloorDividerKind,
     setPlank,
+    setRegionSurface,
     toggleLayoutPanel,
     updateLayoutConfig,
   } from '../store';
-  import type { PlankSpec, StaggerRule, StartCorner } from '../types';
-  import { PLANK_PRESETS, STAGGER_LABELS, START_CORNER_LABELS } from '../types';
+  import type { PlankSpec, StaggerRule, StartCorner, SurfaceKind, TransitionKind } from '../types';
+  import {
+    PLANK_PRESETS,
+    STAGGER_LABELS,
+    START_CORNER_LABELS,
+    SURFACE_LABELS,
+    TRANSITION_LABELS,
+  } from '../types';
 
   /**
    * The module's authoring surface: the plank being installed and how it is laid.
@@ -56,6 +67,28 @@
 
   const staggerOptions = Object.entries(STAGGER_LABELS) as [StaggerRule, string][];
   const cornerOptions = Object.entries(START_CORNER_LABELS) as [StartCorner, string][];
+  const surfaceOptions = Object.entries(SURFACE_LABELS) as [SurfaceKind, string][];
+  const transitionOptions = Object.entries(TRANSITION_LABELS) as [TransitionKind, string][];
+
+  // Areas and the dividers between them. Both are derived — the list below is a read-out of what
+  // `RegionSolver` made of the lines the user drew, not a second copy of them.
+  $: solution = $floorRegions;
+  $: regions = solution.regions;
+  $: unattached = new Set(solution.unattached);
+
+  function setSurface(seed: { x: number; y: number }, e: Event): void {
+    setRegionSurface(seed, (e.target as HTMLSelectElement).value as SurfaceKind);
+  }
+
+  function setKind(dividerId: string, e: Event): void {
+    setFloorDividerKind(dividerId, (e.target as HTMLSelectElement).value as TransitionKind);
+  }
+
+  // Dividers in document order — the order the solver applies them in, which is why a T-junction
+  // works. `trimmed` is the honest answer to "does this line actually need trim": a divider with
+  // the same floor on both sides is a line the user drew and nothing more.
+  $: trimmedIds = new Set(solution.transitions.map((t) => t.dividerId));
+  $: dividers = $flooringData.dividers;
 </script>
 
 <FloatingPanel
@@ -205,6 +238,78 @@
     </label>
   </div>
 
+  <div class="section">
+    <div class="section-title">Areas</div>
+
+    {#if regions.length <= 1}
+      <p class="hint">
+        The whole room is one area. Use the Divider tool (D) to draw where this floor ends and
+        another begins.
+      </p>
+    {:else}
+      {#each regions as region, i (`${region.seed.x},${region.seed.y}`)}
+        <label class="control-row">
+          <span class="area-name">
+            Area {i + 1}
+            <span class="area-size">{Math.round(region.areaSqft)} sq ft</span>
+          </span>
+          <select
+            class="panel-select"
+            value={region.surface}
+            on:change={(e) => setSurface(region.seed, e)}
+          >
+            {#each surfaceOptions as [value, label] (value)}
+              <option {value}>{label}</option>
+            {/each}
+          </select>
+        </label>
+      {/each}
+    {/if}
+  </div>
+
+  {#if dividers.length > 0}
+    <div class="section">
+      <div class="section-title">Transitions</div>
+
+      {#each dividers as divider, i (divider.id)}
+        <div class="control-row">
+          <span class="area-name">
+            Line {i + 1}
+            {#if unattached.has(divider.id)}
+              <span class="warn">not attached</span>
+            {:else if !trimmedIds.has(divider.id)}
+              <span class="area-size">same floor both sides</span>
+            {/if}
+          </span>
+          <div class="input-group">
+            <select
+              class="panel-select"
+              value={divider.kind}
+              on:change={(e) => setKind(divider.id, e)}
+            >
+              {#each transitionOptions as [value, label] (value)}
+                <option {value}>{label}</option>
+              {/each}
+            </select>
+            <button
+              class="remove"
+              type="button"
+              title="Remove this divider"
+              on:click={() => removeFloorDivider(divider.id)}>&times;</button
+            >
+          </div>
+        </div>
+      {/each}
+
+      {#if unattached.size > 0}
+        <p class="hint">
+          A line marked <em>not attached</em> no longer reaches a wall — a wall moved out from under it.
+          Delete it and draw it again.
+        </p>
+      {/if}
+    </div>
+  {/if}
+
   <p class="hint">
     Drag the blue origin marker to move the starting corner. The floor is re-derived, never stored.
   </p>
@@ -261,5 +366,35 @@
     font-size: 11px;
     line-height: 1.4;
     color: var(--text-muted);
+  }
+
+  .area-name {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+  }
+
+  .area-size {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .warn {
+    font-size: 10px;
+    color: #ef4444;
+  }
+
+  .remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 2px;
+    color: var(--text-muted);
+  }
+
+  .remove:hover {
+    color: #ef4444;
   }
 </style>

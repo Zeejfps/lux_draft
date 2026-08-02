@@ -9,14 +9,20 @@ import { flooringCodec, liveTransitions } from '../../../src/modules/flooring/co
 import { addTransition } from '../../../src/modules/flooring/commands';
 import {
   addDoorTransition,
+  addFloorDivider,
   committedFlooringData,
+  currentRegions,
   flooringData,
+  floorRegions,
   layoutConfig,
   plankSpec,
   removeDoorTransition,
+  removeFloorDivider,
   requestLayout,
+  setFloorDividerKind,
   setOrigin,
   setPlank,
+  setRegionSurface,
   startLayoutService,
   updateLayoutConfig,
 } from '../../../src/modules/flooring/store';
@@ -43,6 +49,7 @@ describe('every setter is one command and one history entry', () => {
     ['plank', () => setPlank({ widthIn: 5, lengthIn: 36, name: 'Narrow' })],
     ['origin', () => setOrigin({ x: 1, y: 2 })],
     ['transition', () => addDoorTransition('d1')],
+    ['divider', () => addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 })],
   ];
 
   for (const [name, run] of cases) {
@@ -156,6 +163,121 @@ describe('doors are thresholds', () => {
   });
 });
 
+describe('dividers and surfaces', () => {
+  it('a divider splits the room into two areas', () => {
+    expect(currentRegions().regions).toHaveLength(1);
+    addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 });
+    const solution = currentRegions();
+    expect(solution.regions).toHaveLength(2);
+    expect(solution.unattached).toHaveLength(0);
+    // Two areas, one floor: a line is not a transition until the floors either side differ.
+    expect(solution.transitions).toHaveLength(0);
+  });
+
+  it('assigning a surface names every area, so nothing is left to a stale seed', () => {
+    addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 });
+    const upper = currentRegions().regions.find((r) => r.seed.y > 4)!;
+    setRegionSurface(upper.seed, 'carpet');
+
+    // One entry per area, not one for the one that changed.
+    expect(slice().surfaces).toHaveLength(2);
+    const solution = currentRegions();
+    expect(solution.regions.find((r) => r.seed.y > 4)!.surface).toBe('carpet');
+    expect(solution.regions.find((r) => r.seed.y < 4)!.surface).toBe('plank');
+    expect(solution.transitions).toHaveLength(1);
+  });
+
+  it('a point in no area writes nothing at all', () => {
+    const before = sessionStore.current().document;
+    setRegionSurface({ x: 500, y: 500 }, 'carpet');
+    expect(sessionStore.current().document).toBe(before);
+  });
+
+  it('removing the divider puts the room back to one area', () => {
+    addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 });
+    const [divider] = slice().dividers;
+    setRegionSurface(currentRegions().regions.find((r) => r.seed.y > 4)!.seed, 'carpet');
+    removeFloorDivider(divider.id);
+
+    const solution = currentRegions();
+    expect(solution.regions).toHaveLength(1);
+    expect(solution.transitions).toHaveLength(0);
+    // The assignments outlive the divider in the document; they are simply not addressable,
+    // which is what stops a delete from needing to rewrite unrelated data.
+    expect(slice().surfaces).toHaveLength(2);
+  });
+
+  it('changing the trim type does not move the line', () => {
+    addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 });
+    const [divider] = slice().dividers;
+    setFloorDividerKind(divider.id, 'reducer');
+    const [updated] = slice().dividers;
+    expect(updated.kind).toBe('reducer');
+    expect(updated.a).toEqual(divider.a);
+    expect(updated.b).toEqual(divider.b);
+  });
+
+  it('the areas store emits when the split changes and not otherwise', () => {
+    const seen: number[] = [];
+    const stop = floorRegions.subscribe((solution) => seen.push(solution.regions.length));
+    addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 });
+    setOrigin({ x: 1, y: 1 });
+    stop();
+    // One for the initial value, one for the split. Moving the origin changes no area.
+    expect(seen).toEqual([1, 2]);
+  });
+
+  it('dividers and surfaces survive a round-trip through the codec', () => {
+    addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 });
+    setRegionSurface(currentRegions().regions.find((r) => r.seed.y > 4)!.seed, 'carpet');
+    const data = slice();
+    const decoded = flooringCodec.decode({ v: flooringCodec.schemaVersion, data });
+    expect(decoded.status).toBe('ok');
+    if (decoded.status === 'ok') {
+      expect(decoded.data.dividers).toEqual(data.dividers);
+      expect(decoded.data.surfaces).toEqual(data.surfaces);
+    }
+  });
+
+  it('reads a v1 slice, which had neither field, as the room it always was', () => {
+    const decoded = flooringCodec.decode({
+      v: 1,
+      data: { plank: { widthIn: 7, lengthIn: 48, name: '7in' }, origin: { x: 0, y: 0 } },
+    });
+    expect(decoded.status).toBe('ok');
+    if (decoded.status === 'ok') {
+      expect(decoded.data.dividers).toEqual([]);
+      expect(decoded.data.surfaces).toEqual([]);
+    }
+  });
+
+  it('quarantines a malformed divider rather than dropping it silently', () => {
+    for (const dividers of [
+      [{ id: 'd', a: { x: 0, y: 0 }, b: { x: 1, y: 1 }, kind: 'wat' }],
+      [{ id: 'd', a: { x: 0, y: 0 }, kind: 'reducer' }],
+      [{ id: 'd', a: { x: 0, y: 0 }, b: { x: 0, y: 0 }, kind: 'reducer' }],
+      [
+        { id: 'same', a: { x: 0, y: 0 }, b: { x: 1, y: 1 }, kind: 'reducer' },
+        { id: 'same', a: { x: 0, y: 2 }, b: { x: 1, y: 3 }, kind: 'reducer' },
+      ],
+    ]) {
+      expect(flooringCodec.decode({ v: 2, data: { dividers } }).status).toBe('invalid');
+    }
+  });
+
+  it('quarantines a malformed surface assignment', () => {
+    expect(
+      flooringCodec.decode({
+        v: 2,
+        data: { surfaces: [{ seed: { x: 0, y: 0 }, surface: 'lava' }] },
+      }).status
+    ).toBe('invalid');
+    expect(flooringCodec.decode({ v: 2, data: { surfaces: [{ surface: 'carpet' }] } }).status).toBe(
+      'invalid'
+    );
+  });
+});
+
 describe('the layout service', () => {
   let controller: AbortController;
   let stop: () => void;
@@ -211,9 +333,11 @@ describe('the layout service', () => {
 
   it('the derived floor has no field on the persisted slice', () => {
     expect(Object.keys(flooringCodec.defaultData()).sort()).toEqual([
+      'dividers',
       'layout',
       'origin',
       'plank',
+      'surfaces',
       'transitions',
     ]);
   });

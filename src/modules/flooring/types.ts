@@ -64,6 +64,78 @@ export interface Transition {
   kind: TransitionKind;
 }
 
+/**
+ * What covers one area of the room. This module lays `plank`; the rest name what it *isn't*, so
+ * that the boundary between them can be drawn as a transition.
+ *
+ * `none` is bare subfloor — an area deliberately left out of the scope of the job.
+ */
+export type SurfaceKind = 'plank' | 'carpet' | 'tile' | 'none';
+
+/**
+ * A straight cut across the room where the floor changes.
+ *
+ * This is the **authored** object, and the areas either side of it are derived from it — the
+ * same trade the module already makes for planks (invariant 5). Authoring the area instead
+ * would store a polygon that drifts away from the walls the moment one is dragged, and would
+ * still not say where the transition goes; authoring the line says both.
+ *
+ * `a` and `b` are room coordinates in feet, expected to land on the room's boundary or on
+ * another divider. `RegionSolver` projects them onto whichever face they touch, so an endpoint
+ * dropped a few inches off a wall still splits the room; one dropped in open space does not,
+ * and is reported as unattached rather than silently ignored.
+ */
+export interface Divider {
+  id: string;
+  a: Vector2;
+  b: Vector2;
+  /** The trim that covers the joint. Purely presentational; it does not affect the layout. */
+  kind: TransitionKind;
+}
+
+/**
+ * "The area containing this point is carpet."
+ *
+ * A derived face has no id to hang this on, so the assignment is stored against a **seed
+ * point** and resolved by containment. A seed survives a wall drag, a divider move and an undo;
+ * a face that stops existing simply stops matching, and the stale assignment is inert rather
+ * than wrong. Faces with no matching seed inherit from the face they were split out of, and the
+ * room with no dividers at all is one face of `plank` — which is exactly the pre-divider
+ * behaviour, so a document written before this existed decodes to the same floor.
+ */
+export interface SurfaceAssignment {
+  seed: Vector2;
+  surface: SurfaceKind;
+}
+
+export const DEFAULT_SURFACE: SurfaceKind = 'plank';
+
+export const SURFACE_LABELS: Readonly<Record<SurfaceKind, string>> = {
+  plank: 'This floor (plank)',
+  carpet: 'Carpet',
+  tile: 'Tile',
+  none: 'Not floored',
+};
+
+/**
+ * How far a divider endpoint may sit from a face's boundary and still attach to it, in feet.
+ *
+ * Generous on purpose: the placement tool projects a click onto the boundary anyway, so this
+ * only has to absorb the drift left by a later wall edit.
+ */
+export const DIVIDER_ATTACH_TOLERANCE_FT = 0.75;
+
+/**
+ * How far off a divider the solver probes to read the surface on each side, in feet.
+ *
+ * Small enough to stay inside the thinnest area anyone would draw, large enough to clear the
+ * even-odd rule's ambiguity for a point sitting exactly on an edge.
+ */
+export const SURFACE_PROBE_FT = 0.02;
+
+/** Sanity ceiling on authored dividers; each one splits one face, so the face count is bounded. */
+export const MAX_DIVIDERS = 64;
+
 export const DEFAULT_PLANK_SPEC: PlankSpec = {
   widthIn: 7,
   lengthIn: 48,

@@ -425,3 +425,89 @@ describe('bounded work', () => {
     expect(layout.truncated).toBe(true);
   });
 });
+
+describe('laying over part of the room', () => {
+  /** The bottom 8ft of the 20x20 room, as `RegionSolver` would hand it over. */
+  const bottom: Vector2[] = [
+    { x: 0, y: 0 },
+    { x: 20, y: 0 },
+    { x: 20, y: 8 },
+    { x: 0, y: 8 },
+  ];
+  const top: Vector2[] = [
+    { x: 0, y: 8 },
+    { x: 20, y: 8 },
+    { x: 20, y: 20 },
+    { x: 0, y: 20 },
+  ];
+
+  const noGap = { ...defaults.layout, expansionGapIn: 0 };
+
+  it('lays the whole room when regions is null', () => {
+    const whole = computePlankLayout(inputs({ layout: noGap }));
+    const explicitlyNull = computePlankLayout(inputs({ layout: noGap, regions: null }));
+    expect(explicitlyNull.planks).toHaveLength(whole.planks.length);
+    expect(explicitlyNull.coveredSqft).toBeCloseTo(whole.coveredSqft, 6);
+  });
+
+  it('covers only the region it is given', () => {
+    const clipped = computePlankLayout(inputs({ layout: noGap, regions: [bottom] }));
+    expect(clipped.planks.length).toBeGreaterThan(0);
+    for (const plank of clipped.planks) expect(plank.center.y).toBeLessThanOrEqual(8);
+
+    // 160 sqft of area, and the engine reports a little over it — the same single-scanline
+    // approximation the whole engine is built on, now showing up at a region edge instead of a
+    // wall. The row whose band straddles y = 8 is sampled at its centreline, so it is laid at
+    // full width across the boundary rather than ripped at it. The error is bounded by one
+    // plank width along the edge and it over-reports here, where a wall would under-report,
+    // because a region edge does not clamp the band the way `minY`/`maxY` do.
+    const plankWidthFt = defaults.plank.widthIn / 12;
+    expect(clipped.coveredSqft).toBeGreaterThanOrEqual(160);
+    expect(clipped.coveredSqft).toBeLessThanOrEqual(160 + 20 * plankWidthFt);
+  });
+
+  it('lays nothing at all for an empty region list — which is not the same as null', () => {
+    // Every area assigned to carpet or tile. `null` would have meant the whole room.
+    const none = computePlankLayout(inputs({ layout: noGap, regions: [] }));
+    expect(none.planks).toHaveLength(0);
+    expect(none.coveredSqft).toBe(0);
+    expect(
+      computePlankLayout(inputs({ layout: noGap, regions: null })).planks.length
+    ).toBeGreaterThan(0);
+  });
+
+  it('two regions covering the room together cover what the whole room did', () => {
+    const whole = computePlankLayout(inputs({ layout: noGap }));
+    const split = computePlankLayout(inputs({ layout: noGap, regions: [bottom, top] }));
+    expect(split.coveredSqft).toBeCloseTo(whole.coveredSqft, 4);
+  });
+
+  it('keeps the joint grid anchored to the origin, not to the region', () => {
+    // The point of indexing rows against the room: the rows either side of a transition line up
+    // rather than each restarting its stagger at its own edge.
+    const whole = computePlankLayout(inputs({ layout: noGap }));
+    const clipped = computePlankLayout(inputs({ layout: noGap, regions: [top] }));
+    for (const plank of clipped.planks) {
+      const match = whole.planks.find((p) => p.id === plank.id);
+      expect(match).toBeDefined();
+      expect(match!.center.x).toBeCloseTo(plank.center.x, 6);
+      expect(match!.center.y).toBeCloseTo(plank.center.y, 6);
+    }
+  });
+
+  it('takes the expansion gap at a region edge too', () => {
+    // A transition strip is an expansion joint: a floating floor has to be able to move at one.
+    const gapped = computePlankLayout(inputs({ regions: [bottom] }));
+    const tight = computePlankLayout(inputs({ layout: noGap, regions: [bottom] }));
+    expect(gapped.coveredSqft).toBeLessThan(tight.coveredSqft);
+    for (const plank of gapped.planks) expect(plank.center.y).toBeLessThan(8);
+  });
+
+  it('keys differently for different regions, and identically for the same ones', () => {
+    const a = layoutKey(inputs({ regions: [bottom] }));
+    expect(layoutKey(inputs({ regions: [bottom] }))).toBe(a);
+    expect(layoutKey(inputs({ regions: [top] }))).not.toBe(a);
+    expect(layoutKey(inputs({ regions: null }))).not.toBe(a);
+    expect(layoutKey(inputs({ regions: [] }))).not.toBe(a);
+  });
+});

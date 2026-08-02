@@ -1,7 +1,14 @@
 import type { Vector2 } from '../../floorplan/types/geometry';
 import type { CommandKind, RegisteredCommand } from '../../floorplan/types/module';
 import { defineCommand } from '../../floorplan/types/module';
-import type { LayoutConfig, PlankSpec, Transition } from './types';
+import type {
+  Divider,
+  LayoutConfig,
+  PlankSpec,
+  SurfaceAssignment,
+  Transition,
+  TransitionKind,
+} from './types';
 import type { FlooringData } from './codec';
 import { flooringCodec, normalizeAngle } from './codec';
 
@@ -100,10 +107,84 @@ export const removeTransition: CommandKind<{ transitionId: string }> = defineCom
   }
 );
 
+/**
+ * Draw a line where the floor changes. Appended, because `RegionSolver` applies dividers in
+ * document order and a T-junction depends on the divider it lands on already being there.
+ */
+export const addDivider: CommandKind<{ divider: Divider }> = defineCommand(
+  flooringCodec,
+  'divider.add',
+  {
+    label: () => 'Add floor divider',
+    apply: (_doc, payload, prev) => ({
+      ...prev,
+      dividers: [
+        ...prev.dividers.filter((d) => d.id !== payload.divider.id),
+        {
+          ...payload.divider,
+          a: { ...payload.divider.a },
+          b: { ...payload.divider.b },
+        },
+      ],
+    }),
+  }
+);
+
+export const setDividerKind: CommandKind<{ dividerId: string; kind: TransitionKind }> =
+  defineCommand(flooringCodec, 'divider.setKind', {
+    label: () => 'Change transition type',
+    apply: (_doc, payload, prev) => ({
+      ...prev,
+      dividers: prev.dividers.map((d) =>
+        d.id === payload.dividerId ? { ...d, kind: payload.kind } : d
+      ),
+    }),
+  });
+
+export const removeDivider: CommandKind<{ dividerId: string }> = defineCommand(
+  flooringCodec,
+  'divider.remove',
+  {
+    label: () => 'Remove floor divider',
+    apply: (_doc, payload, prev) => {
+      const dividers = prev.dividers.filter((d) => d.id !== payload.dividerId);
+      return dividers.length === prev.dividers.length
+        ? (prev as FlooringData)
+        : { ...prev, dividers };
+    },
+  }
+);
+
+/**
+ * Assign surfaces to areas — the whole list, not one entry.
+ *
+ * Whole-list for the same reason `configureLayout` is: the undo entry the user wants is "Change
+ * floor surface", and the caller is the only party that can resolve *which* derived face an
+ * assignment belongs to. Resolving a face means a point-in-polygon test against the solved
+ * regions, and the solver lives in the lazy half — so `store.ts` rebuilds the list from the
+ * current solution and sends it, which also prunes seeds whose face no longer exists.
+ */
+export const setSurfaces: CommandKind<{ surfaces: SurfaceAssignment[] }> = defineCommand(
+  flooringCodec,
+  'surfaces.set',
+  {
+    label: () => 'Change floor surface',
+    apply: (_doc, payload, prev) => ({
+      ...prev,
+      surfaces: payload.surfaces.map((s) => ({ ...s, seed: { ...s.seed } })),
+    }),
+  },
+  { absolute: true }
+);
+
 export const flooringCommands: readonly RegisteredCommand[] = [
   configureLayout,
   setPlankSpec,
   moveOrigin,
   addTransition,
   removeTransition,
+  addDivider,
+  setDividerKind,
+  removeDivider,
+  setSurfaces,
 ];

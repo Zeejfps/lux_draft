@@ -63,6 +63,22 @@ export const COMMAND_SAMPLES: Record<string, unknown> = {
     transition: { id: 'sample-transition', doorId: 'sample-door', kind: 'reducer' },
   },
   [flooring.removeTransition.type]: { transitionId: 'sample-transition' },
+  [flooring.addDivider.type]: {
+    divider: {
+      id: 'sample-divider',
+      a: { x: 0, y: 4 },
+      b: { x: 10, y: 4 },
+      kind: 'tMolding',
+    },
+  },
+  [flooring.setDividerKind.type]: { dividerId: 'sample-divider', kind: 'reducer' },
+  [flooring.removeDivider.type]: { dividerId: 'sample-divider' },
+  [flooring.setSurfaces.type]: {
+    surfaces: [
+      { seed: { x: 5, y: 2 }, surface: 'plank' },
+      { seed: { x: 5, y: 8 }, surface: 'carpet' },
+    ],
+  },
 };
 
 /** A document carrying one live module slice and nothing else. */

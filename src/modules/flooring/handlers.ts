@@ -3,9 +3,14 @@ import type { Door, Vector2, WallSegment } from '../../floorplan/types/geometry'
 import type { InteractionContext } from '../../floorplan/types/interaction';
 import { BaseInteractionHandler } from '../../floorplan/interactions/InteractionHandler';
 import { getDoorEndpoints } from '../../floorplan/utils/geometry';
-import type { Transition } from './types';
+import type { Divider, Transition } from './types';
 import type { Plank } from './PlankLayoutEngine';
-import { DOOR_HIT_TOLERANCE_FT, FLOORING_TOOL_TRANSITION } from './constants';
+import { nearestOnSegment } from './geometry2d';
+import {
+  DOOR_HIT_TOLERANCE_FT,
+  FLOORING_TOOL_DIVIDER,
+  FLOORING_TOOL_TRANSITION,
+} from './constants';
 
 /**
  * Flooring's interaction handlers.
@@ -75,6 +80,97 @@ export class TransitionPlacementHandler extends BaseInteractionHandler {
         best = door;
       }
     }
+    return best;
+  }
+}
+
+export interface DividerHandlerConfig {
+  getWalls(): readonly WallSegment[];
+  getDividers(): readonly Divider[];
+  setPending(pending: { from: Vector2; to: Vector2 } | null): void;
+  addDivider(a: Vector2, b: Vector2): void;
+}
+
+/**
+ * The divider tool: click where the floor starts changing, click where it stops.
+ *
+ * Both clicks are **snapped onto the nearest boundary wall or existing divider**, with no
+ * tolerance and no fallback to the raw position. That is not a nicety — `RegionSolver` splits a
+ * face with a chord, and a chord that does not reach the face's edge splits nothing. Snapping
+ * unconditionally means every divider this tool produces attaches; the `unattached` report
+ * exists for the other case, a divider left dangling by a *later* wall edit.
+ *
+ * Snapping to an existing divider is what makes a T-junction drawable: a divider is an edge of
+ * the two faces it created, so landing on one cuts the face on the side you are on.
+ */
+export class DividerPlacementHandler extends BaseInteractionHandler {
+  readonly name = 'flooringDivider';
+  readonly priority = 90;
+
+  private readonly config: DividerHandlerConfig;
+  private from: Vector2 | null = null;
+
+  constructor(config: DividerHandlerConfig) {
+    super();
+    this.config = config;
+  }
+
+  canHandle(_event: InputEvent, context: InteractionContext): boolean {
+    return context.activeTool === FLOORING_TOOL_DIVIDER;
+  }
+
+  handleClick(event: InputEvent, context: InteractionContext): boolean {
+    if (!this.canHandle(event, context)) return false;
+    const snapped = this.snap(event.worldPos);
+    // Consume regardless: the tool owns the pointer while it is selected, so a miss must not
+    // fall through to core's selection handler.
+    if (!snapped) return true;
+
+    if (!this.from) {
+      this.from = snapped;
+      this.config.setPending({ from: snapped, to: snapped });
+      return true;
+    }
+    if (Math.hypot(snapped.x - this.from.x, snapped.y - this.from.y) > 1e-6) {
+      this.config.addDivider(this.from, snapped);
+    }
+    this.reset();
+    return true;
+  }
+
+  /** Observes only — returning false keeps the rubber band from swallowing anything else. */
+  handleMouseMove(event: InputEvent, context: InteractionContext): boolean {
+    if (!this.canHandle(event, context) || !this.from) return false;
+    this.config.setPending({ from: this.from, to: this.snap(event.worldPos) ?? event.worldPos });
+    return false;
+  }
+
+  handleKeyDown(event: InputEvent, context: InteractionContext): boolean {
+    if (!this.canHandle(event, context) || event.key !== 'Escape' || !this.from) return false;
+    this.reset();
+    return true;
+  }
+
+  private reset(): void {
+    this.from = null;
+    this.config.setPending(null);
+  }
+
+  /** The nearest point on any boundary wall or existing divider. */
+  private snap(position: Vector2): Vector2 | null {
+    let best: Vector2 | null = null;
+    let bestDistance = Infinity;
+
+    const consider = (a: Vector2, b: Vector2): void => {
+      const projection = nearestOnSegment(a, b, position);
+      if (projection.distance < bestDistance) {
+        bestDistance = projection.distance;
+        best = projection.point;
+      }
+    };
+
+    for (const wall of this.config.getWalls()) consider(wall.start, wall.end);
+    for (const divider of this.config.getDividers()) consider(divider.a, divider.b);
     return best;
   }
 }

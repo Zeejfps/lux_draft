@@ -3,6 +3,8 @@ import type { ModuleView } from '../../floorplan/types/moduleRuntime';
 import type { FlooringData } from './codec';
 import type { LayoutInputs, PlankLayout } from './PlankLayoutEngine';
 import { computePlankLayout, layoutKey } from './PlankLayoutEngine';
+import type { RegionInputs, RegionSolution } from './RegionSolver';
+import { plankRings, regionInputsKey, solveRegions } from './RegionSolver';
 
 /**
  * The projection: how derived output reaches the screen without blocking a gesture.
@@ -164,7 +166,51 @@ export function layoutInputsOf(view: ModuleView<FlooringData>): LayoutInputs {
     plank: view.data.plank,
     layout: view.data.layout,
     origin: view.data.origin,
+    regions: plankRings(regionsOf(view)),
   };
+}
+
+// ============================================
+// The region solution
+// ============================================
+
+/**
+ * The solved areas for a view, memoized on one entry.
+ *
+ * `solveRegions` is cheap — a handful of chords and a point-in-polygon per face, not a floor's
+ * worth of planks — so it does not need the machinery above. But it has *three* callers per
+ * frame (the layer's `inputs` selector, the layer's `update`, and the panel's store) and it
+ * allocates rings, so answering the same question three times would churn the heap at pointer
+ * rate for no reason. One entry is the right size: every caller in a frame asks about the same
+ * document, and the next frame supersedes it.
+ *
+ * Keyed on `regionInputsKey` rather than on the view, because a selection change or a hover
+ * allocates a new view and must not invalidate the areas — the same discipline `layoutKey`
+ * enforces one level up.
+ */
+let lastRegionKey: string | null = null;
+let lastRegionSolution: RegionSolution | null = null;
+
+export function regionInputsOf(view: ModuleView<FlooringData>): RegionInputs {
+  return {
+    walls: view.geometry.boundary.walls as WallSegment[],
+    isClosed: view.geometry.boundary.isClosed,
+    dividers: view.data.dividers,
+    surfaces: view.data.surfaces,
+  };
+}
+
+export function regionsOf(view: ModuleView<FlooringData>): RegionSolution {
+  return solveRegionsCached(regionInputsOf(view));
+}
+
+export function solveRegionsCached(inputs: RegionInputs): RegionSolution {
+  const key = regionInputsKey(inputs);
+  if (lastRegionSolution && lastRegionKey === key) return lastRegionSolution;
+  const solution = solveRegions(inputs);
+  lastRegionKey = key;
+  lastRegionSolution = solution;
+  return solution;
 }
 
 export type LayoutProjection = Projection<LayoutInputs, PlankLayout>;

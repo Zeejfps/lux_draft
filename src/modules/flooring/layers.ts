@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import type { Door, WallSegment } from '../../floorplan/types/geometry';
+import type { Door, Vector2, WallSegment } from '../../floorplan/types/geometry';
 import type { ModuleView, SceneLayer } from '../../floorplan/types/moduleRuntime';
 import type { FlooringData } from './codec';
 import { liveTransitions } from './codec';
-import { layoutInputsOf } from './layoutProjection';
+import { layoutInputsOf, regionsOf } from './layoutProjection';
 import { layoutKey } from './PlankLayoutEngine';
 import { isOriginSelected } from './selection';
-import { hoveredPlank, planksVisible, plankLayout, requestLayout } from './store';
+import { hoveredPlank, pendingDivider, planksVisible, plankLayout, requestLayout } from './store';
 import { PlankRenderer } from './rendering/PlankRenderer';
 import { TransitionRenderer } from './rendering/TransitionRenderer';
 import { OriginMarkerRenderer } from './rendering/OriginMarkerRenderer';
@@ -75,10 +75,29 @@ export function createFlooringLayers(scene: THREE.Scene): FlooringLayers {
     },
   };
 
+  // A divider being drawn is pointer state, not document state, so it reaches the renderer the
+  // same way a hover does: through a session store, redrawn on the next frame the layer updates.
+  let pending: { from: Vector2; to: Vector2 } | null = null;
+  let lastView: View | null = null;
+  const drawDividers = (v: View): void => {
+    const solution = regionsOf(v);
+    transitionRenderer.updateDividers(
+      solution.transitions,
+      v.data.dividers,
+      solution.unattached,
+      pending
+    );
+  };
+  const stopPending = pendingDivider.subscribe((next) => {
+    pending = next;
+    if (lastView && lastView.viewMode === 'editor') drawDividers(lastView);
+  });
+
   const transitions: SceneLayer = {
     id: 'flooring.transitions',
     update(view) {
       const v = view as View;
+      lastView = v;
       transitionRenderer.setVisible(v.viewMode === 'editor');
       if (v.viewMode !== 'editor') return;
       const doors = v.geometry.doors as Door[];
@@ -89,9 +108,14 @@ export function createFlooringLayers(scene: THREE.Scene): FlooringLayers {
         v.geometry.boundary.walls as WallSegment[],
         true
       );
+      drawDividers(v);
     },
     setVisible: (next) => transitionRenderer.setVisible(next),
-    dispose: () => transitionRenderer.dispose(),
+    dispose: () => {
+      stopPending();
+      lastView = null;
+      transitionRenderer.dispose();
+    },
   };
 
   const origin: SceneLayer = {
