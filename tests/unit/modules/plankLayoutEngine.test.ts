@@ -59,8 +59,10 @@ describe('coverage', () => {
     const withGap = layoutOf({ expansionGapIn: 0.5 });
     const without = layoutOf({ expansionGapIn: 0 });
     expect(withGap.coveredSqft).toBeLessThan(without.coveredSqft);
-    // One inch off the length of every row: 20 ft high / (7/12) ft rows ≈ 34.3 rows.
-    expect(without.coveredSqft - withGap.coveredSqft).toBeCloseTo((1 / 12) * 20, 0);
+    // The gap is a perimeter inset, so what is lost is the 20x20 room less the 19 11/12 square
+    // that is left after half an inch comes off all four walls — not a strip on two of them.
+    const inset = 20 - 2 * (0.5 / 12);
+    expect(without.coveredSqft - withGap.coveredSqft).toBeCloseTo(400 - inset * inset, 1);
   });
 
   it('an obstacle is a cutout, with no code in this module that knows what an obstacle is', () => {
@@ -109,6 +111,117 @@ describe('coverage', () => {
     const widths = new Set(layout.planks.map((p) => p.width.toFixed(6)));
     expect(widths.size).toBe(2);
     expect(Math.min(...[...widths].map(Number)) * 12).toBeCloseTo(2, 4);
+  });
+});
+
+describe('the expansion gap', () => {
+  /** Bounds of every piece in world space. Run angle 0 from the bottom-left: run +x, rows +y. */
+  function bounds(planks: readonly { center: Vector2; length: number; width: number }[]) {
+    return {
+      minX: Math.min(...planks.map((p) => p.center.x - p.length / 2)),
+      maxX: Math.max(...planks.map((p) => p.center.x + p.length / 2)),
+      minY: Math.min(...planks.map((p) => p.center.y - p.width / 2)),
+      maxY: Math.max(...planks.map((p) => p.center.y + p.width / 2)),
+    };
+  }
+
+  const GAP_IN = 0.5;
+  const gap = GAP_IN / 12;
+
+  it('holds the floor off all four walls, not just the two the rows end at', () => {
+    const { minX, maxX, minY, maxY } = bounds(layoutOf({ expansionGapIn: GAP_IN }).planks);
+    // A floating floor with no gap on one axis buckles on that axis, so the rows are held off
+    // the walls they run parallel to (y) exactly as far as the walls they end at (x).
+    expect(minX).toBeCloseTo(gap, 6);
+    expect(maxX).toBeCloseTo(20 - gap, 6);
+    expect(minY).toBeCloseTo(gap, 6);
+    expect(maxY).toBeCloseTo(20 - gap, 6);
+  });
+
+  it('holds it off the inside walls of a concave room too', () => {
+    // The same L as above: the step at y = 10 is an outside wall of the floor, and the run is
+    // parallel to it, so an inset of the extent alone would miss it.
+    const corners: Vector2[] = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 10, y: 10 },
+      { x: 10, y: 20 },
+      { x: 0, y: 20 },
+    ];
+    const walls: WallSegment[] = corners.map((start, i) => {
+      const end = corners[(i + 1) % corners.length];
+      return { id: `w${i}`, start, end, length: Math.hypot(end.x - start.x, end.y - start.y) };
+    });
+    const layout = computePlankLayout(
+      inputs({ walls, layout: { ...defaults.layout, expansionGapIn: GAP_IN } })
+    );
+    // Nothing in the removed quadrant, and nothing within the gap of the step or of the wall
+    // that climbs from it.
+    for (const plank of layout.planks) {
+      const right = plank.center.x + plank.length / 2;
+      const top = plank.center.y + plank.width / 2;
+      if (top > 10) expect(right).toBeLessThanOrEqual(10 - gap + 1e-6);
+    }
+  });
+
+  it('stops the planks short of an obstacle on every side of it', () => {
+    // The island spans [6, 10] on both axes; the cutout it leaves is that grown by the gap.
+    const island: Obstacle = makeObstacle('island', { x: 6, y: 6 }, 4);
+    const layout = layoutOf({ expansionGapIn: GAP_IN }, { obstacles: [island] });
+    for (const plank of layout.planks) {
+      // A row is sampled on its centreline, so that is where the cutout is exact.
+      const y = plank.center.y;
+      if (y <= 6 - gap || y >= 10 + gap) continue;
+      const left = plank.center.x - plank.length / 2;
+      const right = plank.center.x + plank.length / 2;
+      expect(right <= 6 - gap + 1e-6 || left >= 10 + gap - 1e-6).toBe(true);
+    }
+    // And the rows that pass over the island are held off its faces, not laid up against them.
+    const overIsland = layout.planks
+      .filter((p) => p.center.x - p.length / 2 < 8 && p.center.x + p.length / 2 > 8)
+      .map((p) => p.center.y);
+    expect(Math.min(...overIsland.filter((y) => y > 10))).toBeGreaterThan(10 + gap);
+    expect(Math.max(...overIsland.filter((y) => y < 6))).toBeLessThan(6 - gap);
+  });
+
+  it('measures the gap from a diagonal wall, not along the row', () => {
+    // A run at 45 degrees to the walls. Trimming the interval would have backed the row off by
+    // gap / cos 45; moving the wall along its own normal backs it off by the gap.
+    const layout = layoutOf({ expansionGapIn: GAP_IN, runAngleDeg: 45 });
+    const walls = rectWalls(20, 20);
+    const distanceToWalls = (p: Vector2): number =>
+      Math.min(
+        ...walls.map((w) => {
+          const dx = w.end.x - w.start.x;
+          const dy = w.end.y - w.start.y;
+          const t = Math.max(
+            0,
+            Math.min(1, ((p.x - w.start.x) * dx + (p.y - w.start.y) * dy) / (dx * dx + dy * dy))
+          );
+          return Math.hypot(p.x - (w.start.x + t * dx), p.y - (w.start.y + t * dy));
+        })
+      );
+
+    // The ends of each row's centreline — where the scan line meets the boundary, which is the
+    // one place the row's extent is exact rather than sampled.
+    const [c, s] = [Math.cos(layout.angle), Math.sin(layout.angle)];
+    const ends = layout.planks.flatMap((p) => [
+      { x: p.center.x - (p.length / 2) * c, y: p.center.y - (p.length / 2) * s },
+      { x: p.center.x + (p.length / 2) * c, y: p.center.y + (p.length / 2) * s },
+    ]);
+    expect(Math.min(...ends.map(distanceToWalls))).toBeCloseTo(gap, 6);
+  });
+
+  it('a gap wider than the room leaves no floor rather than an inside-out one', () => {
+    const layout = computePlankLayout(
+      inputs({
+        walls: rectWalls(1, 1),
+        layout: { ...defaults.layout, expansionGapIn: 12 },
+      })
+    );
+    expect(layout.planks).toHaveLength(0);
+    expect(layout.coveredSqft).toBe(0);
   });
 });
 

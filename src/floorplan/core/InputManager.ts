@@ -1,6 +1,7 @@
 import type { Vector2 } from '../types';
 import type { Scene } from './Scene';
 import { ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, PINCH_ZOOM_SENSITIVITY } from '../constants/editor';
+import { isTypingTarget } from '../utils/keyboard';
 
 export type InputEventType =
   | 'click'
@@ -61,8 +62,8 @@ export class InputManager {
     canvas.addEventListener('pointercancel', this.handleCancel);
     window.addEventListener('blur', this.handleCancel);
 
-    window.addEventListener('keydown', this.handleKeyDown.bind(this));
-    window.addEventListener('keyup', this.handleKeyUp.bind(this));
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keyup', this.handleKeyUp);
   }
 
   on(eventType: InputEventType, handler: InputHandler): void {
@@ -193,7 +194,14 @@ export class InputManager {
     this.emit('contextmenu', this.createEvent(e, 'contextmenu'));
   }
 
-  private handleKeyDown(e: KeyboardEvent): void {
+  /**
+   * Bound once so it can be removed on dispose. Keystrokes aimed at a field belong to that
+   * field: the editor's shortcuts are bare letters and digits, so typing `2` into an input
+   * would otherwise also switch the view mode.
+   */
+  private handleKeyDown = (e: KeyboardEvent): void => {
+    if (isTypingTarget(e.target)) return;
+
     const event: InputEvent = {
       type: 'keydown',
       worldPos: { x: 0, y: 0 },
@@ -206,9 +214,11 @@ export class InputManager {
     };
 
     this.emit('keydown', event);
-  }
+  };
 
-  private handleKeyUp(e: KeyboardEvent): void {
+  private handleKeyUp = (e: KeyboardEvent): void => {
+    if (isTypingTarget(e.target)) return;
+
     const event: InputEvent = {
       type: 'keyup',
       worldPos: { x: 0, y: 0 },
@@ -221,12 +231,12 @@ export class InputManager {
     };
 
     this.emit('keyup', event);
-  }
+  };
 
   dispose(): void {
     this.scene.domElement.removeEventListener('pointercancel', this.handleCancel);
     window.removeEventListener('blur', this.handleCancel);
-    window.removeEventListener('keydown', this.handleKeyDown.bind(this));
-    window.removeEventListener('keyup', this.handleKeyUp.bind(this));
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp);
   }
 }

@@ -234,6 +234,103 @@ function subtractIntervals(spans: Interval[], holes: Interval[]): Interval[] {
 }
 
 // ============================================
+// The expansion gap
+// ============================================
+
+/** How far a mitred vertex may travel, in gaps, before it is clamped. */
+const MAX_MITER = 4;
+
+function signedArea(polygon: readonly Vector2[]): number {
+  let sum = 0;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    sum += polygon[j].x * polygon[i].y - polygon[i].x * polygon[j].y;
+  }
+  return sum / 2;
+}
+
+/**
+ * The polygon pulled inward by `distance`; a negative distance pushes it outward, which is what
+ * an obstacle wants. Returns `[]` when the inset consumes the region.
+ *
+ * This is how the expansion gap is applied, and it is applied here rather than by trimming each
+ * scan-line interval because the gap is a distance from **every** wall. Trimming the interval
+ * only backs the planks off the two walls their ends butt into; the two walls the run is
+ * parallel to would get nothing, and a floating floor with no gap on one axis buckles on that
+ * axis. Moving each edge along its own normal also measures the gap perpendicular to a diagonal
+ * wall, where trimming an interval horizontally would have left `gap / cos θ`.
+ *
+ * Winding is detected, not assumed: `toLocal` mirrors for two of the four start corners, which
+ * reverses it.
+ *
+ * Joins are mitred — exact for the rectilinear corner that every room here is made of — and
+ * clamped, since an uncapped miter shoots off toward infinity as a vertex approaches a spike. A
+ * distance large enough to collapse a narrow feature can still self-intersect; with a gap of an
+ * inch or two against walls measured in feet that needs a room this editor cannot draw, and the
+ * scan line's even-odd rule degrades to dropping the inverted lobe rather than to nonsense.
+ */
+function insetPolygon(polygon: readonly Vector2[], distance: number): Vector2[] {
+  const n = polygon.length;
+  if (n < 3) return [];
+  if (Math.abs(distance) <= EPS) return [...polygon];
+
+  const area = signedArea(polygon);
+  if (Math.abs(area) <= EPS) return [];
+  const inward = area > 0 ? 1 : -1;
+
+  // Unit inward normal of the edge leaving each vertex.
+  const normals: Vector2[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    normals.push(len <= EPS ? { x: 0, y: 0 } : { x: (-dy / len) * inward, y: (dx / len) * inward });
+  }
+
+  const out: Vector2[] = [];
+  for (let i = 0; i < n; i++) {
+    const before = normals[(i + n - 1) % n];
+    const after = normals[i];
+    const p = polygon[i];
+
+    // The mitre vector `(n1 + n2) / (1 + n1·n2)` has a projection of exactly 1 onto each
+    // normal, so both edges end up `distance` from where they were.
+    const denom = 1 + (before.x * after.x + before.y * after.y);
+    if (denom <= EPS) {
+      // The edges double back on each other; there is no mitre, so take one normal.
+      out.push({ x: p.x + after.x * distance, y: p.y + after.y * distance });
+      continue;
+    }
+    const scale = distance / denom;
+    let ox = (before.x + after.x) * scale;
+    let oy = (before.y + after.y) * scale;
+    const reach = Math.hypot(ox, oy);
+    const limit = Math.abs(distance) * MAX_MITER;
+    if (reach > limit) {
+      ox *= limit / reach;
+      oy *= limit / reach;
+    }
+    out.push({ x: p.x + ox, y: p.y + oy });
+  }
+
+  // Inset past the middle and an edge comes out running backwards: the two walls it separated
+  // have crossed, and what is left is not a smaller room but no room. Winding does not catch
+  // this — a square inset by its own width lands on itself, reversed edge by edge, with the
+  // same area and the same sign — so the test is per edge, against the edge it came from.
+  for (let i = 0; i < n; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % n];
+    const a2 = out[i];
+    const b2 = out[(i + 1) % n];
+    if ((b.x - a.x) * (b2.x - a2.x) + (b.y - a.y) * (b2.y - a2.y) < -EPS) return [];
+  }
+  const insetArea = signedArea(out);
+  if (insetArea * area <= EPS) return [];
+  return out;
+}
+
+// ============================================
 // Stagger
 // ============================================
 
@@ -429,8 +526,22 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   const { sx, sy } = cornerSigns(layout.startCorner);
   const frame: Frame = { cos: Math.cos(theta), sin: Math.sin(theta), sx, sy, origin };
 
-  const room = walls.map((w) => toLocal(frame, w.start));
-  const holes = obstacles.map((o) => o.walls.map((w) => toLocal(frame, w.start)));
+  const gap = Math.max(0, layout.expansionGapIn) / INCHES_PER_FOOT;
+  const minEndCut = Math.max(0, layout.minEndCutIn) / INCHES_PER_FOOT;
+
+  // The gap is taken out of the geometry once, here, so every wall gets it — including the ones
+  // the run is parallel to, and the edges of an obstacle, which the planks stop short of too.
+  const room = insetPolygon(
+    walls.map((w) => toLocal(frame, w.start)),
+    gap
+  );
+  if (room.length < 3) return { ...EMPTY_LAYOUT, key };
+  const holes = obstacles.map((o) =>
+    insetPolygon(
+      o.walls.map((w) => toLocal(frame, w.start)),
+      -gap
+    )
+  );
 
   let minY = Infinity;
   let maxY = -Infinity;
@@ -439,9 +550,6 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     if (p.y > maxY) maxY = p.y;
   }
   if (!Number.isFinite(minY) || maxY - minY <= EPS) return { ...EMPTY_LAYOUT, key };
-
-  const gap = Math.max(0, layout.expansionGapIn) / INCHES_PER_FOOT;
-  const minEndCut = Math.max(0, layout.minEndCutIn) / INCHES_PER_FOOT;
 
   const firstRow = Math.floor(minY / plankWidth);
   const lastRow = Math.ceil(maxY / plankWidth);
@@ -480,9 +588,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     const offset = rowOffset(row, layout, plankLength);
     let column = 0;
 
-    for (const [rawStart, rawEnd] of spans) {
-      const start = rawStart + gap;
-      const end = rawEnd - gap;
+    for (const [start, end] of spans) {
       if (end - start <= EPS) continue;
 
       const pieces = layRow([start, end], offset, plankLength, minEndCut);

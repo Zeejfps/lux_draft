@@ -47,6 +47,7 @@
   import { loadFromLocalStorage, setupAutoSave } from '../floorplan/persistence/localStorage';
   import { toggleGridSnap } from '../floorplan/stores/settingsStore';
   import { togglePropertiesPanel } from '../floorplan/stores/propertiesPanelStore';
+  import { isTypingTarget } from '../floorplan/utils/keyboard';
   import { currentRoute } from './routerStore';
   import { startModuleRouting } from './moduleRouting';
   import '../floorplan/stores/themeStore'; // Initialize theme CSS variables
@@ -112,9 +113,7 @@
   }
 
   function handleGlobalKeydown(e: KeyboardEvent): void {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) {
-      return;
-    }
+    if (isTypingTarget(e.target)) return;
 
     const key = e.key.toLowerCase();
 
