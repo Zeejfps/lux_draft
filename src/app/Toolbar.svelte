@@ -3,15 +3,9 @@
   import { activeTool, viewMode, setActiveTool, setViewMode } from '../floorplan/stores/appStore';
   import { selection, clearSelection } from '../floorplan/stores/selectionStore';
   import { getSelectedVertexIndices } from '../floorplan/types/selection';
-  import { getSelectedFixtureIds } from '../modules/lighting/selection';
-  import {
-    canPlaceLights,
-    canPlaceDoors,
-    canDrawObstacles,
-    committedDocument,
-    resetRoom,
-    openLoaded,
-  } from '../floorplan/stores/roomStore';
+  import { activeModule, toolbarTools } from '../floorplan/stores/moduleActivation';
+  import { NO_ENTITIES } from '../floorplan/types/entity';
+  import { committedDocument, resetRoom, openLoaded } from '../floorplan/stores/roomStore';
   import { sessionStore, history, saveInput } from '../floorplan/stores/sessionStore';
   import { canUndo, canRedo, undoLabel, redoLabel } from '../floorplan/types/session';
   import {
@@ -55,9 +49,6 @@
 
   let currentTool: Tool;
   let currentViewMode: ViewMode;
-  let lightsEnabled: boolean;
-  let doorsEnabled: boolean;
-  let obstaclesEnabled: boolean;
   let raftersVisible: boolean;
   let undoEnabled: boolean;
   let redoEnabled: boolean;
@@ -76,9 +67,6 @@
 
   $: currentTool = $activeTool;
   $: currentViewMode = $viewMode;
-  $: lightsEnabled = $canPlaceLights;
-  $: doorsEnabled = $canPlaceDoors;
-  $: obstaclesEnabled = $canDrawObstacles;
   $: raftersVisible = $rafterConfig.visible;
   $: undoEnabled = canUndo($history);
   $: redoEnabled = canRedo($history);
@@ -91,8 +79,10 @@
   $: spacingEnabled = $spacingConfig.enabled;
   $: gridSnapEnabled = $displayPreferences.gridSnapEnabled;
   $: measuringActive = $isMeasuring;
+  // Core's own vertices, plus whatever the active module contributes as point entities.
   $: canMeasure =
-    getSelectedVertexIndices($selection).length > 0 || getSelectedFixtureIds($selection).length > 0;
+    getSelectedVertexIndices($selection).length > 0 ||
+    ($activeModule?.entities ?? NO_ENTITIES).selectedIds($selection).length > 0;
   $: lightRadiusVisibility = $displayPreferences.lightRadiusVisibility;
 
   function handleToolChange(tool: Tool): void {
@@ -378,92 +368,33 @@
   <div class="toolbar-section">
     <span class="section-label">Tools</span>
     <div class="button-group">
-      <button
-        class="tool-button"
-        class:active={currentTool === 'draw'}
-        on:click={() => handleToolChange('draw')}
-        title="Draw Walls (D)"
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+      <!--
+        Every tool comes from the registry: core's three, then the active module's. Nothing in
+        this file names a tool, which is what lets a module contribute a button.
+      -->
+      {#each $toolbarTools as tool (tool.descriptor.id)}
+        <button
+          class="tool-button"
+          class:active={currentTool === tool.descriptor.id}
+          on:click={() => handleToolChange(tool.descriptor.id)}
+          disabled={!tool.enabled}
+          title={tool.enabled
+            ? tool.descriptor.title
+            : (tool.descriptor.disabledTitle ?? tool.descriptor.title)}
         >
-          <path d="M12 19l7-7 3 3-7 7-3-3z" />
-          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-          <path d="M2 2l7.586 7.586" />
-          <circle cx="11" cy="11" r="2" />
-        </svg>
-        <span class="label">Draw</span>
-      </button>
-      <button
-        class="tool-button"
-        class:active={currentTool === 'light'}
-        on:click={() => handleToolChange('light')}
-        disabled={!lightsEnabled}
-        title={lightsEnabled ? 'Place Lights (L)' : 'Close room first'}
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <line x1="12" y1="1" x2="12" y2="3" />
-          <line x1="12" y1="21" x2="12" y2="23" />
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-          <line x1="1" y1="12" x2="3" y2="12" />
-          <line x1="21" y1="12" x2="23" y2="12" />
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-          <circle cx="12" cy="12" r="5" />
-        </svg>
-        <span class="label">Light</span>
-      </button>
-      <button
-        class="tool-button"
-        class:active={currentTool === 'door'}
-        on:click={() => handleToolChange('door')}
-        disabled={!doorsEnabled}
-        title={doorsEnabled ? 'Place Door' : 'Close room first'}
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path d="M3 21V3h18v18H3z" />
-          <path d="M9 21V7l6-1v15" />
-          <circle cx="13" cy="12" r="1" />
-        </svg>
-        <span class="label">Door</span>
-      </button>
-      <button
-        class="tool-button"
-        class:active={currentTool === 'obstacle'}
-        on:click={() => handleToolChange('obstacle')}
-        disabled={!obstaclesEnabled}
-        title={obstaclesEnabled ? 'Draw Obstacle (O)' : 'Close room first'}
-      >
-        <svg
-          class="icon-svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <rect x="6" y="6" width="12" height="12" rx="1" />
-          <line x1="6" y1="12" x2="18" y2="12" />
-          <line x1="12" y1="6" x2="12" y2="18" />
-        </svg>
-        <span class="label">Obstacle</span>
-      </button>
+          <svg
+            class="icon-svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html tool.descriptor.icon}
+          </svg>
+          <span class="label">{tool.descriptor.label}</span>
+        </button>
+      {/each}
       <div class="section-divider"></div>
       <button
         class="toggle-button modifier"

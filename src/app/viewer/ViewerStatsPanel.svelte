@@ -4,8 +4,12 @@
     lightingMetrics,
     setRoomType,
   } from '../../modules/lighting/statsStore';
-  import type { LightingMetrics, LightingStatsConfig, RoomType } from '../../floorplan/types';
-  import { ROOM_LIGHTING_STANDARDS } from '../../floorplan/types';
+  import type {
+    LightingMetrics,
+    LightingStatsConfig,
+    RoomType,
+  } from '../../modules/lighting/types';
+  import { ROOM_LIGHTING_STANDARDS } from '../../modules/lighting/types';
 
   let config: LightingStatsConfig;
   let metrics: LightingMetrics | null;

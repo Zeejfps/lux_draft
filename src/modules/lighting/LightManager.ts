@@ -1,10 +1,6 @@
-import type {
-  Vector2,
-  LightFixture,
-  LightProperties,
-  LightDefinition,
-} from '../../floorplan/types';
-import { DEFAULT_LIGHT_PROPERTIES, DEFAULT_LIGHT_DEFINITIONS } from '../../floorplan/types';
+import type { Vector2 } from '../../floorplan/types';
+import type { LightFixture, LightProperties, LightDefinition } from './types';
+import { DEFAULT_LIGHT_PROPERTIES, DEFAULT_LIGHT_DEFINITIONS } from './types';
 import { generateId } from '../../floorplan/utils/id';
 import { distancePointToPoint } from '../../floorplan/utils/math';
 import { getDefinitionById } from './definitionsStore';

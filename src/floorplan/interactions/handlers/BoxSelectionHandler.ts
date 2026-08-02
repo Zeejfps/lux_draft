@@ -3,7 +3,7 @@ import type { Vector2, Obstacle } from '../../types';
 import type { InteractionContext, BoxSelectionState } from '../../types/interaction';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { getSelectedObstacleId } from '../../types/selection';
-import { findVerticesInBox, findLightsInBox } from '../../utils/math';
+import { findVerticesInBox } from '../../utils/math';
 
 export interface ObstacleVertexBoxSelection {
   obstacleId: string;
@@ -15,7 +15,7 @@ export interface BoxSelectionHandlerCallbacks {
   onBoxSelectionUpdate: (start: Vector2, current: Vector2) => void;
   onBoxSelectionComplete: (
     vertexIndices: number[],
-    lightIds: string[],
+    entityIds: string[],
     obstacleVertices: ObstacleVertexBoxSelection[],
     addToSelection: boolean
   ) => void;
@@ -29,7 +29,7 @@ export interface BoxSelectionHandlerConfig {
 
 /**
  * Handles box (rectangle) selection.
- * Allows selecting multiple vertices and lights by drawing a rectangle.
+ * Allows selecting multiple room vertices and module entities by drawing a rectangle.
  */
 export class BoxSelectionHandler extends BaseInteractionHandler {
   readonly name = 'boxSelection';
@@ -50,7 +50,7 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
       state.isSelecting ||
       (context.document.geometry.boundary.isClosed &&
         !context.isDrawingEnabled &&
-        !context.isPlacingLights)
+        !context.isModuleToolActive)
     );
   }
 
@@ -78,9 +78,8 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
 
     // Find items in box
     const vertices = context.vertices;
-    const lights = context.fixtures;
     const indicesInBox = findVerticesInBox(vertices, state.startPosition, state.currentPosition);
-    const lightIdsInBox = findLightsInBox(lights, state.startPosition, state.currentPosition);
+    const entityIdsInBox = context.entities.inBox(state.startPosition, state.currentPosition);
 
     // Find obstacle vertices in box (only for the currently selected obstacle)
     const selectedObstacleId = getSelectedObstacleId(context.selection);
@@ -98,7 +97,7 @@ export class BoxSelectionHandler extends BaseInteractionHandler {
     // Complete selection
     this.callbacks.onBoxSelectionComplete(
       indicesInBox,
-      lightIdsInBox,
+      entityIdsInBox,
       obstacleVerticesInBox,
       addToSelection
     );

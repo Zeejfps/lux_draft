@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { SpacingWarning } from '../../../floorplan/types';
+import type { SpacingWarning } from '../types';
 import { clearGroup } from '../../../floorplan/utils/three';
 
 export class SpacingWarningRenderer {

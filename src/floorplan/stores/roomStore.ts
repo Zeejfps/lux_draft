@@ -7,6 +7,7 @@ import { createEmptyDocument } from '../types/document';
 import { asLoadedDocument } from '../types/session';
 import { sessionStore, roomStore } from './sessionStore';
 import { geometryService } from '../services/GeometryService';
+import { computeRoomBounds } from '../utils/geometry';
 
 // ============================================
 // Store topology
@@ -74,32 +75,9 @@ export const canPlaceLights = derived(roomStore, ($room) => $room.geometry.bound
 export const canPlaceDoors = derived(roomStore, ($room) => $room.geometry.boundary.isClosed);
 export const canDrawObstacles = derived(roomStore, ($room) => $room.geometry.boundary.isClosed);
 
-export const roomBounds = derived(roomStore, ($room) => {
-  const walls = $room.geometry.boundary.walls;
-  if (walls.length === 0) {
-    return { minX: -10, minY: -10, maxX: 10, maxY: 10 };
-  }
-
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
-  for (const wall of walls) {
-    minX = Math.min(minX, wall.start.x, wall.end.x);
-    minY = Math.min(minY, wall.start.y, wall.end.y);
-    maxX = Math.max(maxX, wall.start.x, wall.end.x);
-    maxY = Math.max(maxY, wall.start.y, wall.end.y);
-  }
-
-  const padding = 2;
-  return {
-    minX: minX - padding,
-    minY: minY - padding,
-    maxX: maxX + padding,
-    maxY: maxY + padding,
-  };
-});
+export const roomBounds = derived(roomStore, ($room) =>
+  computeRoomBounds($room.geometry.boundary.walls)
+);
 
 // ============================================
 // Read helpers

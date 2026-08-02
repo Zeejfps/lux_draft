@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
-import type { LightDefinition } from '../../floorplan/types';
-import { DEFAULT_LIGHT_DEFINITIONS } from '../../floorplan/types';
+import type { LightDefinition } from './types';
+import { DEFAULT_LIGHT_DEFINITIONS } from './types';
 import type { IESData } from './IESParser';
 
 /**

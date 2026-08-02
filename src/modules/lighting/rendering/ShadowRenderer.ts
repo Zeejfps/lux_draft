@@ -1,12 +1,6 @@
 import * as THREE from 'three';
-import type {
-  Vector2,
-  WallSegment,
-  LightFixture,
-  BoundingBox,
-  Door,
-  Obstacle,
-} from '../../../floorplan/types';
+import type { Vector2, WallSegment, BoundingBox, Door, Obstacle } from '../../../floorplan/types';
+import type { LightFixture } from '../types';
 import { raySegmentIntersect } from '../../../floorplan/utils/math';
 import { disposeMeshArray } from '../../../floorplan/utils/three';
 import { getDoorEndpoints } from '../../../floorplan/utils/geometry';

@@ -1,12 +1,12 @@
 import type { LightDefinition, LightFixture, DeadZoneConfig, SpacingConfig } from './types';
-import type { RafterConfig } from '../../floorplan/types/state';
+import type { RafterConfig } from './types';
 import type { DecodeResult, ModuleBlob, ModuleCodec } from '../../floorplan/types/module';
 import {
   DEFAULT_DEAD_ZONE_CONFIG,
   DEFAULT_LIGHT_DEFINITIONS,
   DEFAULT_SPACING_CONFIG,
 } from './types';
-import { DEFAULT_RAFTER_CONFIG } from '../../floorplan/types/state';
+import { DEFAULT_RAFTER_CONFIG } from './types';
 
 /**
  * The lighting module's data schema and codec. **Eager** (invariant 7): no `three`, no

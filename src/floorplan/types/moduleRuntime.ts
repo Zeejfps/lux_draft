@@ -107,8 +107,8 @@ export interface ToolDescriptor {
   /** A single lower-case key that selects this tool. Not part of the shortcut table. */
   readonly key?: string;
   readonly icon: string;
-  /** Re-evaluated whenever the document changes. Bound to its owner's view at creation. */
-  enabled?(): boolean;
+  /** Re-evaluated whenever the document changes. Reads the owning module's view. */
+  enabled?(view: ModuleView<unknown>): boolean;
 }
 
 /** A keyboard binding a module owns for as long as it is active. */

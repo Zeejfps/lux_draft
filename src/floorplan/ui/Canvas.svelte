@@ -4,17 +4,10 @@
   import { Scene } from '../core/Scene';
   import { type InputEvent, InputManager } from '../core/InputManager';
   import { EditorRenderer } from '../rendering/EditorRenderer';
-  import { HeatmapRenderer } from '../../modules/lighting/rendering/HeatmapRenderer';
-  import { ShadowRenderer } from '../../modules/lighting/rendering/ShadowRenderer';
-  import { RafterOverlay } from '../../modules/lighting/rendering/RafterOverlay';
-  import { DeadZoneRenderer } from '../../modules/lighting/rendering/DeadZoneRenderer';
-  import { SpacingWarningRenderer } from '../../modules/lighting/rendering/SpacingWarningRenderer';
   import { WallBuilder } from '../geometry/WallBuilder';
   import { PolygonValidator } from '../geometry/PolygonValidator';
-  import { LightManager } from '../../modules/lighting/LightManager';
   import { MeasurementController, SnapController } from '../controllers';
   import {
-    canPlaceLights,
     canPlaceDoors,
     closeRoom,
     deleteVertex,
@@ -32,8 +25,9 @@
     cancelInteraction,
   } from '../stores/roomStore';
   import {
+    activeTool,
     isDrawingEnabled,
-    isLightPlacementEnabled,
+    isModuleToolActive,
     isDoorPlacementEnabled,
     isObstacleDrawingEnabled,
     shouldFitCamera,
@@ -44,7 +38,7 @@
     retainBoxCandidates,
     selection,
     selectDoor,
-    selectFixture,
+    selectEntity,
     selectInBox,
     selectObstacle,
     selectObstacleVertex,
@@ -58,41 +52,30 @@
     getSelectedObstacleId,
     getSelectedObstacleVertexIndices,
     getSelectedVertexIndices,
-    getSelectedWallId,
     type Selection,
   } from '../types/selection';
-  import { getSelectedFixtureIds } from '../../modules/lighting/selection';
   import { sessionStore } from '../stores/sessionStore';
+  import {
+    activeEntities,
+    activeModule,
+    activeView,
+    setModuleScene,
+  } from '../stores/moduleActivation';
+  import { NO_ENTITIES, type EntityAccess } from '../types/entity';
   import { getDoorPlacementSettings } from '../stores/doorStore';
   import { displayPreferences, toggleUnitFormat } from '../stores/settingsStore';
-  import {
-    addLight,
-    deadZoneConfig,
-    fixtures,
-    pickerDefinitions,
-    rafterConfig,
-    removeLights,
-    spacingConfig,
-    spacingWarnings,
-    toggleRafters,
-  } from '../../modules/lighting/store';
-  import { toggleLightingStats } from '../../modules/lighting/statsStore';
-  import { selectedDefinitionId } from '../../modules/lighting/definitionsStore';
   import { isMeasuring } from '../stores/measurementStore';
   import type {
     BoundingBox,
     BoxSelectionState,
-    DeadZoneConfig,
     DisplayPreferences,
     EditorDocument,
     InteractionContext,
-    LightFixture,
-    RafterConfig,
-    SpacingConfig,
-    SpacingWarning,
+    Tool,
     Vector2,
     ViewMode,
   } from '../types';
+  import type { ModuleView } from '../types/moduleRuntime';
 
   // Interaction system imports
   import {
@@ -107,7 +90,6 @@
     GrabModeHandler,
     InteractionManager,
     KeyboardShortcutManager,
-    LightPlacementHandler,
     MeasurementHandler,
     ObstacleDrawingHandler,
     ObstacleDragOperation,
@@ -125,15 +107,9 @@
   let scene: Scene;
   let inputManager: InputManager;
   let editorRenderer: EditorRenderer;
-  let heatmapRenderer: HeatmapRenderer;
-  let shadowRenderer: ShadowRenderer;
-  let rafterOverlay: RafterOverlay;
-  let deadZoneRenderer: DeadZoneRenderer;
-  let spacingWarningRenderer: SpacingWarningRenderer;
   let wallBuilder: WallBuilder;
   let obstacleWallBuilder: WallBuilder;
   let polygonValidator: PolygonValidator;
-  let lightManager: LightManager;
   let snapController: SnapController;
   let measurementController: MeasurementController;
   let animationFrameId: number;
@@ -146,7 +122,6 @@
   // Handlers
   let drawingHandler: DrawingHandler;
   let obstacleDrawingHandler: ObstacleDrawingHandler;
-  let lightPlacementHandler: LightPlacementHandler;
   let doorPlacementHandler: DoorPlacementHandler;
   let boxSelectionHandler: BoxSelectionHandler;
   let measurementHandler: MeasurementHandler;
@@ -174,30 +149,22 @@
   let currentDoors: import('../types').Door[] = [];
   let currentObstacles: import('../types').Obstacle[] = [];
   let currentViewMode: ViewMode = 'editor';
-  let currentRoomState: EditorDocument;
-  let currentFixtures: LightFixture[] = [];
+  let currentDocument: EditorDocument;
   let currentBounds: BoundingBox;
-  let currentRafterConfig: RafterConfig;
   let currentDisplayPrefs: DisplayPreferences;
-  let currentDeadZoneConfig: DeadZoneConfig;
-  let currentSpacingConfig: SpacingConfig;
-  let currentSpacingWarnings: SpacingWarning[];
+  let currentTool: Tool = 'select';
   let isDrawing = false;
-  let isPlacingLights = false;
+  let isModuleTool = false;
   let isPlacingDoors = false;
   let isObstacleDrawing = false;
-  // One selection value, one subscription. The six `current*` mirrors are gone: they could
-  // arrive out of step with each other, which is exactly what made the canvas render against
-  // a stale selection. Everything below is derived from `currentSelection` in one pass.
+  // One selection value, one subscription. Everything below is derived from it in one pass.
   let currentSelection: Selection = { kind: 'none' };
-  let currentSelectedLightId: string | null = null;
-  let currentSelectedLightIds: Set<string> = new Set();
-  let currentSelectedWallId: string | null = null;
   let currentSelectedDoorId: string | null = null;
   let currentSelectedObstacleId: string | null = null;
   let currentSelectedVertexIndex: number | null = null;
   let currentSelectedVertexIndices: Set<number> = new Set();
   let currentSelectedObstacleVertexIndices: Set<number> = new Set();
+  let currentSelectedEntityIds: string[] = [];
 
   // Interaction state
   let isGrabMode = false;
@@ -212,15 +179,17 @@
   // ============================================
 
   $: currentViewMode = $viewMode;
-  $: currentRoomState = $roomStore;
-  $: currentWalls = currentRoomState.geometry.boundary.walls;
-  $: currentDoors = currentRoomState.geometry.doors;
-  $: currentObstacles = currentRoomState.geometry.obstacles;
+  $: currentDocument = $roomStore;
+  $: currentWalls = currentDocument.geometry.boundary.walls;
+  $: currentDoors = currentDocument.geometry.doors;
+  $: currentObstacles = currentDocument.geometry.obstacles;
   $: currentBounds = $roomBounds;
+  $: currentTool = $activeTool;
   $: isDrawing = $isDrawingEnabled;
-  $: isPlacingLights = $isLightPlacementEnabled;
+  $: isModuleTool = $isModuleToolActive;
   $: isPlacingDoors = $isDoorPlacementEnabled;
   $: isObstacleDrawing = $isObstacleDrawingEnabled;
+  $: currentDisplayPrefs = $displayPreferences;
 
   // Clear door preview when exiting door placement mode
   $: if (editorRenderer && !isPlacingDoors) {
@@ -232,11 +201,6 @@
     editorRenderer.setPreviewVertex(null);
   }
 
-  // Clear light preview when exiting light placement mode
-  $: if (editorRenderer && !isPlacingLights) {
-    editorRenderer.setPreviewLight(null);
-  }
-
   // Clear obstacle drawing preview when exiting obstacle drawing mode
   $: if (editorRenderer && !isObstacleDrawing) {
     editorRenderer.setPreviewVertex(null);
@@ -244,101 +208,52 @@
 
   $: currentSelection = $selection;
   $: {
-    const fixtureIds = getSelectedFixtureIds(currentSelection);
     const vertexIndices = getSelectedVertexIndices(currentSelection);
-    currentSelectedLightIds = new Set(fixtureIds);
-    currentSelectedLightId = fixtureIds[0] ?? null;
     currentSelectedVertexIndices = new Set(vertexIndices);
     currentSelectedVertexIndex = vertexIndices.length > 0 ? vertexIndices[0] : null;
-    currentSelectedWallId = getSelectedWallId(currentSelection);
     currentSelectedDoorId = getSelectedDoorId(currentSelection);
     currentSelectedObstacleId = getSelectedObstacleId(currentSelection);
     currentSelectedObstacleVertexIndices = new Set(
       getSelectedObstacleVertexIndices(currentSelection)
     );
   }
-  // Lighting's fixtures come out of `modules.lighting`, off the *live* document, so a drag
-  // previews exactly as it used to when fixtures lived at the root.
-  $: currentFixtures = $fixtures;
-  $: currentRafterConfig = $rafterConfig;
-  $: currentDisplayPrefs = $displayPreferences;
-  $: currentDeadZoneConfig = $deadZoneConfig;
-  $: currentSpacingConfig = $spacingConfig;
-  $: currentSpacingWarnings = $spacingWarnings;
+  // The active module's selected entities, read through `EntityAccess` — core never names a
+  // fixture, a plank or any other domain thing.
+  $: currentSelectedEntityIds = [
+    ...($activeModule?.entities ?? NO_ENTITIES).selectedIds($selection),
+  ];
 
   // ============================================
-  // Reactive Updates
+  // Rendering — one loop over core and module layers
   // ============================================
 
-  $: if (scene && currentViewMode) {
-    updateViewMode(currentViewMode);
-  }
+  $: editorRenderer?.setModuleLayers($activeModule?.layers ?? []);
+  $: interactionManager?.setModuleHandlers($activeModule?.handlers ?? []);
+  $: keyboardShortcutManager?.setModuleBindings(
+    ($activeModule?.shortcuts ?? []).map((shortcut) => ({
+      key: shortcut.key,
+      ctrlKey: shortcut.ctrlKey,
+      shiftKey: shortcut.shiftKey,
+      altKey: shortcut.altKey,
+      description: shortcut.description,
+      action: () => shortcut.run(),
+    }))
+  );
 
-  $: if (editorRenderer && currentRoomState) {
-    editorRenderer.updateWalls(
-      currentWalls,
-      currentSelectedWallId,
-      currentSelectedVertexIndices,
-      currentDoors
-    );
-    editorRenderer.updateLights(
-      currentFixtures,
-      currentRoomState.space.ceilingHeight,
-      currentSelectedLightIds
-    );
-    editorRenderer.updateDoors(currentDoors, currentWalls, currentSelectedDoorId);
-    editorRenderer.updateObstacles(
-      currentObstacles,
-      currentSelectedObstacleId,
-      currentSelectedObstacleVertexIndices
-    );
-    lightManager?.setLights(currentFixtures);
-  }
+  // The whole of what the scene draws. `render` loops layers; there is no per-domain call left.
+  $: renderScene($activeView);
 
-  $: if (heatmapRenderer && currentRoomState && currentBounds) {
-    heatmapRenderer.updateBounds(currentBounds);
-    heatmapRenderer.updateWalls(currentWalls);
-    heatmapRenderer.updateObstacles(currentObstacles);
-    heatmapRenderer.updateLights(currentFixtures, currentRoomState.space.ceilingHeight);
-  }
-
-  $: if (shadowRenderer && currentRoomState && currentBounds) {
-    shadowRenderer.updateShadows(
-      currentFixtures,
-      currentWalls,
-      currentBounds,
-      currentDoors,
-      currentObstacles,
-      currentRoomState.space.ceilingHeight
-    );
-  }
-
-  $: if (rafterOverlay && currentRafterConfig && currentBounds) {
-    rafterOverlay.updateConfig(currentRafterConfig);
-    rafterOverlay.render(currentBounds);
+  function renderScene(view: ModuleView<unknown>): void {
+    editorRenderer?.render(view);
   }
 
   $: if (editorRenderer && currentDisplayPrefs) {
     editorRenderer.setUnitFormat(currentDisplayPrefs.unitFormat);
-    editorRenderer.setLightRadiusVisibility(currentDisplayPrefs.lightRadiusVisibility);
   }
 
-  $: if (deadZoneRenderer && currentRoomState && currentBounds) {
-    deadZoneRenderer.updateBounds(currentBounds);
-    deadZoneRenderer.updateLights(currentFixtures, currentRoomState.space.ceilingHeight);
-  }
-
-  $: if (deadZoneRenderer && currentDeadZoneConfig) {
-    deadZoneRenderer.setVisible(currentDeadZoneConfig.enabled);
-    deadZoneRenderer.updateConfig(currentDeadZoneConfig);
-  }
-
-  $: if (spacingWarningRenderer && currentSpacingConfig) {
-    spacingWarningRenderer.setVisible(currentSpacingConfig.enabled);
-  }
-
-  $: if (spacingWarningRenderer && currentSpacingWarnings) {
-    spacingWarningRenderer.updateWarnings(currentSpacingWarnings);
+  $: if (editorRenderer && currentViewMode) {
+    // Gesture visuals are not layers, so they still need telling when the view changes.
+    editorRenderer.setVisible(currentViewMode === 'editor');
   }
 
   // Fit camera to room bounds only when explicitly requested (project load/import)
@@ -347,22 +262,9 @@
     shouldFitCamera.set(false);
   }
 
-  // Update measurement when room state changes (e.g., undo/redo)
-  $: if (measurementController && currentRoomState && measurementController.isActive) {
+  // Update measurement when the document changes (e.g., undo/redo)
+  $: if (measurementController && currentDocument && measurementController.isActive) {
     updateMeasurementPositions();
-  }
-
-  // ============================================
-  // View Mode
-  // ============================================
-
-  function updateViewMode(mode: ViewMode): void {
-    if (!editorRenderer || !heatmapRenderer || !shadowRenderer) return;
-
-    editorRenderer.setVisible(mode === 'editor');
-    heatmapRenderer.setVisible(mode === 'heatmap');
-    shadowRenderer.setVisible(mode === 'shadow');
-    editorRenderer.setLightsVisible(mode === 'editor' || mode === 'shadow');
   }
 
   // ============================================
@@ -379,20 +281,26 @@
     return get(selection);
   }
 
+  /** Likewise live: activation can change between two frames of the same session. */
+  function liveEntities(): EntityAccess {
+    return activeEntities();
+  }
+
   function buildInteractionContext(): InteractionContext {
     return {
-      document: currentRoomState,
-      fixtures: currentFixtures,
+      document: currentDocument,
+      entities: liveEntities(),
       selection: liveSelection(),
+      activeTool: currentTool,
       isDrawingEnabled: isDrawing,
-      isPlacingLights: isPlacingLights,
+      isModuleToolActive: isModuleTool,
       isPlacingDoors: isPlacingDoors,
       isObstacleDrawing: isObstacleDrawing,
       isMeasuring: measurementController?.isActive ?? false,
       isGrabMode: isGrabMode,
       isBoxSelecting: boxSelectionState.isSelecting,
       currentMousePos: currentMousePos,
-      vertices: getVertices(currentRoomState),
+      vertices: getVertices(currentDocument),
     };
   }
 
@@ -476,7 +384,8 @@
   // ============================================
 
   function updateMeasurementPositions(): void {
-    const vertices = getVertices(currentRoomState);
+    const vertices = getVertices(currentDocument);
+    const entities = liveEntities();
     const source = measurementController.source;
     const target = measurementController.target;
 
@@ -488,11 +397,11 @@
       }
     }
 
-    // Update source position if it's a light
-    if (source?.type === 'light') {
-      const light = currentFixtures.find((l) => l.id === source.id);
-      if (light) {
-        measurementController.updateSourcePosition(light.position, currentWalls);
+    // Update source position if it's a module entity
+    if (source?.type === 'entity') {
+      const entity = entities.find(source.id);
+      if (entity) {
+        measurementController.updateSourcePosition(entity.position, currentWalls);
       }
     }
 
@@ -504,11 +413,11 @@
       }
     }
 
-    // Update target position if it's a light
-    if (target?.type === 'light') {
-      const light = currentFixtures.find((l) => l.id === target.id);
-      if (light) {
-        measurementController.updateTargetPosition(light.position);
+    // Update target position if it's a module entity
+    if (target?.type === 'entity') {
+      const entity = entities.find(target.id);
+      if (entity) {
+        measurementController.updateTargetPosition(entity.position);
       }
     }
 
@@ -530,7 +439,7 @@
 
     // Start from vertex
     if (currentSelectedVertexIndex !== null) {
-      const vertices = getVertices(currentRoomState);
+      const vertices = getVertices(currentDocument);
       measurementHandler.startFromVertex(
         currentSelectedVertexIndex,
         vertices[currentSelectedVertexIndex]
@@ -539,11 +448,12 @@
       return;
     }
 
-    // Start from light
-    if (currentSelectedLightId) {
-      const light = currentFixtures.find((l) => l.id === currentSelectedLightId);
-      if (light) {
-        measurementHandler.startFromLight(currentSelectedLightId, light.position);
+    // Start from a module entity
+    const anchorId = currentSelectedEntityIds[0];
+    if (anchorId) {
+      const entity = liveEntities().find(anchorId);
+      if (entity) {
+        measurementHandler.startFromEntity(anchorId, entity.position);
         isMeasuring.set(true);
       }
     }
@@ -598,7 +508,7 @@
     if (currentSelectedVertexIndices.size > 0 && currentWalls.length > 3) {
       const sortedIndices = Array.from(currentSelectedVertexIndices).sort((a, b) => b - a);
       for (const idx of sortedIndices) {
-        if (currentRoomState.geometry.boundary.walls.length > 3) {
+        if (currentDocument.geometry.boundary.walls.length > 3) {
           deleteVertex(idx);
         }
       }
@@ -609,11 +519,10 @@
     } else if (currentSelectedDoorId) {
       removeDoor(currentSelectedDoorId);
       clearSelection();
-    } else if (currentSelectedLightIds.size > 0) {
-      for (const id of currentSelectedLightIds) {
-        lightManager.removeLight(id);
-      }
-      removeLights(currentSelectedLightIds);
+    } else if (currentSelectedEntityIds.length > 0) {
+      // The module owns what deleting its entities means; core only knows it is one command.
+      const command = liveEntities().removeCommand(currentSelectedEntityIds);
+      if (command) sessionStore.dispatch(command);
       clearSelection();
     }
   }
@@ -636,17 +545,11 @@
     scene = new Scene(container);
     inputManager = new InputManager(scene);
     editorRenderer = new EditorRenderer(scene.scene);
-    heatmapRenderer = new HeatmapRenderer(scene.scene);
-    shadowRenderer = new ShadowRenderer(scene.scene);
-    rafterOverlay = new RafterOverlay(scene.scene, currentRafterConfig);
-    deadZoneRenderer = new DeadZoneRenderer(scene.scene);
-    spacingWarningRenderer = new SpacingWarningRenderer(scene.scene);
+    // Module layers are built into this scene by the activation registry.
+    setModuleScene(scene.scene);
     wallBuilder = new WallBuilder();
     obstacleWallBuilder = new WallBuilder();
     polygonValidator = new PolygonValidator();
-    // Resolve photometry through the picker view, which prefers the document's own copy of
-    // a shared definition id over the local library's.
-    lightManager = new LightManager((id) => get(pickerDefinitions).find((d) => d.id === id));
     snapController = new SnapController();
     measurementController = new MeasurementController();
 
@@ -666,10 +569,8 @@
     keyboardShortcutManager.registerAll(
       createDefaultKeyboardShortcuts({
         setViewMode: (mode) => viewMode.set(mode),
-        toggleRafters: () => toggleRafters(),
         toggleUnitFormat: () => toggleUnitFormat(),
         toggleMeasurement: () => handleMeasurementToggle(),
-        toggleLightingStats: () => toggleLightingStats(),
         undo: () => sessionStore.undo(),
         redo: () => sessionStore.redo(),
         handleEscape: () => handleEscape(),
@@ -712,35 +613,11 @@
           const obstacle = {
             id: `obstacle-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             walls,
-            height: currentRoomState.space.ceilingHeight,
+            height: currentDocument.space.ceilingHeight,
           };
           addObstacle(obstacle);
         },
         onSnapChange: (snapType) => dispatch('snapChange', { snapType }),
-      }
-    );
-
-    lightPlacementHandler = new LightPlacementHandler(
-      {
-        lightManager,
-        polygonValidator,
-        snapController,
-        getSelectedDefinitionId: () => get(selectedDefinitionId),
-        canPlaceLights: () => get(canPlaceLights),
-        getWalls: () => currentWalls,
-        getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
-        getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
-      },
-      {
-        onLightPlaced: (light) => {
-          // Pass the picker's definition so a custom one is adopted into the document's
-          // closure by the same command that adds the fixture.
-          const definition = light.definitionId
-            ? get(pickerDefinitions).find((d) => d.id === light.definitionId)
-            : undefined;
-          addLight(light, definition);
-        },
-        onSetPreviewLight: (pos, isValid) => editorRenderer.setPreviewLight(pos, isValid),
       }
     );
 
@@ -777,7 +654,7 @@
       {
         onBoxSelectionStart: (_start) => {},
         onBoxSelectionUpdate: (start, current) => editorRenderer.setSelectionBox(start, current),
-        onBoxSelectionComplete: (vertexIndices, lightIds, obstacleVertices, addToSelection) => {
+        onBoxSelectionComplete: (vertexIndices, entityIds, obstacleVertices, addToSelection) => {
           // When an obstacle is selected, box select only applies to that obstacle's vertices
           if (obstacleVertices.length > 0) {
             const first = obstacleVertices[0];
@@ -788,8 +665,8 @@
               setObstacleVertexSelection(currentSelectedObstacleId, []);
             }
           } else {
-            // No obstacle selected — normal room vertex/fixture selection
-            selectInBox(vertexIndices, lightIds, addToSelection);
+            // No obstacle selected — normal room vertex / module entity selection
+            selectInBox(liveEntities(), vertexIndices, entityIds, addToSelection);
           }
           editorRenderer?.setSelectionBox(null, null);
         },
@@ -800,7 +677,7 @@
     measurementHandler = new MeasurementHandler(
       {
         measurementController,
-        lightManager,
+        getEntities: () => liveEntities(),
         getWalls: () => currentWalls,
       },
       {
@@ -815,15 +692,15 @@
           editorRenderer?.setMeasurementLine(null, null);
           dispatch('measurement', null);
         },
-        onSelectLight: (id) => selectFixture(id),
+        onSelectEntity: (id) => selectEntity(liveEntities(), id),
         onSelectVertex: (index, addToSelection) => selectVertex(index, addToSelection),
-        onStartDrag: (vertexIndex, lightId, pos) => {
+        onStartDrag: (vertexIndex, entityId, pos) => {
           const operation = createUnifiedDragOperation();
-          operation.setAnchor(vertexIndex, lightId);
+          operation.setAnchor(vertexIndex, entityId);
           dragManager.startDrag(operation, {
             position: pos,
             modifiers: EMPTY_MODIFIERS,
-            document: currentRoomState,
+            document: currentDocument,
             selection: liveSelection(),
           });
         },
@@ -841,14 +718,14 @@
               snapController,
               getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
               getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
-              getVertices: () => getVertices(currentRoomState),
-              getLights: () => currentFixtures,
+              getVertices: () => getVertices(currentDocument),
+              getEntities: () => liveEntities(),
               getWalls: () => currentWalls,
               getWallById: (id) => currentWalls.find((w) => w.id === id),
               getDoors: () => currentDoors,
               getDoorById: (id) => currentDoors.find((d) => d.id === id),
-              getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
-              isRoomClosed: () => currentRoomState.geometry.boundary.isClosed,
+              getDoorsByWallId: (wallId) => getDoorsByWallId(currentDocument, wallId),
+              isRoomClosed: () => currentDocument.geometry.boundary.isClosed,
               getCurrentMousePos: () => currentMousePos,
             },
             dragManager.getCallbacks()
@@ -859,8 +736,8 @@
         },
         getSelection: () => liveSelection(),
         getCurrentMousePos: () => currentMousePos,
-        getVertices: () => getVertices(currentRoomState),
-        getLights: () => currentFixtures,
+        getVertices: () => getVertices(currentDocument),
+        getEntities: () => liveEntities(),
         getWalls: () => currentWalls,
         getDoors: () => currentDoors,
         getDoorById: (id) => currentDoors.find((d) => d.id === id),
@@ -875,7 +752,7 @@
 
     selectionHandler = new SelectionHandler(
       {
-        lightManager,
+        getEntities: () => liveEntities(),
         dragManager,
         boxSelectionHandler,
         createUnifiedDragOperation,
@@ -888,7 +765,7 @@
       },
       {
         onSelectVertex: (index, addToSelection) => selectVertex(index, addToSelection),
-        onSelectLight: (id, addToSelection) => selectFixture(id, addToSelection),
+        onSelectEntity: (id, addToSelection) => selectEntity(liveEntities(), id, addToSelection),
         onSelectWall: (id) => selectWall(id),
         onSelectDoor: (id) => selectDoor(id),
         onSelectObstacle: (id) => selectObstacle(id),
@@ -898,7 +775,7 @@
           clearSelection();
           dragManager.clearAxisLock();
         },
-        onRetainBoxCandidates: () => retainBoxCandidates(),
+        onRetainBoxCandidates: () => retainBoxCandidates(liveEntities()),
         onInsertVertex: (wallId, position) => insertVertexOnWall(wallId, position),
         getWallAtPosition: (pos, walls, tolerance) =>
           editorRenderer.getWallAtPosition(pos, walls, tolerance),
@@ -907,15 +784,17 @@
       }
     );
 
-    // Register handlers (order determines priority for overlapping canHandle)
+    // Register core handlers (order determines priority for overlapping canHandle). The active
+    // module's handlers are merged in reactively above, by priority.
     interactionManager.registerHandler(grabModeHandler);
     interactionManager.registerHandler(measurementHandler);
     interactionManager.registerHandler(drawingHandler);
     interactionManager.registerHandler(obstacleDrawingHandler);
-    interactionManager.registerHandler(lightPlacementHandler);
     interactionManager.registerHandler(doorPlacementHandler);
     interactionManager.registerHandler(selectionHandler);
     interactionManager.registerHandler(boxSelectionHandler);
+    interactionManager.setModuleHandlers($activeModule?.handlers ?? []);
+    editorRenderer.setModuleLayers($activeModule?.layers ?? []);
 
     // Set up input events
     inputManager.on('click', handleClick);
@@ -925,16 +804,6 @@
     inputManager.on('mouseup', handleMouseUp);
     inputManager.on('keydown', handleKeyDown);
     inputManager.on('cancel', handleInputCancel);
-
-    // Initial renderer visibility
-    heatmapRenderer.setVisible(false);
-    shadowRenderer.setVisible(false);
-    deadZoneRenderer.setVisible(false);
-    spacingWarningRenderer.setVisible(false);
-
-    if (currentFixtures.length > 0) {
-      lightManager.setLights(currentFixtures);
-    }
 
     animate();
   });
@@ -946,10 +815,10 @@
         snapController,
         getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
-        getVertices: () => getVertices(currentRoomState),
-        getLights: () => currentFixtures,
+        getVertices: () => getVertices(currentDocument),
+        getEntities: () => liveEntities(),
         getWalls: () => currentWalls,
-        isRoomClosed: () => currentRoomState.geometry.boundary.isClosed,
+        isRoomClosed: () => currentDocument.geometry.boundary.isClosed,
       },
       {
         ...dragManager.getCallbacks(),
@@ -964,7 +833,7 @@
     return new WallDragOperation(
       {
         snapController,
-        getVertices: () => getVertices(currentRoomState),
+        getVertices: () => getVertices(currentDocument),
         getWalls: () => currentWalls,
         getWallById: (id) => currentWalls.find((w) => w.id === id),
       },
@@ -978,7 +847,7 @@
         snapController,
         getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
-        getRoomVertices: () => getVertices(currentRoomState),
+        getRoomVertices: () => getVertices(currentDocument),
       },
       dragManager.getCallbacks()
     );
@@ -990,7 +859,7 @@
         snapController,
         getGridSnapEnabled: () => currentDisplayPrefs.gridSnapEnabled,
         getGridSize: () => currentDisplayPrefs.gridSize || 0.5,
-        getRoomVertices: () => getVertices(currentRoomState),
+        getRoomVertices: () => getVertices(currentDocument),
       },
       dragManager.getCallbacks()
     );
@@ -1000,7 +869,7 @@
     return new DoorDragOperation({
       getWallById: (id) => currentWalls.find((w) => w.id === id),
       getDoorById: (id) => currentDoors.find((d) => d.id === id),
-      getDoorsByWallId: (wallId) => getDoorsByWallId(currentRoomState, wallId),
+      getDoorsByWallId: (wallId) => getDoorsByWallId(currentDocument, wallId),
     });
   }
 
@@ -1009,12 +878,9 @@
       cancelAnimationFrame(animationFrameId);
     }
     inputManager?.dispose();
+    // Only core's own renderers: module layers belong to the activation scope.
     editorRenderer?.dispose();
-    heatmapRenderer?.dispose();
-    shadowRenderer?.dispose();
-    rafterOverlay?.dispose();
-    deadZoneRenderer?.dispose();
-    spacingWarningRenderer?.dispose();
+    setModuleScene(null);
     scene?.dispose();
   });
 

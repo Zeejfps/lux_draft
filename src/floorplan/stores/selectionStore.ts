@@ -9,7 +9,7 @@ import {
   toggleMember,
   type Selection,
 } from '../types/selection';
-import { fixtureSelectionOf, getSelectedFixtureIds } from '../../modules/lighting/selection';
+import type { EntityAccess } from '../types/entity';
 
 /**
  * The verb layer over `Session.selection` — one value, so **no function here clears a
@@ -86,15 +86,23 @@ export function setObstacleVertexSelection(obstacleId: string, indices: readonly
 }
 
 // ============================================
-// Lighting fixtures (a module selection — see lighting/selection.ts)
+// Module entities
 // ============================================
+//
+// The active module's `EntityAccess` is passed in rather than imported: core owns the verb,
+// the module owns the selection kind. Before phase 4 these two functions named
+// `lighting/selection` directly, which is the import the `floorplan/` boundary rejects.
 
-export function selectFixture(id: string, addToSelection: boolean = false): void {
-  setFixtureSelection(toggleMember(getSelectedFixtureIds(current()), id, addToSelection));
+export function selectEntity(
+  entities: EntityAccess,
+  id: string,
+  addToSelection: boolean = false
+): void {
+  setEntitySelection(entities, toggleMember(entities.selectedIds(current()), id, addToSelection));
 }
 
-export function setFixtureSelection(ids: readonly string[]): void {
-  select(fixtureSelectionOf(ids));
+export function setEntitySelection(entities: EntityAccess, ids: readonly string[]): void {
+  select(entities.selectionOf(ids));
 }
 
 // ============================================
@@ -110,18 +118,19 @@ function union<T>(existing: readonly T[], added: readonly T[]): T[] {
 }
 
 /**
- * Box selection over the room: vertices and fixtures together, which is the one place a
- * heterogeneous selection is produced. A kind with nothing in the box is left alone, matching
- * the previous per-store behavior.
+ * Box selection over the room: room vertices and the active module's entities together, which
+ * is the one place a heterogeneous selection is produced. A kind with nothing in the box is
+ * left alone, matching the previous per-store behavior.
  */
 export function selectInBox(
+  entities: EntityAccess,
   vertexIndices: readonly number[],
-  fixtureIds: readonly string[],
+  entityIds: readonly string[],
   addToSelection: boolean
 ): void {
   const previous = current();
   const previousVertices = getSelectedVertexIndices(previous);
-  const previousFixtures = getSelectedFixtureIds(previous);
+  const previousEntities = entities.selectedIds(previous);
 
   const vertices =
     vertexIndices.length === 0
@@ -129,33 +138,33 @@ export function selectInBox(
       : addToSelection
         ? union(previousVertices, vertexIndices)
         : vertexIndices;
-  const fixtures =
-    fixtureIds.length === 0
-      ? previousFixtures
+  const nextEntities =
+    entityIds.length === 0
+      ? previousEntities
       : addToSelection
-        ? union(previousFixtures, fixtureIds)
-        : fixtureIds;
+        ? union(previousEntities, entityIds)
+        : entityIds;
 
   select(
     combineSelection([
       vertices.length > 0 ? { kind: 'vertex', indices: [...vertices] } : NO_SELECTION,
-      fixtureSelectionOf(fixtures),
+      entities.selectionOf(nextEntities),
     ])
   );
 }
 
 /**
- * Starting a shift+box drag in empty space: keep the parts a box can extend (vertices and
- * fixtures) and drop the rest. Previously six clears in the right order.
+ * Starting a shift+box drag in empty space: keep the parts a box can extend (room vertices and
+ * module entities) and drop the rest. Previously six clears in the right order.
  */
-export function retainBoxCandidates(): void {
+export function retainBoxCandidates(entities: EntityAccess): void {
   const previous = current();
   select(
     combineSelection([
       getSelectedVertexIndices(previous).length > 0
         ? { kind: 'vertex', indices: [...getSelectedVertexIndices(previous)] }
         : NO_SELECTION,
-      fixtureSelectionOf(getSelectedFixtureIds(previous)),
+      entities.selectionOf(entities.selectedIds(previous)),
     ])
   );
 }

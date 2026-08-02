@@ -10,7 +10,7 @@ import { toEnvelopeV3 } from '../../../src/floorplan/persistence/envelope';
 import { ValidationError } from '../../../src/floorplan/persistence/ValidationError';
 import { valueEqual } from '../../../src/floorplan/commands/serializable';
 import { applyCommand } from '../../../src/floorplan/commands';
-import { DEFAULT_RAFTER_CONFIG } from '../../../src/floorplan/types/state';
+import { DEFAULT_RAFTER_CONFIG } from '../../../src/modules/lighting/types';
 import { loadFixture } from '../../fixtures/load';
 
 /**

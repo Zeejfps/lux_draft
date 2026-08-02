@@ -9,7 +9,7 @@
     setSelectedDefinition,
   } from '../definitionsStore';
   import { readIESFile } from '../IESParser';
-  import type { LightDefinition } from '../../../floorplan/types';
+  import type { LightDefinition } from '../types';
 
   export let visible: boolean = false;
 

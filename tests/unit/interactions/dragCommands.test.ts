@@ -19,14 +19,8 @@ import { ObstacleDragOperation } from '../../../src/floorplan/interactions/opera
 import { ObstacleVertexDragOperation } from '../../../src/floorplan/interactions/operations/ObstacleVertexDragOperation';
 import { GrabModeDragOperation } from '../../../src/floorplan/interactions/operations/GrabModeDragOperation';
 import { applyCommand } from '../../../src/floorplan/commands';
-import {
-  lightsOf,
-  makeDoor,
-  makeLight,
-  makeObstacle,
-  rectWalls,
-  squareRoom,
-} from '../../helpers/documents';
+import { fixtureEntityAccess } from '../../helpers/entities';
+import { makeDoor, makeLight, makeObstacle, rectWalls, squareRoom } from '../../helpers/documents';
 import { moveFixture } from '../../../src/modules/lighting/commands';
 
 /**
@@ -64,7 +58,7 @@ const roomConfig = () => ({
   getVertices: () => doc.geometry.boundary.walls.map((w) => ({ ...w.start })),
   getWalls: () => doc.geometry.boundary.walls,
   getWallById: (id: string) => doc.geometry.boundary.walls.find((w) => w.id === id),
-  getLights: () => lightsOf(doc),
+  getEntities: () => fixtureEntityAccess(() => doc),
   getDoors: () => doc.geometry.doors,
   getDoorById: (id: string) => doc.geometry.doors.find((d) => d.id === id),
   getDoorsByWallId: (wallId: string) => doc.geometry.doors.filter((d) => d.wallId === wallId),

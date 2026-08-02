@@ -5,33 +5,29 @@ import type {
   MeasurementController,
   MeasurementData,
 } from '../../controllers/MeasurementController';
-import type { LightManager } from '../../../modules/lighting/LightManager';
+import type { EntityAccess } from '../../types/entity';
 import { BaseInteractionHandler } from '../InteractionHandler';
 import { findVertexAtPosition } from '../../utils/math';
-import {
-  LIGHT_HIT_TOLERANCE_FT,
-  WALL_CLICK_TOLERANCE_FT,
-  MEASUREMENT_CLICK_TOLERANCE_FT,
-} from '../../constants/editor';
+import { WALL_CLICK_TOLERANCE_FT, MEASUREMENT_CLICK_TOLERANCE_FT } from '../../constants/editor';
 
 export interface MeasurementHandlerCallbacks {
   onMeasurementUpdate: (data: MeasurementData | null) => void;
   onMeasurementClear: () => void;
-  onSelectLight: (id: string) => void;
+  onSelectEntity: (id: string) => void;
   onSelectVertex: (index: number, addToSelection: boolean) => void;
-  onStartDrag: (vertexIndex: number | null, lightId: string | null, pos: Vector2) => void;
+  onStartDrag: (vertexIndex: number | null, entityId: string | null, pos: Vector2) => void;
   getWallAtPosition: (pos: Vector2, walls: WallSegment[], tolerance: number) => WallSegment | null;
 }
 
 export interface MeasurementHandlerConfig {
   measurementController: MeasurementController;
-  lightManager: LightManager;
+  getEntities: () => EntityAccess;
   getWalls: () => WallSegment[];
 }
 
 /**
  * Handles measurement mode.
- * Supports measuring from vertices or lights to vertices, lights, or walls.
+ * Supports measuring from vertices or module entities to vertices, entities, or walls.
  */
 export class MeasurementHandler extends BaseInteractionHandler {
   readonly name = 'measurement';
@@ -57,8 +53,8 @@ export class MeasurementHandler extends BaseInteractionHandler {
     const vertices = context.vertices;
     const walls = this.config.getWalls();
 
-    if (measurementController.isFromLight) {
-      return this.handleClickFromLight(event, context, vertices, walls);
+    if (measurementController.isFromEntity) {
+      return this.handleClickFromEntity(event, context, vertices, walls);
     } else {
       return this.handleClickFromVertex(event, context, vertices);
     }
@@ -93,10 +89,10 @@ export class MeasurementHandler extends BaseInteractionHandler {
   }
 
   /**
-   * Start measurement from a light.
+   * Start measurement from a module entity.
    */
-  startFromLight(lightId: string, position: Vector2): void {
-    this.config.measurementController.startFromLight(lightId, position);
+  startFromEntity(entityId: string, position: Vector2): void {
+    this.config.measurementController.startFromEntity(entityId, position);
     this.callbacks.onMeasurementUpdate(null);
   }
 
@@ -116,25 +112,25 @@ export class MeasurementHandler extends BaseInteractionHandler {
     this.callbacks.onMeasurementUpdate(data);
   }
 
-  private handleClickFromLight(
+  private handleClickFromEntity(
     event: InputEvent,
     _context: InteractionContext,
     vertices: Vector2[],
     walls: WallSegment[]
   ): boolean {
-    const { measurementController, lightManager } = this.config;
-    const clickedLight = lightManager.getLightAt(event.worldPos, LIGHT_HIT_TOLERANCE_FT);
+    const { measurementController } = this.config;
+    const clicked = this.config.getEntities().at(event.worldPos);
 
-    // Check if clicking on the source light to drag it
-    if (clickedLight && clickedLight.id === measurementController.sourceLightId) {
-      this.callbacks.onSelectLight(clickedLight.id);
-      this.callbacks.onStartDrag(null, clickedLight.id, event.worldPos);
+    // Check if clicking on the source entity to drag it
+    if (clicked && clicked.id === measurementController.sourceEntityId) {
+      this.callbacks.onSelectEntity(clicked.id);
+      this.callbacks.onStartDrag(null, clicked.id, event.worldPos);
       return true;
     }
 
-    // Check if clicking on another light to measure to it
-    if (clickedLight && clickedLight.id !== measurementController.sourceLightId) {
-      measurementController.setTargetLight(clickedLight.id, clickedLight.position);
+    // Check if clicking on another entity to measure to it
+    if (clicked && clicked.id !== measurementController.sourceEntityId) {
+      measurementController.setTargetEntity(clicked.id, clicked.position);
       this.updateDisplay();
       return true;
     }
@@ -195,13 +191,10 @@ export class MeasurementHandler extends BaseInteractionHandler {
       return true;
     }
 
-    // Check for light click
-    const clickedLight = this.config.lightManager.getLightAt(
-      event.worldPos,
-      LIGHT_HIT_TOLERANCE_FT
-    );
-    if (clickedLight) {
-      measurementController.setTargetLight(clickedLight.id, clickedLight.position);
+    // Check for a module entity click
+    const clickedEntity = this.config.getEntities().at(event.worldPos);
+    if (clickedEntity) {
+      measurementController.setTargetEntity(clickedEntity.id, clickedEntity.position);
       this.updateDisplay();
       return true;
     }

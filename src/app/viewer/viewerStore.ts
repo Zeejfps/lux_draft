@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { LightFixture } from '../../floorplan/types';
+import type { LightFixture } from '../../modules/lighting/types';
 
 /**
  * Store for managing viewer mode state, including selected light for info panel

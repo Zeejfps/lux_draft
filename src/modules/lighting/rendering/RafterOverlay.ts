@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { BoundingBox, RafterConfig } from '../../../floorplan/types';
+import type { BoundingBox } from '../../../floorplan/types';
+import type { RafterConfig } from '../types';
 import { clearGroup } from '../../../floorplan/utils/three';
 
 export class RafterOverlay {

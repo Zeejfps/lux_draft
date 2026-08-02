@@ -1,4 +1,4 @@
-import type { Vector2, WallSegment, Door } from '../types';
+import type { BoundingBox, Vector2, WallSegment, Door } from '../types';
 import { distancePointToSegment, vectorSubtract, vectorLength, vectorNormalize } from './math';
 
 /**
@@ -122,4 +122,34 @@ export function getDistanceToNearestWall(point: Vector2, walls: WallSegment[]): 
   }
 
   return minDist;
+}
+
+/**
+ * The editor's view bounds for a set of walls, padded. Pure, so a module layer can derive it
+ * from its `ModuleView` instead of subscribing to core's `roomBounds` store.
+ */
+export function computeRoomBounds(walls: readonly WallSegment[]): BoundingBox {
+  if (walls.length === 0) {
+    return { minX: -10, minY: -10, maxX: 10, maxY: 10 };
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const wall of walls) {
+    minX = Math.min(minX, wall.start.x, wall.end.x);
+    minY = Math.min(minY, wall.start.y, wall.end.y);
+    maxX = Math.max(maxX, wall.start.x, wall.end.x);
+    maxY = Math.max(maxY, wall.start.y, wall.end.y);
+  }
+
+  const padding = 2;
+  return {
+    minX: minX - padding,
+    minY: minY - padding,
+    maxX: maxX + padding,
+    maxY: maxY + padding,
+  };
 }

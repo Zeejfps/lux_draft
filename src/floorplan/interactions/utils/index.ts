@@ -3,7 +3,7 @@ export {
   extractModifiers,
   hasSelection,
   getSelectionOrigin,
-  getSelectionOriginFromRoomState,
+  getSelectionOriginFromDocument,
 } from './interactionUtils';
 
 export { applyGridSnap, type GridSnapConfig } from './snapHelpers';

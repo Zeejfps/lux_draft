@@ -1,5 +1,6 @@
 import type { InputEvent } from '../../core/InputManager';
-import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
+import type { Vector2, WallSegment, Door } from '../../types';
+import type { EntityAccess } from '../../types/entity';
 import type { InteractionContext, GrabModeState } from '../../types/interaction';
 import type { Selection } from '../../types/selection';
 import type { DragManager } from '../DragManager';
@@ -27,7 +28,7 @@ export interface GrabModeHandlerConfig {
   getSelection: () => Selection;
   getCurrentMousePos: () => Vector2;
   getVertices: () => Vector2[];
-  getLights: () => LightFixture[];
+  getEntities: () => EntityAccess;
   getWalls: () => WallSegment[];
   getDoors: () => Door[];
   getDoorById: (id: string) => Door | undefined;
@@ -166,7 +167,7 @@ export class GrabModeHandler extends BaseInteractionHandler {
   private computeSelectionOrigin(): Vector2 | null {
     return getSelectionOrigin(this.config.getSelection(), {
       getVertices: this.config.getVertices,
-      getLights: this.config.getLights,
+      getEntities: this.config.getEntities,
       getWalls: this.config.getWalls,
       getWallById: this.config.getWallById,
       getDoorById: this.config.getDoorById,

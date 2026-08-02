@@ -6,7 +6,7 @@
     updateRafterConfig,
   } from '../store';
   import FloatingPanel from '../../../floorplan/ui/FloatingPanel.svelte';
-  import type { RafterConfig } from '../../../floorplan/types';
+  import type { RafterConfig } from '../types';
 
   let config: RafterConfig;
   $: config = $rafterConfig;

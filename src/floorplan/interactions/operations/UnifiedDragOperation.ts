@@ -1,8 +1,6 @@
 import type { Vector2, EditorCommand } from '../../types';
 import type { DragStartContext, DragUpdateContext } from '../../types/interaction';
 import { getSelectedVertexIndices, type Selection } from '../../types/selection';
-import { getSelectedFixtureIds } from '../../../modules/lighting/selection';
-import { moveFixture } from '../../../modules/lighting/commands';
 import type { DragOperationCallbacks } from '../DragManager';
 import type { BaseDragConfig } from '../types';
 import { BaseDragOperation } from '../DragOperation';
@@ -19,8 +17,8 @@ export interface UnifiedDragCallbacks extends DragOperationCallbacks {
 }
 
 /**
- * Handles unified dragging of multiple vertices and/or lights.
- * Supports axis locking, grid snapping, and vertex/light alignment snapping.
+ * Handles unified dragging of multiple room vertices and/or module entities.
+ * Supports axis locking, grid snapping, and vertex/entity alignment snapping.
  *
  * A heterogeneous selection resolves to one compound command — one history entry made of the
  * per-entity absolute moves.
@@ -29,9 +27,9 @@ export class UnifiedDragOperation extends BaseDragOperation {
   readonly type = 'unified';
 
   private originalVertexPositions: Map<number, Vector2> = new Map();
-  private originalLightPositions: Map<string, Vector2> = new Map();
+  private originalEntityPositions: Map<string, Vector2> = new Map();
   private anchorVertexIndex: number | null = null;
-  private anchorLightId: string | null = null;
+  private anchorEntityId: string | null = null;
   private selection: Selection | null = null;
   private config: UnifiedDragConfig;
   private callbacks: UnifiedDragCallbacks;
@@ -46,9 +44,9 @@ export class UnifiedDragOperation extends BaseDragOperation {
    * Set the anchor point for the drag operation.
    * The anchor is the item that was clicked to initiate the drag.
    */
-  setAnchor(vertexIndex: number | null, lightId: string | null): void {
+  setAnchor(vertexIndex: number | null, entityId: string | null): void {
     this.anchorVertexIndex = vertexIndex;
-    this.anchorLightId = lightId;
+    this.anchorEntityId = entityId;
   }
 
   start(context: DragStartContext): void {
@@ -65,13 +63,13 @@ export class UnifiedDragOperation extends BaseDragOperation {
       }
     }
 
-    // Store original positions of all selected lights
-    this.originalLightPositions.clear();
-    const lights = this.config.getLights();
-    for (const id of getSelectedFixtureIds(context.selection)) {
-      const light = lights.find((l) => l.id === id);
-      if (light) {
-        this.originalLightPositions.set(id, { ...light.position });
+    // Store original positions of all selected module entities
+    this.originalEntityPositions.clear();
+    const entities = this.config.getEntities();
+    for (const id of entities.selectedIds(context.selection)) {
+      const entity = entities.find(id);
+      if (entity) {
+        this.originalEntityPositions.set(id, { ...entity.position });
       }
     }
 
@@ -82,8 +80,11 @@ export class UnifiedDragOperation extends BaseDragOperation {
       this.originalVertexPositions.has(this.anchorVertexIndex)
     ) {
       this.startPosition = { ...this.originalVertexPositions.get(this.anchorVertexIndex)! };
-    } else if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
-      this.startPosition = { ...this.originalLightPositions.get(this.anchorLightId)! };
+    } else if (
+      this.anchorEntityId !== null &&
+      this.originalEntityPositions.has(this.anchorEntityId)
+    ) {
+      this.startPosition = { ...this.originalEntityPositions.get(this.anchorEntityId)! };
     } else {
       // Fallback to mouse position if no anchor (shouldn't happen)
       this.startPosition = { ...context.position };
@@ -101,9 +102,9 @@ export class UnifiedDragOperation extends BaseDragOperation {
       {
         selection: this.selection,
         anchorVertexIndex: this.anchorVertexIndex,
-        anchorLightId: this.anchorLightId,
+        anchorEntityId: this.anchorEntityId,
         getVertices: this.config.getVertices,
-        getLights: this.config.getLights,
+        getEntities: this.config.getEntities,
       },
       this.applyAxisConstraint.bind(this)
     );
@@ -119,7 +120,7 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
     const commands: EditorCommand[] = [
       ...this.vertexMoveCommands(delta),
-      ...this.lightMoveCommands(delta),
+      ...this.entityMoveCommands(delta),
     ];
 
     // Notify measurement update if callback provided
@@ -139,8 +140,8 @@ export class UnifiedDragOperation extends BaseDragOperation {
     ) {
       return calculateDelta(this.originalVertexPositions.get(this.anchorVertexIndex)!, targetPos);
     }
-    if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
-      return calculateDelta(this.originalLightPositions.get(this.anchorLightId)!, targetPos);
+    if (this.anchorEntityId !== null && this.originalEntityPositions.has(this.anchorEntityId)) {
+      return calculateDelta(this.originalEntityPositions.get(this.anchorEntityId)!, targetPos);
     }
     return { x: 0, y: 0 };
   }
@@ -157,19 +158,20 @@ export class UnifiedDragOperation extends BaseDragOperation {
     return commands;
   }
 
-  private lightMoveCommands(delta: Vector2): EditorCommand[] {
-    if (this.originalLightPositions.size === 0) return [];
+  private entityMoveCommands(delta: Vector2): EditorCommand[] {
+    if (this.originalEntityPositions.size === 0) return [];
 
+    const entities = this.config.getEntities();
     const walls = this.config.getWalls();
     const isClosed = this.config.isRoomClosed();
     const commands: EditorCommand[] = [];
 
-    for (const [lightId, originalPos] of this.originalLightPositions) {
+    for (const [entityId, originalPos] of this.originalEntityPositions) {
       const position = { x: originalPos.x + delta.x, y: originalPos.y + delta.y };
 
       // Only move if inside room (when room is closed)
       if (!isClosed || checkPointInRoom(position, walls)) {
-        commands.push(moveFixture.make({ fixtureId: lightId, position }));
+        commands.push(entities.moveCommand(entityId, position));
       }
     }
 
@@ -178,9 +180,9 @@ export class UnifiedDragOperation extends BaseDragOperation {
 
   protected cleanup(): void {
     this.originalVertexPositions.clear();
-    this.originalLightPositions.clear();
+    this.originalEntityPositions.clear();
     this.anchorVertexIndex = null;
-    this.anchorLightId = null;
+    this.anchorEntityId = null;
     this.selection = null;
     this.startPosition = null;
   }

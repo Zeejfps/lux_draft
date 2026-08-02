@@ -1,6 +1,6 @@
 import { writable, derived, type Readable } from 'svelte/store';
-import type { LightingStatsConfig, LightingMetrics, RoomType } from '../../floorplan/types';
-import { DEFAULT_LIGHTING_STATS_CONFIG } from '../../floorplan/types';
+import type { LightingStatsConfig, LightingMetrics, RoomType } from './types';
+import { DEFAULT_LIGHTING_STATS_CONFIG } from './types';
 import { roomStore, roomBounds } from '../../floorplan/stores/roomStore';
 import { fixtures } from './store';
 import { LightingStatsCalculator } from './LightingStatsCalculator';

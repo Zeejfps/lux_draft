@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { get, writable, type Readable } from 'svelte/store';
+import { derived, get, writable, type Readable } from 'svelte/store';
 import type { EditorDocument } from '../types/document';
 import type { EntityAccess } from '../types/entity';
 import type { IInteractionHandler } from '../types/interaction';
@@ -24,6 +24,7 @@ import {
   validateRuntime,
 } from '../types/moduleRegistry';
 import { registerPanel, unregisterPanel } from '../ui/panelRegistry';
+import { CORE_TOOLBAR_TOOLS } from '../ui/coreTools';
 import { roomStore, selection, sessionStore } from './sessionStore';
 import { displayPreferences } from './settingsStore';
 import { viewMode } from './appStore';
@@ -268,6 +269,55 @@ export function activateModule(moduleId: string): Promise<void> {
   state = { status: 'loading', token, promise };
   return promise;
 }
+
+/**
+ * The live view the editor renders: the active module's slice if one is active, otherwise an
+ * empty-data view over the same document so core layers still update with no module at all.
+ */
+export const activeView: Readable<ModuleView<unknown>> = derived(
+  [active, roomStore, selection, displayPreferences, viewMode],
+  ([$active, $document, $selection, $preferences, $viewMode]) =>
+    $active
+      ? buildView($active.id, $document)
+      : moduleViewOf($document, {}, $selection, $preferences, $viewMode)
+);
+
+// ============================================
+// The toolbar
+// ============================================
+
+export interface ToolbarTool {
+  readonly descriptor: ToolDescriptor;
+  readonly enabled: boolean;
+}
+
+/**
+ * Core's tools followed by the active module's, each with its enablement resolved against the
+ * live view. `Toolbar.svelte` renders this and nothing else — it names no tool and no module.
+ */
+export const toolbarTools: Readable<readonly ToolbarTool[]> = derived(
+  [active, roomStore, viewMode],
+  ([$active, $document]): ToolbarTool[] => {
+    const coreView = moduleViewOf(
+      $document,
+      {},
+      get(selection),
+      get(displayPreferences),
+      get(viewMode)
+    );
+    const moduleView = $active ? buildView($active.id, $document) : coreView;
+    return [
+      ...CORE_TOOLBAR_TOOLS.map((descriptor) => ({
+        descriptor,
+        enabled: descriptor.enabled?.(coreView) ?? true,
+      })),
+      ...($active?.tools ?? []).map((descriptor) => ({
+        descriptor,
+        enabled: descriptor.enabled?.(moduleView) ?? true,
+      })),
+    ];
+  }
+);
 
 /** The activation state machine, for tests and diagnostics. */
 export function runtimeState(): RuntimeState {

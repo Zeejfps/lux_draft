@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { LightFixture, LightRadiusVisibility } from '../../floorplan/types';
+import type { LightRadiusVisibility } from '../../floorplan/types';
+import type { LightFixture } from './types';
 import { kelvinToRGB } from '../../floorplan/utils/format';
 import { degToRad } from '../../floorplan/utils/math';
 

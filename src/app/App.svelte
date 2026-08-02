@@ -1,28 +1,30 @@
 <script context="module" lang="ts">
   import VertexPropertiesPanel from '../floorplan/ui/VertexPropertiesPanel.svelte';
   import WallPropertiesPanel from '../floorplan/ui/WallPropertiesPanel.svelte';
-  import LightPropertiesPanel from '../modules/lighting/ui/LightPropertiesPanel.svelte';
   import DoorPropertiesPanel from '../floorplan/ui/DoorPropertiesPanel.svelte';
   import ObstaclePropertiesPanel from '../floorplan/ui/ObstaclePropertiesPanel.svelte';
   import { registerPanels } from '../floorplan/ui/panelRegistry';
-  import { fixtureSelection } from '../modules/lighting/selection';
+  import { claimCorePanelKeys } from '../floorplan/types/moduleRegistry';
 
   /**
-   * Panel registration — the whole of it. Keys are `SelectionKind.panelKey`, so registration
-   * and dispatch cannot disagree; dispatch happens below through `panelsForSelection`.
+   * **Core** panel registration. Keys are `SelectionKind.panelKey`, so registration and
+   * dispatch cannot disagree; dispatch happens below through `panelsForSelection`.
    *
-   * Phase 4 replaces this literal with a walk over the registered module runtimes' `panels`
-   * records. Nothing else about panel dispatch changes.
+   * A module's panels are not here: the activation registry registers `ModuleRuntime.panels`
+   * when the runtime loads and unregisters them when the scope is disposed. Core claims its
+   * keys with the registry so a module cannot shadow one.
    */
-  registerPanels({
+  const CORE_PANELS = {
     'core.vertex': VertexPropertiesPanel,
     'core.wall': WallPropertiesPanel,
     'core.door': DoorPropertiesPanel,
     'core.obstacle': ObstaclePropertiesPanel,
     // An obstacle-vertex selection edits the obstacle it belongs to.
     'core.obstacleVertex': ObstaclePropertiesPanel,
-    [fixtureSelection.panelKey]: LightPropertiesPanel,
-  });
+  };
+
+  claimCorePanelKeys(Object.keys(CORE_PANELS));
+  registerPanels(CORE_PANELS);
 </script>
 
 <script lang="ts">
@@ -36,13 +38,15 @@
   import StatusBar from './StatusBar.svelte';
   import LengthInput from '../floorplan/ui/LengthInput.svelte';
   import RafterControls from '../modules/lighting/ui/RafterControls.svelte';
-  import LightingStatsPanel from '../modules/lighting/ui/LightingStatsPanel.svelte';
   import LightDefinitionManager from '../modules/lighting/ui/LightDefinitionManager.svelte';
   import ViewerPage from './viewer/ViewerPage.svelte';
   import { openLoaded } from '../floorplan/stores/roomStore';
   import { saveInput } from '../floorplan/stores/sessionStore';
   import { adoptIncomingDefinitions } from '../modules/lighting/store';
   import { activeTool, setActiveTool, requestCameraFit } from '../floorplan/stores/appStore';
+  import { activateModule, activeModule, toolbarTools } from '../floorplan/stores/moduleActivation';
+  import { LIGHTING_MODULE_ID } from '../modules/lighting/codec';
+  import { CORE_TOOL_DRAW, CORE_TOOL_SELECT } from '../floorplan/types/state';
   import { selection } from '../floorplan/stores/selectionStore';
   import { panelsForSelection } from '../floorplan/ui/panelRegistry';
   import { loadFromLocalStorage, setupAutoSave } from '../floorplan/persistence/localStorage';
@@ -105,40 +109,38 @@
       return;
     }
 
-    switch (e.key.toLowerCase()) {
+    const key = e.key.toLowerCase();
+
+    switch (key) {
       case 'escape':
-        // Switch to selection tool if currently using a drawing tool
-        if (
-          $activeTool === 'draw' ||
-          $activeTool === 'light' ||
-          $activeTool === 'door' ||
-          $activeTool === 'obstacle'
-        ) {
-          setActiveTool('select');
+        // Back to the resting tool from any placement or drawing tool, core's or a module's.
+        if ($activeTool !== CORE_TOOL_SELECT) {
+          setActiveTool(CORE_TOOL_SELECT);
         }
-        break;
-      case 'l':
-        if ($activeTool === 'draw') {
-          showLengthInput = true;
-        } else {
-          setActiveTool('light');
-        }
-        break;
+        return;
       case 'v':
-        setActiveTool('select');
-        break;
-      case 'd':
-        setActiveTool('draw');
-        break;
-      case 'o':
-        setActiveTool('obstacle');
-        break;
+        setActiveTool(CORE_TOOL_SELECT);
+        return;
       case 's':
         toggleGridSnap();
-        break;
+        return;
       case 'p':
         togglePropertiesPanel();
-        break;
+        return;
+    }
+
+    // `L` while drawing means "type a wall length", not "pick the light tool". That one
+    // overload is core's, and it wins; every other tool key resolves through the registry.
+    if (key === 'l' && $activeTool === CORE_TOOL_DRAW) {
+      showLengthInput = true;
+      return;
+    }
+
+    // Tool selection keys come from the tool descriptors — core's first, so a module tool can
+    // never take a key core already uses for one of its own.
+    const tool = $toolbarTools.find((t) => t.descriptor.key === key && t.enabled);
+    if (tool) {
+      setActiveTool(tool.descriptor.id);
     }
   }
 
@@ -157,6 +159,9 @@
 
       cleanupAutoSave = setupAutoSave(saveInput);
       window.addEventListener('keydown', handleGlobalKeydown);
+
+      // One mode, activated by the shell. Phase 5 drives this from the route instead.
+      void activateModule(LIGHTING_MODULE_ID);
     }
   });
 
@@ -206,7 +211,9 @@
           </div>
         {/if}
         <RafterControls />
-        <LightingStatsPanel />
+        {#if $activeModule?.statsPanel}
+          <svelte:component this={$activeModule.statsPanel} />
+        {/if}
         <LightToolPanel on:openLightManager={handleOpenLightManager} />
         <DoorToolPanel />
         <PropertyPanel />

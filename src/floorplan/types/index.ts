@@ -1,5 +1,4 @@
 export * from './geometry';
-export * from '../../modules/lighting/types';
 export * from './state';
 export * from './document';
 export * from './deepReadonly';

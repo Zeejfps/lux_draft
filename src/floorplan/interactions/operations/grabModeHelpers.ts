@@ -1,4 +1,5 @@
-import type { Vector2, WallSegment, Door, LightFixture } from '../../types';
+import type { Vector2, WallSegment, Door } from '../../types';
+import type { EntityAccess } from '../../types/entity';
 import type { AxisLock } from '../../types/interaction';
 import {
   getSelectedDoorId,
@@ -6,7 +7,6 @@ import {
   getSelectedWallId,
   type Selection,
 } from '../../types/selection';
-import { getSelectedFixtureIds } from '../../../modules/lighting/selection';
 import type { SnapGuide, SnapController } from '../../controllers/SnapController';
 import { getWallDirection, isPointInPolygon } from '../../utils/geometry';
 import { applyGridSnap, type GridSnapConfig } from '../utils/snapHelpers';
@@ -39,18 +39,18 @@ export function applyGrabOffset(mousePos: Vector2, offset: Vector2): Vector2 {
 export function findAnchorPosition(
   selection: Selection,
   getVertices: () => Vector2[],
-  getLights: () => LightFixture[],
+  getEntities: () => EntityAccess,
   getWallById: (id: string) => WallSegment | undefined,
   getDoorById: (id: string) => Door | undefined
 ): {
   anchorPos: Vector2 | null;
-  anchorType: 'vertex' | 'light' | 'wall' | 'door' | null;
+  anchorType: 'vertex' | 'entity' | 'wall' | 'door' | null;
   anchorId: number | string | null;
 } {
   const vertices = getVertices();
-  const lights = getLights();
+  const entities = getEntities();
   const selectedVertexIndices = getSelectedVertexIndices(selection);
-  const selectedFixtureIds = getSelectedFixtureIds(selection);
+  const selectedEntityIds = entities.selectedIds(selection);
   const selectedWallId = getSelectedWallId(selection);
   const selectedDoorId = getSelectedDoorId(selection);
 
@@ -66,14 +66,14 @@ export function findAnchorPosition(
     }
   }
 
-  // Check lights
-  if (selectedFixtureIds.length > 0) {
-    const anchorId = selectedFixtureIds[0];
-    const light = lights.find((l) => l.id === anchorId);
-    if (light) {
+  // Check the active module's entities
+  if (selectedEntityIds.length > 0) {
+    const anchorId = selectedEntityIds[0];
+    const entity = entities.find(anchorId);
+    if (entity) {
       return {
-        anchorPos: { ...light.position },
-        anchorType: 'light',
+        anchorPos: { ...entity.position },
+        anchorType: 'entity',
         anchorId,
       };
     }
@@ -150,17 +150,17 @@ export function checkPointInRoom(point: Vector2, walls: WallSegment[]): boolean 
 export function captureOriginalPositions(
   selection: Selection,
   getVertices: () => Vector2[],
-  getLights: () => LightFixture[],
+  getEntities: () => EntityAccess,
   getWallById: (id: string) => WallSegment | undefined,
   getDoorById: (id: string) => Door | undefined
 ): {
   vertexPositions: Map<number, Vector2>;
-  lightPositions: Map<string, Vector2>;
+  entityPositions: Map<string, Vector2>;
   wallVertices: { start: Vector2; end: Vector2 } | null;
   doorPosition: number | null;
 } {
   const vertices = getVertices();
-  const lights = getLights();
+  const entities = getEntities();
 
   const vertexPositions = new Map<number, Vector2>();
   for (const idx of getSelectedVertexIndices(selection)) {
@@ -169,11 +169,11 @@ export function captureOriginalPositions(
     }
   }
 
-  const lightPositions = new Map<string, Vector2>();
-  for (const id of getSelectedFixtureIds(selection)) {
-    const light = lights.find((l) => l.id === id);
-    if (light) {
-      lightPositions.set(id, { ...light.position });
+  const entityPositions = new Map<string, Vector2>();
+  for (const id of entities.selectedIds(selection)) {
+    const entity = entities.find(id);
+    if (entity) {
+      entityPositions.set(id, { ...entity.position });
     }
   }
 
@@ -195,44 +195,45 @@ export function captureOriginalPositions(
     }
   }
 
-  return { vertexPositions, lightPositions, wallVertices, doorPosition };
+  return { vertexPositions, entityPositions, wallVertices, doorPosition };
 }
 
 /**
- * Handle shift-key snapping for single vertex or light selection.
+ * Handle shift-key snapping for a single vertex or a single module entity.
  */
 export function handleShiftSnapping(
   targetPos: Vector2,
   selection: Selection | null,
   anchorVertexIndex: number | null,
-  anchorLightId: string | null,
+  anchorEntityId: string | null,
   snapController: SnapController,
   getVertices: () => Vector2[],
-  getLights: () => LightFixture[]
+  getEntities: () => EntityAccess
 ): { snappedPos: Vector2; guides: SnapGuide[] } {
   if (!selection) {
     return { snappedPos: targetPos, guides: [] };
   }
 
+  const entities = getEntities();
   const selectedVertexIndices = getSelectedVertexIndices(selection);
-  const selectedFixtureIds = getSelectedFixtureIds(selection);
+  const selectedEntityIds = entities.selectedIds(selection);
 
   // Only snap for single vertex selection
   if (
     selectedVertexIndices.length === 1 &&
-    selectedFixtureIds.length === 0 &&
+    selectedEntityIds.length === 0 &&
     anchorVertexIndex !== null
   ) {
     return snapController.snapToVertices(targetPos, getVertices(), anchorVertexIndex);
   }
 
-  // Only snap for single light selection
+  // Only snap for a single module entity
   if (
-    selectedFixtureIds.length === 1 &&
+    selectedEntityIds.length === 1 &&
     selectedVertexIndices.length === 0 &&
-    anchorLightId !== null
+    anchorEntityId !== null
   ) {
-    return snapController.snapToLights(targetPos, getLights(), anchorLightId);
+    return snapController.snapToEntities(targetPos, entities.list(), anchorEntityId);
   }
 
   return { snappedPos: targetPos, guides: [] };
@@ -277,9 +278,9 @@ export function applyGridSnapOrAxisLock(
 export interface ShiftSnapContext {
   selection: Selection | null;
   anchorVertexIndex: number | null;
-  anchorLightId: string | null;
+  anchorEntityId: string | null;
   getVertices: () => Vector2[];
-  getLights: () => LightFixture[];
+  getEntities: () => EntityAccess;
 }
 
 /**
@@ -300,10 +301,10 @@ export function processTargetWithSnapping(
       targetPos,
       shiftSnapContext.selection,
       shiftSnapContext.anchorVertexIndex,
-      shiftSnapContext.anchorLightId,
+      shiftSnapContext.anchorEntityId,
       config.snapController,
       shiftSnapContext.getVertices,
-      shiftSnapContext.getLights
+      shiftSnapContext.getEntities
     );
     let snappedPos = result.snappedPos;
     if (context.axisLock !== 'none') {

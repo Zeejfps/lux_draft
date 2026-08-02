@@ -8,7 +8,7 @@
     removeLights,
   } from '../store';
   import FloatingPanel from '../../../floorplan/ui/FloatingPanel.svelte';
-  import type { LightFixture, LightDefinition } from '../../../floorplan/types';
+  import type { LightFixture, LightDefinition } from '../types';
 
   let currentSelectedLightIds: Set<string> = new Set();
   let selectedLights: LightFixture[] = [];

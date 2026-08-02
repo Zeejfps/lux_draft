@@ -1,5 +1,5 @@
 import type { Vector2 } from './geometry';
-import type { LightFixture } from '../../modules/lighting/types';
+import type { EntityAccess } from './entity';
 import type { EditorDocument } from './document';
 import type { EditorCommand } from './command';
 import type { Selection } from './selection';
@@ -94,16 +94,17 @@ export interface IDragOperation {
 export interface InteractionContext {
   document: EditorDocument;
   /**
-   * The lighting module's fixtures, read out of `modules.lighting` by the caller.
-   *
-   * Lighting data is no longer at the document root, and core handlers may not reach into a
-   * module's slice. This is the seam phase 4 replaces with a `ModuleView` handed to the
-   * module's own handlers.
+   * The active module's point entities — the seam that replaced phase 3b's temporary
+   * `fixtures: LightFixture[]`. Core hit-tests, box-selects and drags through it without
+   * naming a module or a domain type; `NO_ENTITIES` when nothing is active.
    */
-  fixtures: LightFixture[];
+  entities: EntityAccess;
   selection: Selection;
+  /** The active tool id. Core tools are bare; a module's are `${moduleId}.${verb}`. */
+  activeTool: string;
   isDrawingEnabled: boolean;
-  isPlacingLights: boolean;
+  /** A module tool owns the pointer, so core's click-through handlers stand down. */
+  isModuleToolActive: boolean;
   isPlacingDoors: boolean;
   isObstacleDrawing: boolean;
   isMeasuring: boolean;

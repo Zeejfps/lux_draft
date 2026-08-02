@@ -1,5 +1,5 @@
 import type { LightDefinition, LightFixture, DeadZoneConfig, SpacingConfig } from './types';
-import type { RafterConfig } from '../../floorplan/types/state';
+import type { RafterConfig } from './types';
 import type { Vector2 } from '../../floorplan/types/geometry';
 import type { CommandKind, RegisteredCommand } from '../../floorplan/types/module';
 import { defineCommand } from '../../floorplan/types/module';

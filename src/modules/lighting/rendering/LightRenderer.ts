@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { Vector2, LightFixture, LightRadiusVisibility } from '../../../floorplan/types';
+import type { Vector2, LightRadiusVisibility } from '../../../floorplan/types';
+import type { LightFixture } from '../types';
 import { LightIcon } from '../LightIcon';
 import { disposeObject3D } from '../../../floorplan/utils/three';
 import {

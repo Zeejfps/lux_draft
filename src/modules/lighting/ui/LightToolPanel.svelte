@@ -5,7 +5,7 @@
   import { selectedDefinitionId, setSelectedDefinition } from '../definitionsStore';
   import { pickerDefinitions } from '../store';
   import FloatingPanel from '../../../floorplan/ui/FloatingPanel.svelte';
-  import type { LightDefinition } from '../../../floorplan/types';
+  import type { LightDefinition } from '../types';
 
   const dispatch = createEventDispatcher<{ openLightManager: void }>();
 

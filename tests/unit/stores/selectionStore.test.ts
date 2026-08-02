@@ -19,6 +19,10 @@ import {
 } from '../../../src/floorplan/types/selection';
 import { getSelectedFixtureIds } from '../../../src/modules/lighting/selection';
 import { squareRoom } from '../../helpers/documents';
+import { fixtureEntityAccess } from '../../helpers/entities';
+
+// The active module's entities, as the activation registry would supply them.
+const entities = () => fixtureEntityAccess(() => sessionStore.current().document, read);
 
 const read = () => get(selectionStore.selection);
 
@@ -48,11 +52,11 @@ describe('selectionStore', () => {
     ['door', () => selectionStore.selectDoor('door-1')],
     ['obstacle', () => selectionStore.selectObstacle('obs-1')],
     ['vertex', () => selectionStore.selectVertex(3)],
-    ['fixture', () => selectionStore.selectFixture('light-9')],
+    ['fixture', () => selectionStore.selectEntity(entities(), 'light-9')],
   ])('selecting a %s replaces every other kind', (_kind, select) => {
     selectionStore.selectDoor('door-0');
     selectionStore.selectObstacle('obs-0');
-    selectionStore.setFixtureSelection(['light-0']);
+    selectionStore.setEntitySelection(entities(), ['light-0']);
     selectionStore.setVertexSelection([7]);
 
     select();
@@ -94,34 +98,34 @@ describe('selectionStore', () => {
   });
 
   it('box selection is the one producer of a heterogeneous selection', () => {
-    selectionStore.selectInBox([0, 1], ['light-1'], false);
+    selectionStore.selectInBox(entities(), [0, 1], ['light-1'], false);
     expect(read().kind).toBe('multi');
     expect(getSelectedVertexIndices(read())).toEqual([0, 1]);
     expect(getSelectedFixtureIds(read())).toEqual(['light-1']);
   });
 
   it('a box that catches only vertices leaves the fixtures alone', () => {
-    selectionStore.selectInBox([0], ['light-1'], false);
-    selectionStore.selectInBox([2], [], false);
+    selectionStore.selectInBox(entities(), [0], ['light-1'], false);
+    selectionStore.selectInBox(entities(), [2], [], false);
     expect(getSelectedVertexIndices(read())).toEqual([2]);
     expect(getSelectedFixtureIds(read())).toEqual(['light-1']);
   });
 
   it('a shift box adds to what is already selected', () => {
-    selectionStore.selectInBox([0], ['light-1'], false);
-    selectionStore.selectInBox([1], ['light-2'], true);
+    selectionStore.selectInBox(entities(), [0], ['light-1'], false);
+    selectionStore.selectInBox(entities(), [1], ['light-2'], true);
     expect(getSelectedVertexIndices(read())).toEqual([0, 1]);
     expect(getSelectedFixtureIds(read())).toEqual(['light-1', 'light-2']);
   });
 
   it('retainBoxCandidates keeps vertices and fixtures and drops the rest', () => {
-    selectionStore.selectInBox([0], ['light-1'], false);
+    selectionStore.selectInBox(entities(), [0], ['light-1'], false);
     selectionStore.select({ kind: 'wall', id: 'wall-1' });
-    selectionStore.retainBoxCandidates();
+    selectionStore.retainBoxCandidates(entities());
     expect(isEmptySelection(read())).toBe(true);
 
-    selectionStore.selectInBox([0], ['light-1'], false);
-    selectionStore.retainBoxCandidates();
+    selectionStore.selectInBox(entities(), [0], ['light-1'], false);
+    selectionStore.retainBoxCandidates(entities());
     expect(getSelectedVertexIndices(read())).toEqual([0]);
     expect(getSelectedFixtureIds(read())).toEqual(['light-1']);
   });

@@ -6,14 +6,31 @@ import type { IInteractionHandler, InteractionContext } from '../types/interacti
  * Routes events to appropriate handlers based on priority and canHandle.
  */
 export class InteractionManager {
+  private coreHandlers: IInteractionHandler[] = [];
+  private moduleHandlers: readonly IInteractionHandler[] = [];
   private handlers: IInteractionHandler[] = [];
 
   /**
-   * Register a handler. Handlers are sorted by priority (higher = first).
+   * Register a core handler. Handlers are sorted by priority (higher = first).
    */
   registerHandler(handler: IInteractionHandler): void {
-    this.handlers.push(handler);
-    this.handlers.sort((a, b) => b.priority - a.priority);
+    this.coreHandlers.push(handler);
+    this.resort();
+  }
+
+  /**
+   * Replace the active module's handlers. Called by the canvas whenever activation changes;
+   * the previous set is simply dropped, because the activation scope owns their lifetime.
+   */
+  setModuleHandlers(handlers: readonly IInteractionHandler[]): void {
+    this.moduleHandlers = handlers;
+    this.resort();
+  }
+
+  private resort(): void {
+    this.handlers = [...this.coreHandlers, ...this.moduleHandlers].sort(
+      (a, b) => b.priority - a.priority
+    );
   }
 
   /**

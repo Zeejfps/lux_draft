@@ -4,11 +4,6 @@ export {
   type DrawingHandlerConfig,
 } from './DrawingHandler';
 export {
-  LightPlacementHandler,
-  type LightPlacementHandlerCallbacks,
-  type LightPlacementHandlerConfig,
-} from '../../../modules/lighting/LightPlacementHandler';
-export {
   DoorPlacementHandler,
   type DoorPlacementHandlerCallbacks,
   type DoorPlacementHandlerConfig,

@@ -1,4 +1,5 @@
-import type { Vector2, LightFixture } from '../types';
+import type { Vector2 } from '../types';
+import type { ModuleEntity } from '../types/entity';
 
 export interface SnapGuide {
   axis: 'x' | 'y';
@@ -21,7 +22,7 @@ export interface WallSnapResult {
 const DEFAULT_SNAP_THRESHOLD = 0.5; // feet
 
 /**
- * Handles snapping logic for vertices, lights, and walls.
+ * Handles snapping logic for vertices, module entities, and walls.
  * Provides alignment snapping with visual guide generation.
  */
 export class SnapController {
@@ -82,22 +83,22 @@ export class SnapController {
   }
 
   /**
-   * Snaps a position to align with other lights.
+   * Snaps a position to align with the active module's other entities.
    * @param pos - The position to snap
-   * @param lights - All lights to check alignment against
-   * @param excludeLightId - ID of light to exclude (usually the one being dragged)
+   * @param entities - All module entities to check alignment against
+   * @param excludeId - ID of the entity to exclude (usually the one being dragged)
    */
-  snapToLights(pos: Vector2, lights: LightFixture[], excludeLightId: string): SnapResult {
+  snapToEntities(pos: Vector2, entities: readonly ModuleEntity[], excludeId: string): SnapResult {
     const guides: SnapGuide[] = [];
     let snappedX = pos.x;
     let snappedY = pos.y;
     let snapXTarget: Vector2 | null = null;
     let snapYTarget: Vector2 | null = null;
 
-    for (const light of lights) {
-      if (light.id === excludeLightId) continue;
+    for (const entity of entities) {
+      if (entity.id === excludeId) continue;
 
-      const p = light.position;
+      const p = entity.position;
 
       // Check X alignment
       if (Math.abs(pos.x - p.x) < this.snapThreshold) {

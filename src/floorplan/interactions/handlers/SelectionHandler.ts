@@ -7,8 +7,7 @@ import {
   getSelectedVertexIndices,
   type Selection,
 } from '../../types/selection';
-import { getSelectedFixtureIds } from '../../../modules/lighting/selection';
-import type { LightManager } from '../../../modules/lighting/LightManager';
+import type { EntityAccess } from '../../types/entity';
 import type { DragManager } from '../DragManager';
 import type { UnifiedDragOperation } from '../operations/UnifiedDragOperation';
 import type { WallDragOperation } from '../operations/WallDragOperation';
@@ -23,16 +22,12 @@ import {
   distancePointToSegment,
 } from '../../utils/math';
 import { getDoorEndpoints, isPointInPolygon } from '../../utils/geometry';
-import {
-  LIGHT_HIT_TOLERANCE_FT,
-  VERTEX_HIT_TOLERANCE_FT,
-  DOOR_HIT_TOLERANCE_FT,
-} from '../../constants/editor';
+import { VERTEX_HIT_TOLERANCE_FT, DOOR_HIT_TOLERANCE_FT } from '../../constants/editor';
 import { attemptItemSelection, handleSelectionAction } from './selectionHelpers';
 import {
   EMPTY_MODIFIERS,
   hasSelection,
-  getSelectionOriginFromRoomState,
+  getSelectionOriginFromDocument,
   handleAxisLockKey,
 } from '../utils';
 
@@ -43,7 +38,7 @@ import {
  */
 export interface SelectionHandlerCallbacks {
   onSelectVertex: (index: number, addToSelection: boolean) => void;
-  onSelectLight: (id: string, addToSelection: boolean) => void;
+  onSelectEntity: (id: string, addToSelection: boolean) => void;
   onSelectWall: (id: string) => void;
   onSelectDoor: (id: string) => void;
   onSelectObstacle: (id: string) => void;
@@ -62,7 +57,7 @@ export interface SelectionHandlerCallbacks {
 }
 
 export interface SelectionHandlerConfig {
-  lightManager: LightManager;
+  getEntities: () => EntityAccess;
   dragManager: DragManager;
   boxSelectionHandler: BoxSelectionHandler;
   createUnifiedDragOperation: () => UnifiedDragOperation;
@@ -75,7 +70,7 @@ export interface SelectionHandlerConfig {
 }
 
 /**
- * Handles selection of vertices, lights, and walls.
+ * Handles selection of vertices, module entities, and walls.
  * Manages single click selection, shift-click multi-selection,
  * and initiates drag operations.
  */
@@ -96,7 +91,7 @@ export class SelectionHandler extends BaseInteractionHandler {
     // Selection handler is the fallback for click events in select mode
     return (
       !context.isDrawingEnabled &&
-      !context.isPlacingLights &&
+      !context.isModuleToolActive &&
       !context.isPlacingDoors &&
       !context.isObstacleDrawing &&
       !context.isMeasuring
@@ -116,9 +111,9 @@ export class SelectionHandler extends BaseInteractionHandler {
       if (vertexResult.handled) return true;
     }
 
-    // Check lights
-    const lightResult = this.trySelectLight(pos, vertices, addToSelection, context);
-    if (lightResult.handled) return true;
+    // Check the active module's entities
+    const entityResult = this.trySelectEntity(pos, vertices, addToSelection);
+    if (entityResult.handled) return true;
 
     // Check doors (if room is closed)
     if (isClosed) {
@@ -237,8 +232,9 @@ export class SelectionHandler extends BaseInteractionHandler {
     vertices: Vector2[],
     addToSelection: boolean
   ): { handled: boolean } {
+    const entities = this.config.getEntities();
     const selectedIndices = getSelectedVertexIndices(this.config.getSelection());
-    const selectedLightIds = getSelectedFixtureIds(this.config.getSelection());
+    const selectedEntityIds = entities.selectedIds(this.config.getSelection());
 
     const attempt = attemptItemSelection<number>(pos, {
       findItemAtPosition: (p, tolerance) => {
@@ -246,7 +242,7 @@ export class SelectionHandler extends BaseInteractionHandler {
         return idx !== null ? { id: idx, position: vertices[idx] } : null;
       },
       isSelected: (idx) => selectedIndices.includes(idx),
-      getOtherSelectedCount: () => selectedIndices.length - 1 + selectedLightIds.length,
+      getOtherSelectedCount: () => selectedIndices.length - 1 + selectedEntityIds.length,
       hitTolerance: VERTEX_HIT_TOLERANCE_FT,
     });
 
@@ -259,28 +255,29 @@ export class SelectionHandler extends BaseInteractionHandler {
     return { handled };
   }
 
-  private trySelectLight(
+  private trySelectEntity(
     pos: Vector2,
     vertices: Vector2[],
-    addToSelection: boolean,
-    _context: InteractionContext
+    addToSelection: boolean
   ): { handled: boolean } {
+    const entities = this.config.getEntities();
     const selectedIndices = getSelectedVertexIndices(this.config.getSelection());
-    const selectedLightIds = getSelectedFixtureIds(this.config.getSelection());
+    const selectedEntityIds = entities.selectedIds(this.config.getSelection());
 
     const attempt = attemptItemSelection<string>(pos, {
       findItemAtPosition: (p, tolerance) => {
-        const light = this.config.lightManager.getLightAt(p, tolerance);
-        return light ? { id: light.id, position: light.position } : null;
+        const entity = entities.at(p, tolerance);
+        return entity ? { id: entity.id, position: entity.position } : null;
       },
-      isSelected: (id) => selectedLightIds.includes(id),
-      getOtherSelectedCount: () => selectedLightIds.length - 1 + selectedIndices.length,
-      hitTolerance: LIGHT_HIT_TOLERANCE_FT,
+      isSelected: (id) => selectedEntityIds.includes(id),
+      getOtherSelectedCount: () => selectedEntityIds.length - 1 + selectedIndices.length,
+      hitTolerance: entities.hitTolerance,
     });
 
     const handled = handleSelectionAction(attempt, addToSelection, {
-      onSelect: (id, add) => this.callbacks.onSelectLight(id, add),
-      isSelectedNow: (id) => getSelectedFixtureIds(this.config.getSelection()).includes(id),
+      onSelect: (id, add) => this.callbacks.onSelectEntity(id, add),
+      isSelectedNow: (id) =>
+        this.config.getEntities().selectedIds(this.config.getSelection()).includes(id),
       startDrag: (id) => this.startUnifiedDrag(null, id, pos, vertices),
     });
 
@@ -470,12 +467,12 @@ export class SelectionHandler extends BaseInteractionHandler {
 
   private startUnifiedDrag(
     vertexIndex: number | null,
-    lightId: string | null,
+    entityId: string | null,
     pos: Vector2,
     _vertices: Vector2[]
   ): void {
     const operation = this.config.createUnifiedDragOperation();
-    operation.setAnchor(vertexIndex, lightId);
+    operation.setAnchor(vertexIndex, entityId);
 
     this.config.dragManager.startDrag(operation, {
       position: pos,
@@ -496,10 +493,10 @@ export class SelectionHandler extends BaseInteractionHandler {
 
   private getSelectionOrigin(context: InteractionContext): Vector2 | undefined {
     const selection = this.config.getSelection();
-    return getSelectionOriginFromRoomState(
+    return getSelectionOriginFromDocument(
       selection,
       context.vertices,
-      context.fixtures,
+      context.entities,
       context.document.geometry.boundary.walls,
       context.document.geometry.doors
     );

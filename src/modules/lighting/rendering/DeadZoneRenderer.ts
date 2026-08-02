@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { DeadZoneConfig } from '../../../floorplan/types';
+import type { DeadZoneConfig } from '../types';
 import { createLightUniformArrays } from '../../../floorplan/utils/three';
 import { BaseLightingRenderer } from './BaseLightingRenderer';
 

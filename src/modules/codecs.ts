@@ -27,7 +27,7 @@ const lightingModule: ModuleDefinition<LightingData> = {
    * — and with it THREE, the IES parser, the heatmap shaders and every lighting panel — stays
    * out of the eager chunk this barrel is in. Phase 5 routes on it and adds the bundle check.
    */
-  // loadRuntime wired below (phase 4 WIP)
+  loadRuntime: () => import('./lighting/runtime').then((m) => m.lightingRuntime),
 };
 
 export function installModules(): void {

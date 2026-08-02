@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { LightFixture, BoundingBox } from '../../../floorplan/types';
+import type { BoundingBox } from '../../../floorplan/types';
+import type { LightFixture } from '../types';
 
 const MAX_LIGHTS = 32;
 

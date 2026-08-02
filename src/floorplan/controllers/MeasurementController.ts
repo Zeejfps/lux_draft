@@ -9,17 +9,21 @@ export interface MeasurementData {
   distance: number;
 }
 
-export type MeasurementSource = { type: 'vertex'; index: number } | { type: 'light'; id: string };
+/**
+ * A measurement anchors on a room vertex or on one of the active module's entities. The
+ * `entity` variant used to be `light`; core names no domain.
+ */
+export type MeasurementSource = { type: 'vertex'; index: number } | { type: 'entity'; id: string };
 
 export type MeasurementTarget =
   | { type: 'vertex'; index: number }
-  | { type: 'light'; id: string }
+  | { type: 'entity'; id: string }
   | { type: 'wall'; id: string }
   | null;
 
 /**
  * Manages measurement state and calculations.
- * Supports measuring between vertices, lights, and to walls.
+ * Supports measuring between vertices, module entities, and to walls.
  */
 export class MeasurementController {
   private _isActive = false;
@@ -48,12 +52,12 @@ export class MeasurementController {
     return this._target;
   }
 
-  get isFromLight(): boolean {
-    return this._source?.type === 'light';
+  get isFromEntity(): boolean {
+    return this._source?.type === 'entity';
   }
 
-  get sourceLightId(): string | null {
-    return this._source?.type === 'light' ? this._source.id : null;
+  get sourceEntityId(): string | null {
+    return this._source?.type === 'entity' ? this._source.id : null;
   }
 
   get sourceVertexIndex(): number | null {
@@ -72,11 +76,11 @@ export class MeasurementController {
   }
 
   /**
-   * Starts a measurement from a light.
+   * Starts a measurement from a module entity.
    */
-  startFromLight(lightId: string, position: Vector2): void {
+  startFromEntity(entityId: string, position: Vector2): void {
     this._isActive = true;
-    this._source = { type: 'light', id: lightId };
+    this._source = { type: 'entity', id: entityId };
     this._fromPosition = { ...position };
     this._toPosition = null;
     this._target = null;
@@ -91,10 +95,10 @@ export class MeasurementController {
   }
 
   /**
-   * Sets the measurement target to a light.
+   * Sets the measurement target to a module entity.
    */
-  setTargetLight(lightId: string, position: Vector2): void {
-    this._target = { type: 'light', id: lightId };
+  setTargetEntity(entityId: string, position: Vector2): void {
+    this._target = { type: 'entity', id: entityId };
     this._toPosition = { ...position };
   }
 
@@ -109,7 +113,7 @@ export class MeasurementController {
   }
 
   /**
-   * Updates the source position (e.g., when dragging the source light/vertex).
+   * Updates the source position (e.g., when dragging the source entity/vertex).
    */
   updateSourcePosition(position: Vector2, walls?: WallSegment[]): void {
     this._fromPosition = { ...position };
@@ -125,7 +129,7 @@ export class MeasurementController {
   }
 
   /**
-   * Updates the target position (e.g., when dragging the target light/vertex).
+   * Updates the target position (e.g., when dragging the target entity/vertex).
    */
   updateTargetPosition(position: Vector2): void {
     this._toPosition = { ...position };

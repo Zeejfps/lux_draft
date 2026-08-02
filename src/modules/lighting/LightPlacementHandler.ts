@@ -1,11 +1,13 @@
 import type { InputEvent } from '../../floorplan/core/InputManager';
-import type { LightFixture, WallSegment, Vector2 } from '../../floorplan/types';
+import type { WallSegment, Vector2 } from '../../floorplan/types';
+import type { LightFixture } from './types';
 import type { InteractionContext } from '../../floorplan/types/interaction';
 import type { LightManager } from './LightManager';
 import type { PolygonValidator } from '../../floorplan/geometry/PolygonValidator';
 import type { SnapController } from '../../floorplan/controllers/SnapController';
 import { BaseInteractionHandler } from '../../floorplan/interactions/InteractionHandler';
 import { DEFAULT_GRID_SIZE_FT } from '../../floorplan/constants/editor';
+import { LIGHTING_TOOL_PLACE } from './constants';
 
 export interface LightPlacementHandlerCallbacks {
   onLightPlaced: (light: LightFixture) => void;
@@ -40,12 +42,20 @@ export class LightPlacementHandler extends BaseInteractionHandler {
     this.callbacks = callbacks;
   }
 
+  /**
+   * The handler asks for *its own* tool by id. Core no longer carries an `isPlacingLights`
+   * flag — it knows only that some module tool is active (`context.isModuleToolActive`).
+   */
+  private isActive(context: InteractionContext): boolean {
+    return context.activeTool === LIGHTING_TOOL_PLACE;
+  }
+
   canHandle(_event: InputEvent, context: InteractionContext): boolean {
-    return context.isPlacingLights && this.config.canPlaceLights();
+    return this.isActive(context) && this.config.canPlaceLights();
   }
 
   handleClick(event: InputEvent, context: InteractionContext): boolean {
-    if (!context.isPlacingLights || !this.config.canPlaceLights()) {
+    if (!this.isActive(context) || !this.config.canPlaceLights()) {
       return false;
     }
 
@@ -72,7 +82,7 @@ export class LightPlacementHandler extends BaseInteractionHandler {
   }
 
   handleMouseMove(event: InputEvent, context: InteractionContext): boolean {
-    if (!context.isPlacingLights || !this.config.canPlaceLights()) {
+    if (!this.isActive(context) || !this.config.canPlaceLights()) {
       this.callbacks.onSetPreviewLight(null);
       return false;
     }

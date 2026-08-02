@@ -1,3 +1,16 @@
+// ============================================
+// Module identity
+// ============================================
+
+/**
+ * The lighting tool's id. Namespaced with the module id, which the registry enforces: a bare
+ * `'light'` would collide with a future module's and shadow it silently.
+ */
+export const LIGHTING_TOOL_PLACE = 'lighting.place';
+
+/** Click tolerance for picking a fixture, in feet. Was `LIGHT_HIT_TOLERANCE_FT` in core. */
+export const LIGHT_HIT_TOLERANCE_FT = 0.5;
+
 /**
  * Constants for lighting calculations and analysis.
  */

@@ -1,12 +1,6 @@
-import type {
-  LightFixture,
-  WallSegment,
-  BoundingBox,
-  LightingMetrics,
-  RoomType,
-  Obstacle,
-} from '../../floorplan/types';
-import { ROOM_LIGHTING_STANDARDS } from '../../floorplan/types';
+import type { WallSegment, BoundingBox, Obstacle } from '../../floorplan/types';
+import type { LightFixture, LightingMetrics, RoomType } from './types';
+import { ROOM_LIGHTING_STANDARDS } from './types';
 import { LightCalculator } from './LightCalculator';
 import {
   isPointInRoom,

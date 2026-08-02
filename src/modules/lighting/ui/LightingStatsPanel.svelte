@@ -6,8 +6,8 @@
     toggleLightingStats,
   } from '../statsStore';
   import FloatingPanel from '../../../floorplan/ui/FloatingPanel.svelte';
-  import type { LightingMetrics, LightingStatsConfig, RoomType } from '../../../floorplan/types';
-  import { ROOM_LIGHTING_STANDARDS } from '../../../floorplan/types';
+  import type { LightingMetrics, LightingStatsConfig, RoomType } from '../types';
+  import { ROOM_LIGHTING_STANDARDS } from '../types';
 
   let config: LightingStatsConfig;
   let metrics: LightingMetrics | null;

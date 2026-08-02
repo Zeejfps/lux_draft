@@ -1,4 +1,5 @@
-import type { Vector2, LightFixture } from '../../floorplan/types';
+import type { Vector2 } from '../../floorplan/types';
+import type { LightFixture } from './types';
 import { smoothstep, degToRad } from '../../floorplan/utils/math';
 import {
   MIN_DISTANCE_FT,

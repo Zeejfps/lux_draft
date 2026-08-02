@@ -1,4 +1,5 @@
-import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
+import type { Vector2, WallSegment, Door } from '../../types';
+import type { EntityAccess } from '../../types/entity';
 import type { SnapController } from '../../controllers/SnapController';
 
 /**
@@ -11,10 +12,14 @@ export interface RoomStateAccessor {
 }
 
 /**
- * Extended room state accessor with light access.
+ * Extended accessor with the active module's entities.
+ *
+ * Core drags move room vertices and module entities in one gesture, so every drag config needs
+ * a handle on them. It is a getter rather than a value because activation can change between
+ * two frames of the same session.
  */
-export interface RoomStateWithLights extends RoomStateAccessor {
-  getLights: () => LightFixture[];
+export interface RoomStateWithEntities extends RoomStateAccessor {
+  getEntities: () => EntityAccess;
 }
 
 /**
@@ -51,6 +56,6 @@ export interface GridSnapEnabledConfig extends SnapConfig {
 /**
  * Combined config for operations that need room state and snapping.
  */
-export interface BaseDragConfig extends GridSnapEnabledConfig, RoomStateWithLights {
+export interface BaseDragConfig extends GridSnapEnabledConfig, RoomStateWithEntities {
   isRoomClosed: () => boolean;
 }

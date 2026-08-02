@@ -7,13 +7,14 @@ import { getSelectedObstacleId } from '../types/selection';
  * Replaces switch/case keyboard handling with a registration-based approach.
  */
 export class KeyboardShortcutManager {
-  private bindings: KeyBinding[] = [];
+  private coreBindings: KeyBinding[] = [];
+  private moduleBindings: KeyBinding[] = [];
 
   /**
-   * Register a keyboard binding.
+   * Register a core keyboard binding.
    */
   register(binding: KeyBinding): void {
-    this.bindings.push(binding);
+    this.coreBindings.push(binding);
   }
 
   /**
@@ -23,6 +24,21 @@ export class KeyboardShortcutManager {
     for (const binding of bindings) {
       this.register(binding);
     }
+  }
+
+  /**
+   * Replace the active module's bindings.
+   *
+   * **Core wins over modules**: core's are matched first, so a module binding that shadowed one
+   * would never fire — which is why the registry refuses to register one at all rather than
+   * leaving the precedence to registration order.
+   */
+  setModuleBindings(bindings: KeyBinding[]): void {
+    this.moduleBindings = bindings;
+  }
+
+  private get bindings(): KeyBinding[] {
+    return [...this.coreBindings, ...this.moduleBindings];
   }
 
   /**
@@ -76,7 +92,8 @@ export class KeyboardShortcutManager {
    * Clear all bindings.
    */
   clear(): void {
-    this.bindings = [];
+    this.coreBindings = [];
+    this.moduleBindings = [];
   }
 }
 
@@ -85,10 +102,8 @@ export class KeyboardShortcutManager {
  */
 export function createDefaultKeyboardShortcuts(callbacks: {
   setViewMode: (mode: 'editor' | 'shadow' | 'heatmap') => void;
-  toggleRafters: () => void;
   toggleUnitFormat: () => void;
   toggleMeasurement: () => void;
-  toggleLightingStats: () => void;
   undo: () => void;
   redo: () => void;
   handleEscape: () => void;
@@ -115,11 +130,6 @@ export function createDefaultKeyboardShortcuts(callbacks: {
 
     // Toggle shortcuts
     {
-      key: 'r',
-      action: () => callbacks.toggleRafters(),
-      description: 'Toggle rafter overlay',
-    },
-    {
       key: 'u',
       action: () => callbacks.toggleUnitFormat(),
       description: 'Toggle unit format',
@@ -128,11 +138,6 @@ export function createDefaultKeyboardShortcuts(callbacks: {
       key: 'm',
       action: () => callbacks.toggleMeasurement(),
       description: 'Toggle measurement mode',
-    },
-    {
-      key: 'q',
-      action: () => callbacks.toggleLightingStats(),
-      description: 'Toggle lighting stats',
     },
 
     // Undo/Redo

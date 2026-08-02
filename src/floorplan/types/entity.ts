@@ -38,6 +38,11 @@ export interface EntityDescriptor<T> {
    * can re-apply it to the committed base every frame (invariant 3).
    */
   moveCommand(id: string, position: Vector2): EditorCommand;
+  /**
+   * Delete these entities. One command, so one history entry — core's Delete key works on a
+   * module's entities without core knowing what they are. Null when there is nothing to do.
+   */
+  removeCommand(ids: readonly string[]): EditorCommand | null;
 }
 
 /** The bound, live form core interaction code holds. */
@@ -52,6 +57,7 @@ export interface EntityAccess {
   selectedIds(selection: Selection): readonly string[];
   selectionOf(ids: readonly string[]): Selection;
   moveCommand(id: string, position: Vector2): EditorCommand;
+  removeCommand(ids: readonly string[]): EditorCommand | null;
 }
 
 function distanceSquared(a: Vector2, b: Vector2): number {
@@ -77,6 +83,7 @@ export const NO_ENTITIES: EntityAccess = {
   moveCommand: () => {
     throw new Error('No module entities are active; there is nothing to move.');
   },
+  removeCommand: () => null,
 };
 
 /** Bind a descriptor to a live view. The registry's job; the result is what core sees. */
@@ -114,5 +121,6 @@ export function bindEntities<T>(
     selectionOf: (ids) =>
       ids.length > 0 ? descriptor.selection.make({ ids: [...ids] }) : NO_SELECTION,
     moveCommand: (id, position) => descriptor.moveCommand(id, position),
+    removeCommand: (ids) => descriptor.removeCommand(ids),
   };
 }

@@ -126,3 +126,28 @@ export const DEFAULT_SPACING_CONFIG: SpacingConfig = {
   overlapFactor: 0.7,
   gapTolerance: 0.3,
 };
+
+// ============================================
+// Rafters
+// ============================================
+
+/**
+ * Ceiling rafters. Lighting data, not core state: fixtures are laid out against joists, and
+ * `LightingData.rafterConfig` is where it is persisted. It lived in `floorplan/types/state.ts`
+ * until phase 4 moved the module out from under core.
+ */
+export interface RafterConfig {
+  orientation: 'horizontal' | 'vertical';
+  spacing: number;
+  offsetX: number;
+  offsetY: number;
+  visible: boolean;
+}
+
+export const DEFAULT_RAFTER_CONFIG: RafterConfig = {
+  orientation: 'horizontal',
+  spacing: 1.333,
+  offsetX: 0,
+  offsetY: 0,
+  visible: false,
+};

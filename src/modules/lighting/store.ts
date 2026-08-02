@@ -8,7 +8,7 @@ import type {
   SpacingConfig,
   SpacingWarning,
 } from './types';
-import type { RafterConfig } from '../../floorplan/types/state';
+import type { RafterConfig } from './types';
 import { readModule } from '../../floorplan/types/module';
 import type { LightingData } from './codec';
 import { isBuiltinDefinitionId, lightingCodec, resolveDefinition } from './codec';

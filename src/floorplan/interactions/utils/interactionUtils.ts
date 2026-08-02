@@ -1,4 +1,5 @@
-import type { Vector2, LightFixture, WallSegment, Door } from '../../types';
+import type { Vector2, WallSegment, Door } from '../../types';
+import type { EntityAccess } from '../../types/entity';
 import type { InputModifiers } from '../../types/interaction';
 import type { InputEvent } from '../../core/InputManager';
 import {
@@ -8,7 +9,6 @@ import {
   isEmptySelection,
   type Selection,
 } from '../../types/selection';
-import { getSelectedFixtureIds } from '../../../modules/lighting/selection';
 import { getWallDirection } from '../../utils/geometry';
 
 /**
@@ -43,7 +43,7 @@ export function hasSelection(selection: Selection): boolean {
  */
 export interface SelectionOriginConfig {
   getVertices: () => Vector2[];
-  getLights: () => LightFixture[];
+  getEntities: () => EntityAccess;
   getWalls: () => WallSegment[];
   getWallById: (id: string) => WallSegment | undefined;
   getDoorById: (id: string) => Door | undefined;
@@ -57,8 +57,9 @@ export function getSelectionOrigin(
   selection: Selection,
   config: SelectionOriginConfig
 ): Vector2 | null {
+  const entities = config.getEntities();
   const selectedVertexIndices = getSelectedVertexIndices(selection);
-  const selectedFixtureIds = getSelectedFixtureIds(selection);
+  const selectedEntityIds = entities.selectedIds(selection);
   const selectedWallId = getSelectedWallId(selection);
   const selectedDoorId = getSelectedDoorId(selection);
 
@@ -71,13 +72,11 @@ export function getSelectionOrigin(
     }
   }
 
-  // Check lights
-  if (selectedFixtureIds.length > 0) {
-    const lights = config.getLights();
-    const firstId = selectedFixtureIds[0];
-    const light = lights.find((l) => l.id === firstId);
-    if (light) {
-      return { ...light.position };
+  // Check the active module's entities
+  if (selectedEntityIds.length > 0) {
+    const entity = entities.find(selectedEntityIds[0]);
+    if (entity) {
+      return { ...entity.position };
     }
   }
 
@@ -110,17 +109,17 @@ export function getSelectionOrigin(
 }
 
 /**
- * Gets selection origin using RoomState directly (for handlers that have context).
+ * Gets selection origin from a document the handler already has in its context.
  */
-export function getSelectionOriginFromRoomState(
+export function getSelectionOriginFromDocument(
   selection: Selection,
   vertices: Vector2[],
-  lights: LightFixture[],
+  entities: EntityAccess,
   walls: WallSegment[],
   doors: Door[]
 ): Vector2 | undefined {
   const selectedVertexIndices = getSelectedVertexIndices(selection);
-  const selectedFixtureIds = getSelectedFixtureIds(selection);
+  const selectedEntityIds = entities.selectedIds(selection);
   const selectedWallId = getSelectedWallId(selection);
   const selectedDoorId = getSelectedDoorId(selection);
 
@@ -132,12 +131,11 @@ export function getSelectionOriginFromRoomState(
     }
   }
 
-  // Check lights
-  if (selectedFixtureIds.length > 0) {
-    const firstId = selectedFixtureIds[0];
-    const light = lights.find((l) => l.id === firstId);
-    if (light) {
-      return light.position;
+  // Check the active module's entities
+  if (selectedEntityIds.length > 0) {
+    const entity = entities.find(selectedEntityIds[0]);
+    if (entity) {
+      return entity.position;
     }
   }
 

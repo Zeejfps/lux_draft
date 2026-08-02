@@ -1,9 +1,4 @@
-import type {
-  LightFixture,
-  SpacingWarning,
-  SpacingConfig,
-  SpacingSeverity,
-} from '../../floorplan/types';
+import type { LightFixture, SpacingWarning, SpacingConfig, SpacingSeverity } from './types';
 import { LightCalculator } from './LightCalculator';
 import { MIN_SPACING_RATIO, EXTREME_DISTANCE_MULTIPLIER, SEVERITY_THRESHOLDS } from './constants';
 

@@ -6,8 +6,8 @@ export const WALL_HIT_TOLERANCE_FT = 0.3;
 export const CLOSURE_SNAP_THRESHOLD_FT = 0.5;
 export const PARALLEL_ANGLE_THRESHOLD_RAD = 5 * (Math.PI / 180);
 
-// Hit detection tolerances (in feet)
-export const LIGHT_HIT_TOLERANCE_FT = 0.5;
+// Hit detection tolerances (in feet).
+// A module's own entity tolerance lives with the module (`EntityDescriptor.hitTolerance`).
 export const VERTEX_HIT_TOLERANCE_FT = 0.3;
 export const WALL_CLICK_TOLERANCE_FT = 0.4;
 export const MEASUREMENT_CLICK_TOLERANCE_FT = 0.4;

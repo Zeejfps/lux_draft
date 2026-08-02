@@ -5,7 +5,6 @@ import type { DragOperationCallbacks } from '../DragManager';
 import type { BaseDragConfig, RoomStateWithDoors } from '../types';
 import { BaseDragOperation } from '../DragOperation';
 import { doorPositioningService } from '../../services';
-import { moveFixture } from '../../../modules/lighting/commands';
 import {
   calculateGrabOffset,
   applyGrabOffset,
@@ -34,7 +33,7 @@ export interface GrabModeConfig extends BaseDragConfig, RoomStateWithDoors {
  * so the object follows the mouse at a fixed distance.
  *
  * **Heterogeneous selections resolve to a compound command**, not a bespoke multi-entity one:
- * a grab can hold room vertices and lights at once, and there is no single entity a
+ * a grab can hold room vertices and module entities at once, and there is no single entity a
  * multi-entity payload could name. Each member carries its own absolute target, so the
  * compound is idempotent exactly as its members are, it reuses the same handlers as a
  * single-entity drag, and it is still one preview, one dispatch, one history entry.
@@ -43,11 +42,11 @@ export class GrabModeDragOperation extends BaseDragOperation {
   readonly type = 'grabMode';
 
   private originalVertexPositions: Map<number, Vector2> = new Map();
-  private originalLightPositions: Map<string, Vector2> = new Map();
+  private originalEntityPositions: Map<string, Vector2> = new Map();
   private originalWallVertices: { start: Vector2; end: Vector2 } | null = null;
   private originalDoorPosition: number | null = null;
   private anchorVertexIndex: number | null = null;
-  private anchorLightId: string | null = null;
+  private anchorEntityId: string | null = null;
   private wallId: string | null = null;
   private doorId: string | null = null;
   private selection: Selection | null = null;
@@ -73,13 +72,13 @@ export class GrabModeDragOperation extends BaseDragOperation {
     const captured = captureOriginalPositions(
       context.selection,
       this.config.getVertices,
-      this.config.getLights,
+      this.config.getEntities,
       this.config.getWallById,
       this.config.getDoorById
     );
 
     this.originalVertexPositions = captured.vertexPositions;
-    this.originalLightPositions = captured.lightPositions;
+    this.originalEntityPositions = captured.entityPositions;
     this.originalWallVertices = captured.wallVertices;
     this.originalDoorPosition = captured.doorPosition;
 
@@ -87,7 +86,7 @@ export class GrabModeDragOperation extends BaseDragOperation {
     const anchor = findAnchorPosition(
       context.selection,
       this.config.getVertices,
-      this.config.getLights,
+      this.config.getEntities,
       this.config.getWallById,
       this.config.getDoorById
     );
@@ -95,8 +94,8 @@ export class GrabModeDragOperation extends BaseDragOperation {
     // Store anchor identifiers
     if (anchor.anchorType === 'vertex') {
       this.anchorVertexIndex = anchor.anchorId as number;
-    } else if (anchor.anchorType === 'light') {
-      this.anchorLightId = anchor.anchorId as string;
+    } else if (anchor.anchorType === 'entity') {
+      this.anchorEntityId = anchor.anchorId as string;
     } else if (anchor.anchorType === 'wall') {
       this.wallId = anchor.anchorId as string;
     } else if (anchor.anchorType === 'door') {
@@ -120,7 +119,7 @@ export class GrabModeDragOperation extends BaseDragOperation {
       this.doorId &&
       this.originalDoorPosition !== null &&
       this.originalVertexPositions.size === 0 &&
-      this.originalLightPositions.size === 0 &&
+      this.originalEntityPositions.size === 0 &&
       !this.wallId
     ) {
       return this.doorCommand(context.position);
@@ -131,15 +130,15 @@ export class GrabModeDragOperation extends BaseDragOperation {
       this.wallId &&
       this.originalWallVertices &&
       this.originalVertexPositions.size === 0 &&
-      this.originalLightPositions.size === 0
+      this.originalEntityPositions.size === 0
     ) {
       return this.wallCommand(adjustedPos, context);
     }
 
-    return this.verticesAndLightsCommand(adjustedPos, context);
+    return this.verticesAndEntitiesCommand(adjustedPos, context);
   }
 
-  private verticesAndLightsCommand(
+  private verticesAndEntitiesCommand(
     adjustedPos: Vector2,
     context: DragUpdateContext
   ): EditorCommand | null {
@@ -153,9 +152,9 @@ export class GrabModeDragOperation extends BaseDragOperation {
       {
         selection: this.selection,
         anchorVertexIndex: this.anchorVertexIndex,
-        anchorLightId: this.anchorLightId,
+        anchorEntityId: this.anchorEntityId,
         getVertices: this.config.getVertices,
-        getLights: this.config.getLights,
+        getEntities: this.config.getEntities,
       },
       this.applyAxisConstraint.bind(this)
     );
@@ -175,14 +174,15 @@ export class GrabModeDragOperation extends BaseDragOperation {
       commands.push({ type: 'vertex.move', index, position: applyDelta(originalPos, delta) });
     }
 
-    if (this.originalLightPositions.size > 0) {
+    if (this.originalEntityPositions.size > 0) {
+      const entities = this.config.getEntities();
       const walls = this.config.getWalls();
       const isClosed = this.config.isRoomClosed();
 
-      for (const [lightId, originalPos] of this.originalLightPositions) {
+      for (const [entityId, originalPos] of this.originalEntityPositions) {
         const position = applyDelta(originalPos, delta);
         if (!isClosed || checkPointInRoom(position, walls)) {
-          commands.push(moveFixture.make({ fixtureId: lightId, position }));
+          commands.push(entities.moveCommand(entityId, position));
         }
       }
     }
@@ -249,8 +249,8 @@ export class GrabModeDragOperation extends BaseDragOperation {
       return calculateDelta(anchorOriginal, targetPos);
     }
 
-    if (this.anchorLightId !== null && this.originalLightPositions.has(this.anchorLightId)) {
-      const anchorOriginal = this.originalLightPositions.get(this.anchorLightId)!;
+    if (this.anchorEntityId !== null && this.originalEntityPositions.has(this.anchorEntityId)) {
+      const anchorOriginal = this.originalEntityPositions.get(this.anchorEntityId)!;
       return calculateDelta(anchorOriginal, targetPos);
     }
 
@@ -259,11 +259,11 @@ export class GrabModeDragOperation extends BaseDragOperation {
 
   protected cleanup(): void {
     this.originalVertexPositions.clear();
-    this.originalLightPositions.clear();
+    this.originalEntityPositions.clear();
     this.originalWallVertices = null;
     this.originalDoorPosition = null;
     this.anchorVertexIndex = null;
-    this.anchorLightId = null;
+    this.anchorEntityId = null;
     this.wallId = null;
     this.doorId = null;
     this.selection = null;
