@@ -72,6 +72,9 @@
       <div class="panel-info-row"><span>Plank</span><span>{plank.name}</span></div>
       <div class="panel-info-row"><span>Full boards</span><span>{layout.fullPieces}</span></div>
       <div class="panel-info-row"><span>Cut pieces</span><span>{layout.cutPieces}</span></div>
+      <!-- Not the same number, and the one that gets counted on site: a single pass of the saw
+           makes the end of one row and the piece that starts the next. -->
+      <div class="panel-info-row"><span>Cuts to make</span><span>{layout.sawCuts}</span></div>
       {#if layout.narrowestRipIn != null}
         <!-- Only once something was ripped: on a floor that came out even this row would be a
              blank the reader has to interpret. -->

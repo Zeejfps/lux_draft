@@ -1,6 +1,6 @@
 import type { Obstacle, Vector2, WallSegment } from '../../floorplan/types/geometry';
 import type { LayoutConfig, PlankSpec, StartCorner } from './types';
-import { INCHES_PER_FOOT, MAX_PLANKS } from './types';
+import { INCHES_PER_FOOT, MAX_PLANKS, MIN_JOINT_OFFSET_IN } from './types';
 import type { BandPoint, BandSpan, Interval } from './geometry2d';
 import {
   EPS,
@@ -229,7 +229,18 @@ export interface PlankLayout {
   /** Run angle in radians, world space. Every plank shares it. */
   readonly angle: number;
   readonly fullPieces: number;
+  /** Boards that are not a full plank — shorter, ripped or mitred. */
   readonly cutPieces: number;
+  /**
+   * Passes of the saw, which is not the same number as `cutPieces` and is the one an installer
+   * is counting.
+   *
+   * One cut makes two pieces: the end of a row, and the off-cut that starts the next. Where a
+   * layout arranges for that off-cut to be exactly what the next row wants — `stagger: 'offcut'`
+   * — the second piece costs nothing, and this figure is what shows it. See
+   * `purchaseSimulation`, which tracks the same off-cut pool the purchase count is read from.
+   */
+  readonly sawCuts: number;
   /** Boards that must actually be bought, after re-using off-cuts. */
   readonly purchasedPlanks: number;
   readonly coveredSqft: number;
@@ -256,6 +267,7 @@ export const EMPTY_LAYOUT: PlankLayout = {
   angle: 0,
   fullPieces: 0,
   cutPieces: 0,
+  sawCuts: 0,
   purchasedPlanks: 0,
   coveredSqft: 0,
   purchasedSqft: 0,
@@ -469,9 +481,16 @@ function hashFraction(seed: number, row: number): number {
   return (h >>> 0) / 4294967296;
 }
 
+/**
+ * How far this row's joint grid is shifted, for the rules that are a function of the row index.
+ *
+ * `offcut` is not one of them — it is a function of the row below, so it is decided in the row
+ * loop where the previous row's remainder is still in hand, and it never reaches here.
+ */
 function rowOffset(row: number, config: LayoutConfig, plankLength: number): number {
   switch (config.stagger) {
     case 'none':
+    case 'offcut':
       return 0;
     case 'half':
       return mod(row, 2) * (plankLength / 2);
@@ -692,7 +711,7 @@ export interface PieceDemand {
 }
 
 /**
- * How many boards actually get bought.
+ * How many boards get bought, and how many times the saw runs.
  *
  * Naively every cut piece costs a whole plank, which overstates waste by nearly a factor of two:
  * the off-cut from the end of one row starts the next, and that is what installers are told to
@@ -703,14 +722,31 @@ export interface PieceDemand {
  *
  * Off-cuts are matched smallest-that-fits, so long stock stays available for a long start.
  *
+ * ## Why the cuts are counted here and not off the pieces
+ *
+ * A piece shorter than a plank is not the same thing as a cut, and the difference is the whole
+ * point of `stagger: 'offcut'`. **One** pass of the saw makes **two** pieces: the end of a row
+ * and the off-cut that starts the next. Counted off the pieces, that row pays twice for a cut
+ * that happened once, and a layout arranged so that every off-cut lands where it is needed
+ * scores no better than one that throws them all away. Counted here, where the off-cut pool is
+ * already being tracked, a piece taken whole from an off-cut costs nothing: the cut it came
+ * from was already paid for by the row that made it.
+ *
  * What this deliberately does **not** model: defect and damage allowance (the "add 10%" rule of
  * thumb), or the fact that an off-cut may be the wrong plank in a variegated run. Those are
  * purchasing judgement, not geometry, and inventing a number for them would make this figure
  * look more authoritative than it is.
  */
-function purchaseSimulation(demand: readonly PieceDemand[], plankLength: number): number {
+interface Purchase {
+  readonly purchased: number;
+  /** Passes of the saw, counting the one that makes a piece and its off-cut only once. */
+  readonly sawCuts: number;
+}
+
+function purchaseSimulation(demand: readonly PieceDemand[], plankLength: number): Purchase {
   const offcuts: number[] = [];
   let purchased = 0;
+  let sawCuts = 0;
 
   for (const { length, startsRun } of demand) {
     if (length >= plankLength - EPS) {
@@ -725,15 +761,20 @@ function purchaseSimulation(demand: readonly PieceDemand[], plankLength: number)
     }
     if (best >= 0) {
       const rest = offcuts[best] - length;
+      // An off-cut that fits the piece exactly goes down as it is. Anything left over had to
+      // come off it, and that is a cut.
+      if (rest > EPS) sawCuts += 1;
       offcuts.splice(best, 1);
       if (rest > MIN_USABLE_OFFCUT_FT) offcuts.push(rest);
     } else {
       purchased += 1;
+      // A short piece off a whole board: one pass, whatever becomes of the remainder.
+      sawCuts += 1;
       const rest = plankLength - length;
       if (rest > MIN_USABLE_OFFCUT_FT) offcuts.push(rest);
     }
   }
-  return purchased;
+  return { purchased, sawCuts };
 }
 
 /**
@@ -1057,6 +1098,41 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   const rowOfBand = (low: number, high: number): number =>
     Math.floor(((low + high) / 2 - ANCHOR_Y) / plankWidth);
 
+  /**
+   * The state `stagger: 'offcut'` carries up the floor, and the only state in this engine that
+   * crosses a row boundary.
+   *
+   * `offcut` is what an installer does with the piece left over from the end of a row: it starts
+   * the next one. That board is already cut, so the row it starts costs **one** cut instead of
+   * two — every other rule puts the row's grid at a fraction of a plank, which leaves the first
+   * piece short as well as the last. On a plain room it is the difference between two cuts a row
+   * and one, and the off-cut is consumed where it falls rather than being carried to the pile.
+   *
+   * `carry` is the length of that piece, `0` when there is none worth using; `lastOffset` is the
+   * previous row's grid, which is what the joint separation has to be measured against.
+   */
+  let carry = 0;
+  let lastOffset: number | null = null;
+  const minJointOffset = Math.min(plankLength / 2, MIN_JOINT_OFFSET_IN / INCHES_PER_FOOT);
+
+  /**
+   * This row's grid, given where its first run starts. See the call site for the two fallbacks.
+   *
+   * The separation test is between the two grids rather than between two particular joints,
+   * because both rows are laid on a grid of the same pitch: shift one by `d` and *every* pair of
+   * joints across the row is `d` apart, or `plankLength - d`, whichever is nearer. So one
+   * comparison covers the whole row, and it is the one an installer makes by eye.
+   */
+  const offcutOffset = (runStart: number): number => {
+    const half = () => (lastOffset ?? runStart) + plankLength / 2;
+    if (carry <= 0) return lastOffset === null ? runStart : half();
+    const offset = runStart + carry;
+    if (lastOffset === null) return offset;
+    const apart = mod(offset - lastOffset, plankLength);
+    const nearest = Math.min(apart, plankLength - apart);
+    return nearest >= minJointOffset - EPS ? offset : half();
+  };
+
   let band = 0;
   while (band + 1 < bandEdges.length && !truncated) {
     if (signal?.aborted) {
@@ -1064,7 +1140,6 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       break;
     }
     const row = rowOfBand(bandEdges[band], bandEdges[band + 1]);
-    const offset = ANCHOR_X + rowOffset(row, layout, plankLength);
     const open: Cell[] = [];
     const bands: { low: number; high: number; spans: BandSpan[] }[] = [];
 
@@ -1145,8 +1220,42 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       if (b - prev > EPS) out.push([prev, b]);
       return out;
     });
+    /**
+     * Where this row's joint grid falls.
+     *
+     * Every rule but `offcut` reads it off the row's index and the layout origin, and is done.
+     * `offcut` reads it off the row below: the grid is placed so the row's **first joint** lands
+     * one off-cut in from where the run starts, which makes the first piece exactly the length
+     * of the piece already in the installer's hand.
+     *
+     * Two things stop it, and both fall back to shifting half a board off the row below — the
+     * largest separation there is, and one cut on that row rather than a floor that cannot be
+     * laid. There is no off-cut worth using, which is a room that divides nearly evenly by the
+     * plank; or the joint it would produce sits within `MIN_JOINT_OFFSET_IN` of the row below's,
+     * which is the ladder that rule exists to prevent. A room that divides *exactly* is the case
+     * that makes this concrete: every row ends flush, no row leaves anything over, and taken at
+     * face value every row would start flush too — one seam straight up the floor.
+     */
+    const offset =
+      layout.stagger === 'offcut'
+        ? offcutOffset(runs.length > 0 ? runs[0][0] : ANCHOR_X)
+        : ANCHOR_X + rowOffset(row, layout, plankLength);
+
     // Disjoint and ascending, so clipping them to a span decomposes it exactly.
     const jointed = runs.flatMap((run) => layRow(run, offset, plankLength, minEndCut));
+
+    if (layout.stagger === 'offcut') {
+      lastOffset = offset;
+      // What this row leaves for the next one. `layRow` may have moved the grid to keep the end
+      // cut above the minimum, so the remainder is read off the pieces actually laid rather than
+      // off the arithmetic that placed the grid.
+      const last = jointed[jointed.length - 1];
+      const rest = last === undefined ? 0 : plankLength - (last.end - last.start);
+      // Long enough to be stock, and long enough to be a legal end piece in its own right —
+      // starting a row with a sliver is the very thing `minEndCutIn` is set to prevent, and it
+      // would be no less a sliver for having been free.
+      carry = rest > MIN_USABLE_OFFCUT_FT && rest >= minEndCut - EPS ? rest : 0;
+    }
 
     for (const { low: bandLow, high: bandHigh, spans } of bands) {
       const height = bandHigh - bandLow;
@@ -1374,7 +1483,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     }
   }
 
-  const purchasedPlanks = purchaseSimulation(demand, plankLength);
+  const { purchased: purchasedPlanks, sawCuts } = purchaseSimulation(demand, plankLength);
   const coveredSqft = covered;
   const purchasedSqft = purchasedPlanks * plankLength * plankWidth;
   const wastePercent =
@@ -1389,6 +1498,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     angle: theta,
     fullPieces,
     cutPieces: cuts.length,
+    sawCuts,
     purchasedPlanks,
     coveredSqft,
     purchasedSqft,

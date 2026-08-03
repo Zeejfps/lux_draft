@@ -280,6 +280,14 @@
       </select>
     </label>
 
+    {#if layout.stagger === 'offcut'}
+      <p class="panel-hint">
+        Each row starts with the piece left over from the row below, so it costs one cut instead of
+        two. Where the leftover is too short to use, or would land its joints under the row
+        below&rsquo;s, that row is staggered half a board instead.
+      </p>
+    {/if}
+
     {#if layout.stagger === 'random'}
       <label class="control-row">
         <span>Seed</span>

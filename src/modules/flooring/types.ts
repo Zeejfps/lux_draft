@@ -45,8 +45,12 @@ export interface PlankSpec {
  * `pattern` cycles `rowOffsetPattern`; `random` is deterministic in `seed`, so a layout is a
  * pure function of its inputs and undo/redo across a config change is a cache hit rather than a
  * different-looking floor.
+ *
+ * `offcut` is the odd one out, and deliberately: every other rule is a function of the row's
+ * *index*, and that one is a function of the row *below it*. See `MIN_JOINT_OFFSET_IN` and the
+ * engine's row loop.
  */
-export type StaggerRule = 'none' | 'half' | 'thirds' | 'pattern' | 'random';
+export type StaggerRule = 'none' | 'half' | 'thirds' | 'pattern' | 'random' | 'offcut';
 
 /** Which corner of the run-aligned room the first row and first plank start from. */
 export type StartCorner = 'bottomLeft' | 'bottomRight' | 'topLeft' | 'topRight';
@@ -212,7 +216,25 @@ export const STAGGER_LABELS: Readonly<Record<StaggerRule, string>> = {
   thirds: 'Third (1/3)',
   pattern: 'Custom',
   random: 'Random',
+  offcut: 'Off-cut (fewest cuts)',
 };
+
+/**
+ * How far apart the joints of two touching rows must sit, inches.
+ *
+ * The one constraint `offcut` staggering has to be held to. Starting a row with the piece left
+ * over from the row below costs no cut at all, but it does not choose where the joint lands —
+ * the room's width does — and a room that divides nearly evenly by the plank leaves an off-cut
+ * too short to use, which puts the next row's joints back on top of the last one's. Two rows
+ * joining in the same place is the defect installers call a ladder: the floor reads as a seam
+ * running across it, and the two boards either side of the joint have nothing but each other
+ * holding that end down.
+ *
+ * Six inches is the figure the manufacturers' instructions converge on for a plank floor. Where
+ * the off-cut cannot clear it the engine cuts a board instead — one cut, on the rows that need
+ * it, rather than the two per row every other rule spends.
+ */
+export const MIN_JOINT_OFFSET_IN = 6;
 
 export const START_CORNER_LABELS: Readonly<Record<StartCorner, string>> = {
   bottomLeft: 'Bottom left',

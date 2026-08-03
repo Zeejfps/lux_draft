@@ -9,8 +9,8 @@ import {
 import { PlankIndex } from '../../../src/modules/flooring/PlankIndex';
 import { defaultFlooringData } from '../../../src/modules/flooring/codec';
 import { interiorPoint, pointInPolygon } from '../../../src/modules/flooring/geometry2d';
-import type { LayoutConfig, PlankSpec } from '../../../src/modules/flooring/types';
-import { INCHES_PER_FOOT } from '../../../src/modules/flooring/types';
+import type { LayoutConfig, PlankSpec, StaggerRule } from '../../../src/modules/flooring/types';
+import { INCHES_PER_FOOT, MIN_JOINT_OFFSET_IN } from '../../../src/modules/flooring/types';
 import { makeObstacle, rectWalls } from '../../helpers/documents';
 
 /**
@@ -723,6 +723,134 @@ describe('the cut list and the waste figure', () => {
       })
     );
     expect(awkward.wastePercent).toBeGreaterThan(tiles.wastePercent);
+  });
+});
+
+/**
+ * `stagger: 'offcut'` — start each row with what the row below left over.
+ *
+ * The rule an installer works to, and the only stagger here that is a function of the row *below*
+ * rather than of the row's index. One pass of the saw makes two pieces: the end of a row and the
+ * board that starts the next. Every other rule puts the grid at a fraction of a plank, so the
+ * first piece is short as well as the last and the leftover goes on the pile.
+ */
+describe('staggering off the off-cut', () => {
+  /** Where each board begins along the run. At `runAngleDeg: 0` that is just its left edge. */
+  const jointsByRow = (layout: ReturnType<typeof layoutOf>): Map<number, number[]> => {
+    const rows = new Map<number, number[]>();
+    for (const plank of layout.planks) {
+      const starts = rows.get(plank.row) ?? [];
+      starts.push(plank.center.x - plank.length / 2);
+      rows.set(plank.row, starts);
+    }
+    for (const starts of rows.values()) starts.sort((a, b) => a - b);
+    return rows;
+  };
+
+  /**
+   * A room that does *not* divide evenly by the plank, which is the only kind where an off-cut
+   * is worth anything: 17.3 ft on a 48" board leaves a third of a board over at the end of every
+   * row, which is exactly what the next row wants.
+   */
+  const awkward = (stagger: StaggerRule) =>
+    computePlankLayout(
+      inputs({
+        walls: rectWalls(17.3, 13.7),
+        layout: { ...defaults.layout, stagger },
+      })
+    );
+
+  it('makes fewer cuts than a fractional stagger, for the same waste', () => {
+    const offcut = awkward('offcut');
+    const thirds = awkward('thirds');
+    const half = awkward('half');
+
+    expect(offcut.sawCuts).toBeLessThan(thirds.sawCuts);
+    expect(offcut.sawCuts).toBeLessThan(half.sawCuts);
+    // Measured on this room: 27 cuts against 39 and 36 — near a third fewer.
+    expect(offcut.sawCuts / thirds.sawCuts).toBeLessThan(0.8);
+    // And it does not buy the saving with material. Off-cuts consumed where they fall are the
+    // same off-cuts the purchase model was already re-using; what changes is the cutting.
+    expect(offcut.wastePercent).toBeLessThanOrEqual(thirds.wastePercent + 1e-9);
+    expect(offcut.purchasedPlanks).toBeLessThanOrEqual(thirds.purchasedPlanks);
+    // The floor itself is unchanged — this is a rule about where joints fall, not about area.
+    expect(offcut.coveredSqft).toBeCloseTo(thirds.coveredSqft, 6);
+  });
+
+  it('never lands two touching rows on the same joint', () => {
+    // The ladder: two rows joining in the same place, which is the one thing the off-cut is not
+    // allowed to buy. A room that divides evenly is the case that produces it — every row ends
+    // flush, nothing is left over, and taken at face value every row would start flush too.
+    for (const [w, h] of [
+      [17.3, 13.7],
+      [20, 20],
+      [16, 12],
+      [12, 10.4],
+    ] as const) {
+      const layout = computePlankLayout(
+        inputs({ walls: rectWalls(w, h), layout: { ...defaults.layout, stagger: 'offcut' } })
+      );
+      const rows = jointsByRow(layout);
+      const indices = [...rows.keys()].sort((a, b) => a - b);
+      for (let i = 0; i + 1 < indices.length; i++) {
+        if (indices[i + 1] !== indices[i] + 1) continue;
+        const below = rows.get(indices[i])!;
+        const above = rows.get(indices[i + 1])!;
+        for (const joint of above.slice(1)) {
+          for (const other of below.slice(1)) {
+            const apart = Math.abs(joint - other) * INCHES_PER_FOOT;
+            expect(
+              apart,
+              `${w}x${h} rows ${indices[i]}/${indices[i + 1]} at ${joint.toFixed(3)}`
+            ).toBeGreaterThan(MIN_JOINT_OFFSET_IN - 1e-6);
+          }
+        }
+      }
+    }
+  });
+
+  it('falls back to half a board where the room leaves nothing worth using', () => {
+    // 20 ft on a 48" board is five planks to the inch: the leftover is half an inch, which is
+    // not a board. The rule has to still lay a legal floor, and the honest one to fall back on
+    // is the largest separation there is.
+    const evenly = computePlankLayout(
+      inputs({ walls: rectWalls(20, 20), layout: { ...defaults.layout, stagger: 'offcut' } })
+    );
+    const half = computePlankLayout(
+      inputs({ walls: rectWalls(20, 20), layout: { ...defaults.layout, stagger: 'half' } })
+    );
+    expect(evenly.sawCuts).toBe(half.sawCuts);
+    expect(evenly.planks).toHaveLength(half.planks.length);
+  });
+
+  it('is a pure function of the inputs, like every other rule', () => {
+    const once = awkward('offcut');
+    const twice = awkward('offcut');
+    expect(once.key).toBe(twice.key);
+    expect(once.planks.map((p) => p.id)).toEqual(twice.planks.map((p) => p.id));
+    expect(once.sawCuts).toBe(twice.sawCuts);
+    // And it keys apart from the rules it is not.
+    expect(once.key).not.toBe(awkward('half').key);
+  });
+});
+
+/**
+ * A cut is a pass of the saw, not a piece that is not a full board. One pass makes two pieces.
+ */
+describe('cuts to make against pieces that are not full boards', () => {
+  it('is never more cuts than there are pieces to cut', () => {
+    for (const stagger of ['none', 'half', 'thirds', 'random', 'offcut'] as const) {
+      const layout = layoutOf({ stagger });
+      expect(layout.sawCuts, stagger).toBeLessThanOrEqual(layout.cutPieces);
+      expect(layout.sawCuts, stagger).toBeGreaterThan(0);
+    }
+  });
+
+  it('charges nothing for a piece that came off an off-cut whole', () => {
+    // Every full board is free, and every piece that is not full costs at most one pass — so the
+    // saving over `cutPieces` is exactly the pieces that were already cut when they arrived.
+    const layout = layoutOf({ stagger: 'offcut' }, { walls: rectWalls(17.3, 13.7) });
+    expect(layout.cutPieces - layout.sawCuts).toBeGreaterThan(0);
   });
 });
 
