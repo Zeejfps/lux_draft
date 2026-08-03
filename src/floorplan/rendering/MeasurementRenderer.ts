@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Vector2, UnitFormat } from '../types';
-import { formatImperial } from '../utils/format';
+import { formatDegrees, formatImperial } from '../utils/format';
 import { clearGroup, createTextSprite } from '../utils/three';
 import {
   Z_LAYERS,
@@ -70,6 +70,13 @@ export class MeasurementRenderer {
 
     if (deltaY > 0.1) {
       this.renderYComponent(from, to, deltaY);
+    }
+
+    // Only the two acute angles are worth drawing — the third corner is always the
+    // right angle where the X and Y components meet. A degenerate (axis-aligned)
+    // measurement has no triangle at all.
+    if (deltaX > 0.1 && deltaY > 0.1) {
+      this.renderAngles(from, to, deltaX, deltaY);
     }
   }
 
@@ -148,6 +155,97 @@ export class MeasurementRenderer {
       deltaY,
       this.colors.yComponent
     );
+  }
+
+  /**
+   * Draws the two acute angles of the measurement triangle: at `from`, between the X
+   * component and the diagonal; at `to`, between the Y component and the diagonal.
+   */
+  private renderAngles(from: Vector2, to: Vector2, deltaX: number, deltaY: number): void {
+    const hypotenuse = Math.hypot(deltaX, deltaY);
+    const angleAtFrom = Math.atan2(deltaY, deltaX);
+    const angleAtTo = Math.PI / 2 - angleAtFrom;
+
+    const signX = Math.sign(to.x - from.x);
+    const signY = Math.sign(to.y - from.y);
+    const alongDiagonal = { x: (to.x - from.x) / hypotenuse, y: (to.y - from.y) / hypotenuse };
+
+    // At `from` the arc spans the X leg and the diagonal, so it must fit inside both.
+    this.renderAngleArc(
+      from,
+      { x: signX, y: 0 },
+      alongDiagonal,
+      angleAtFrom,
+      Math.min(deltaX, hypotenuse),
+      this.colors.xComponent
+    );
+
+    // At `to` the legs run back down the Y component and back along the diagonal.
+    this.renderAngleArc(
+      to,
+      { x: 0, y: -signY },
+      { x: -alongDiagonal.x, y: -alongDiagonal.y },
+      angleAtTo,
+      Math.min(deltaY, hypotenuse),
+      this.colors.yComponent
+    );
+  }
+
+  /**
+   * Renders an arc sweeping from `startDir` to `endDir` around `corner`, labelled with
+   * the angle in degrees. `legLength` is the shortest side touching the corner — the
+   * radius shrinks to stay inside it so the arc never overshoots the triangle.
+   */
+  private renderAngleArc(
+    corner: Vector2,
+    startDir: Vector2,
+    endDir: Vector2,
+    angle: number,
+    legLength: number,
+    color: number
+  ): void {
+    const radius = Math.min(GEOMETRY.MEASUREMENT_ANGLE_RADIUS, legLength * 0.35);
+    const startAngle = Math.atan2(startDir.y, startDir.x);
+    const endAngle = Math.atan2(endDir.y, endDir.x);
+
+    // Sweep the short way around, so the arc lands inside the triangle rather than outside it.
+    let sweep = endAngle - startAngle;
+    while (sweep > Math.PI) sweep -= 2 * Math.PI;
+    while (sweep < -Math.PI) sweep += 2 * Math.PI;
+
+    const points: THREE.Vector3[] = [];
+    for (let i = 0; i <= GEOMETRY.ARC_SEGMENTS; i++) {
+      const theta = startAngle + (sweep * i) / GEOMETRY.ARC_SEGMENTS;
+      points.push(
+        new THREE.Vector3(
+          corner.x + Math.cos(theta) * radius,
+          corner.y + Math.sin(theta) * radius,
+          Z_LAYERS.MEASUREMENT
+        )
+      );
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color });
+    this.group.add(new THREE.Line(geometry, material));
+
+    // Label sits just outside the arc, on the bisector.
+    const bisector = startAngle + sweep / 2;
+    const labelRadius = radius + LABEL_SCALE.MEASUREMENT_ANGLE_LABEL;
+    const label = createTextSprite(`${formatDegrees(angle)}°`, {
+      fontSize: 20,
+      padding: 6,
+      fontWeight: 'bold',
+      backgroundColor: color,
+      textColor: 'white',
+      scale: LABEL_SCALE.MEASUREMENT_ANGLE_LABEL,
+    });
+    label.position.set(
+      corner.x + Math.cos(bisector) * labelRadius,
+      corner.y + Math.sin(bisector) * labelRadius,
+      Z_LAYERS.MEASUREMENT + 0.01
+    );
+    this.group.add(label);
   }
 
   private createLabel(text: string, backgroundColor: number): THREE.Sprite {

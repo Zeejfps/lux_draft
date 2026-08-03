@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { formatImperial, parseImperial, kelvinToRGB } from '../../../src/floorplan/utils/format';
+import {
+  formatImperial,
+  parseImperial,
+  kelvinToRGB,
+  formatDegrees,
+} from '../../../src/floorplan/utils/format';
+
+describe('formatDegrees', () => {
+  it('drops the decimal on whole degrees', () => {
+    expect(formatDegrees(Math.PI / 4)).toBe('45');
+    expect(formatDegrees(0)).toBe('0');
+    expect(formatDegrees(Math.PI / 2)).toBe('90');
+  });
+
+  it('keeps one decimal for fractional degrees', () => {
+    expect(formatDegrees(Math.atan2(4, 3))).toBe('53.1');
+    expect(formatDegrees(Math.atan2(3, 4))).toBe('36.9');
+  });
+
+  it('reports the two acute angles of a right triangle as summing to 90', () => {
+    const a = Number(formatDegrees(Math.atan2(4, 3)));
+    const b = Number(formatDegrees(Math.PI / 2 - Math.atan2(4, 3)));
+    expect(a + b).toBeCloseTo(90, 5);
+  });
+});
 
 describe('Imperial Formatting', () => {
   describe('formatImperial', () => {

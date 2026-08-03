@@ -26,6 +26,15 @@ export function formatImperial(feet: number, options: FormatOptions = {}): strin
   return `${wholeFeet}' ${inches}"`;
 }
 
+/**
+ * Formats an angle in radians as degrees, to one decimal place with a trailing `.0`
+ * dropped so whole angles read as "45" rather than "45.0".
+ */
+export function formatDegrees(radians: number): string {
+  const degrees = Math.round((radians * 180) / Math.PI / 0.1) * 0.1;
+  return degrees.toFixed(1).replace(/\.0$/, '');
+}
+
 export function parseImperial(input: string): number | null {
   const trimmed = input.trim();
 
