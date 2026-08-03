@@ -668,11 +668,29 @@ function cutInterval(span: Interval, offset: number, length: number): Piece[] {
  * Cut a row, honouring the minimum end cut.
  *
  * A run that ends in a 1" sliver is unusable — it snaps on install and it looks like a mistake.
- * The fix a real installer uses is to move the row's starting offset so the short piece lands
- * at the other end where it can be a whole board's worth longer; that is one retry with the
- * joint grid shifted left by the shortfall, accepted only if it does not make the *first* piece
- * too short in turn. If both ends would be short — a room narrower than the minimum — the
- * original is kept, because a slightly wrong cut list beats an infinite loop.
+ * The fix a real installer uses is to move the row's starting offset so the short piece lands at
+ * the other end where it can be a whole board's worth longer.
+ *
+ * ## Why the obvious shift is not enough
+ *
+ * Shifting the grid moves length from one end of the row to the other: what the last piece gains
+ * the first loses, and their **sum is fixed**. So the nudge below only works when the two ends
+ * are already long enough between them — and a row where they are not is not the pathological
+ * case it reads as. The ends sum to `runLength mod plankLength`, which is a property of the room
+ * and nothing else, so a room whose width happens to leave less than two minimum cuts over
+ * defeats it at *every* offset, on every row, however wide the room is. Left there, one in four
+ * ordinary rooms laid a floor with an end cut under the minimum somewhere on it.
+ *
+ * The move that does work is to **give up a full board**. Take one fewer whole plank out of the
+ * middle of the row and the two ends have a whole plank more to share — `first + last + length`
+ * rather than `first + last` — which is always enough for a minimum of half a board or less. It
+ * costs the row nothing but a longer pair of end cuts; the run is the same length either way, so
+ * this is a *re*-distribution rather than an extra board. The two ends are then set to the middle
+ * of the range that satisfies both, which is the most margin either can have.
+ *
+ * What is left is a run genuinely too short to hold two legal end cuts — narrower than twice the
+ * minimum with no full board in it to give up. There the original stands, because a slightly
+ * wrong cut list beats no floor.
  */
 function layRow(span: Interval, offset: number, length: number, minEndCut: number): Piece[] {
   const pieces = cutInterval(span, offset, length);
@@ -681,6 +699,7 @@ function layRow(span: Interval, offset: number, length: number, minEndCut: numbe
   const sizeOf = (piece: Piece): number => piece.end - piece.start;
   const first = sizeOf(pieces[0]);
   const last = sizeOf(pieces[pieces.length - 1]);
+  if (first >= minEndCut - EPS && last >= minEndCut - EPS) return pieces;
 
   // Shifting the joint grid left lengthens the last piece and shortens the first; shifting it
   // right does the reverse. Only one end can be short at a time, since a shift that fixed both
@@ -691,8 +710,19 @@ function layRow(span: Interval, offset: number, length: number, minEndCut: numbe
   if (first < minEndCut - EPS && last - (minEndCut - first) >= minEndCut - EPS) {
     return cutInterval(span, offset + (minEndCut - first), length);
   }
-  // Neither end can be fixed without breaking the other — a run barely wider than the minimum.
-  // A slightly wrong cut list beats an infinite loop, so the original stands.
+
+  // Neither end can be fixed at the other's expense, so one whole board comes out of the middle
+  // and the two ends share it. `shared` is what they then have between them; the window is what
+  // the first end may be, given that the second gets the rest and that neither may exceed a
+  // plank. Its midpoint is the offset with the most room on both sides.
+  const shared = first + last + length;
+  const low = Math.max(minEndCut, shared - length);
+  const high = Math.min(length, shared - minEndCut);
+  if (high >= low - EPS && span[1] - span[0] >= shared - EPS) {
+    return cutInterval(span, offset + ((low + high) / 2 - first), length);
+  }
+
+  // A run too short to hold two legal end cuts at all. The original stands.
   return pieces;
 }
 
@@ -1113,25 +1143,19 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
    */
   let carry = 0;
   let lastOffset: number | null = null;
-  const minJointOffset = Math.min(plankLength / 2, MIN_JOINT_OFFSET_IN / INCHES_PER_FOOT);
 
   /**
-   * This row's grid, given where its first run starts. See the call site for the two fallbacks.
+   * The separation the ladder guard is measured in.
    *
-   * The separation test is between the two grids rather than between two particular joints,
-   * because both rows are laid on a grid of the same pitch: shift one by `d` and *every* pair of
-   * joints across the row is `d` apart, or `plankLength - d`, whichever is nearer. So one
-   * comparison covers the whole row, and it is the one an installer makes by eye.
+   * Between the two *grids* rather than between two particular joints, because both rows are laid
+   * on a grid of the same pitch: shift one by `d` and every pair of joints across the row is `d`
+   * apart, or `plankLength - d`, whichever is nearer. One comparison covers the whole row, and it
+   * is the one an installer makes by eye.
+   *
+   * Capped at half a plank so a short board cannot ask for a separation it has no room for —
+   * half a plank is the largest there is, and on a 12" board six inches *is* half a plank.
    */
-  const offcutOffset = (runStart: number): number => {
-    const half = () => (lastOffset ?? runStart) + plankLength / 2;
-    if (carry <= 0) return lastOffset === null ? runStart : half();
-    const offset = runStart + carry;
-    if (lastOffset === null) return offset;
-    const apart = mod(offset - lastOffset, plankLength);
-    const nearest = Math.min(apart, plankLength - apart);
-    return nearest >= minJointOffset - EPS ? offset : half();
-  };
+  const minJointOffset = Math.min(plankLength / 2, MIN_JOINT_OFFSET_IN / INCHES_PER_FOOT);
 
   let band = 0;
   while (band + 1 < bandEdges.length && !truncated) {
@@ -1220,6 +1244,10 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       if (b - prev > EPS) out.push([prev, b]);
       return out;
     });
+    /** The row, cut against a grid — and against the minimum end cut, which outranks the grid. */
+    const layAt = (at: number): Piece[] =>
+      runs.flatMap((run) => layRow(run, at, plankLength, minEndCut));
+
     /**
      * Where this row's joint grid falls.
      *
@@ -1228,24 +1256,58 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
      * one off-cut in from where the run starts, which makes the first piece exactly the length
      * of the piece already in the installer's hand.
      *
-     * Two things stop it, and both fall back to shifting half a board off the row below — the
-     * largest separation there is, and one cut on that row rather than a floor that cannot be
-     * laid. There is no off-cut worth using, which is a room that divides nearly evenly by the
-     * plank; or the joint it would produce sits within `MIN_JOINT_OFFSET_IN` of the row below's,
-     * which is the ladder that rule exists to prevent. A room that divides *exactly* is the case
-     * that makes this concrete: every row ends flush, no row leaves anything over, and taken at
-     * face value every row would start flush too — one seam straight up the floor.
+     * It is a *request*, though, not a decision, and that is the whole reason this is a search
+     * rather than a formula. `layRow` will move the entire grid to keep an end cut above the
+     * minimum, because a sliver at the wall is a defect and an off-cut going to the pile is only
+     * a cost — so the grid a row is actually laid on may not be the one asked for, and asking is
+     * the only way to find out. Judged on the request, the ladder guard was reading a grid no
+     * board was on, and passed rows whose joints landed 4 7/8" apart under a 6" rule.
+     *
+     * So each candidate is laid, measured where it fell, and taken if it clears; the off-cut
+     * first, then the fractions of a board, in the order an installer would reach for them. If
+     * none clears — the room admits no legal grid at all — the roomiest one stands.
      */
-    const offset =
-      layout.stagger === 'offcut'
-        ? offcutOffset(runs.length > 0 ? runs[0][0] : ANCHOR_X)
-        : ANCHOR_X + rowOffset(row, layout, plankLength);
+    const candidates: number[] = [];
+    if (layout.stagger === 'offcut') {
+      const runStart = runs.length > 0 ? runs[0][0] : ANCHOR_X;
+      const from = lastOffset ?? runStart;
+      if (carry > 0) candidates.push(runStart + carry);
+      candidates.push(
+        from + plankLength / 2,
+        from + plankLength / 3,
+        from + (2 * plankLength) / 3,
+        runStart
+      );
+    } else {
+      candidates.push(ANCHOR_X + rowOffset(row, layout, plankLength));
+    }
 
-    // Disjoint and ascending, so clipping them to a span decomposes it exactly.
-    const jointed = runs.flatMap((run) => layRow(run, offset, plankLength, minEndCut));
+    /** How far a laid row's joints clear the row below's. `Infinity` for the first row. */
+    const clearance = (laid: Piece[], asked: number): number => {
+      if (lastOffset === null) return Infinity;
+      // Any piece boundary sits on the grid, so the first joint reports where it ended up.
+      const grid = laid.length > 0 ? laid[0].end : asked;
+      const apart = mod(grid - lastOffset, plankLength);
+      return Math.min(apart, plankLength - apart);
+    };
+
+    let offset = candidates[0];
+    let jointed = layAt(offset);
+    if (candidates.length > 1) {
+      let best = clearance(jointed, offset);
+      for (let i = 1; i < candidates.length && best < minJointOffset - EPS; i++) {
+        const laid = layAt(candidates[i]);
+        const apart = clearance(laid, candidates[i]);
+        if (apart > best) {
+          best = apart;
+          offset = candidates[i];
+          jointed = laid;
+        }
+      }
+    }
 
     if (layout.stagger === 'offcut') {
-      lastOffset = offset;
+      lastOffset = jointed.length > 0 ? jointed[0].end : offset;
       // What this row leaves for the next one. `layRow` may have moved the grid to keep the end
       // cut above the minimum, so the remainder is read off the pieces actually laid rather than
       // off the arithmetic that placed the grid.
