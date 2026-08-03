@@ -23,7 +23,6 @@ export interface Theme {
     door: number;
     doorSelected: number;
     doorArc: number;
-    doorLineWidth: number;
   };
 
   // UI colors
@@ -95,7 +94,6 @@ export const BLUEPRINT_THEME: Theme = {
     door: 0x4a90d9,
     doorSelected: 0xff9500,
     doorArc: 0x4a90d9,
-    doorLineWidth: 2,
   },
 
   ui: {
@@ -166,7 +164,6 @@ export const DARK_THEME: Theme = {
     door: 0x66aaff,
     doorSelected: 0xff9500,
     doorArc: 0x66aaff,
-    doorLineWidth: 2,
   },
 
   ui: {
@@ -237,7 +234,6 @@ export const LIGHT_THEME: Theme = {
     door: 0x0066cc,
     doorSelected: 0xff6600,
     doorArc: 0x0066cc,
-    doorLineWidth: 2,
   },
 
   ui: {

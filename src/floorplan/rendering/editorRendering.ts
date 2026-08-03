@@ -10,7 +10,7 @@ import {
 import { Z_LAYERS, GEOMETRY, DASH_PATTERNS, PREVIEW_COLORS } from '../constants/rendering';
 import { getTheme } from '../constants/themes';
 import { getWallDirection, getDoorEndpoints } from '../utils/geometry';
-import { createTextSprite } from '../utils/three';
+import { createTextSprite, createThickLine } from '../utils/three';
 
 /**
  * Pure rendering functions for editor geometry.
@@ -281,21 +281,16 @@ export function createDoorGraphics(
     y: hingePos.y + perpDir.y * door.width,
   };
 
-  const panelPoints = [
-    new THREE.Vector3(hingePos.x, hingePos.y, Z_LAYERS.DOOR_PANEL),
-    new THREE.Vector3(panelEnd.x, panelEnd.y, Z_LAYERS.DOOR_PANEL),
-  ];
-  const panelGeometry = new THREE.BufferGeometry().setFromPoints(panelPoints);
-  const panelMaterial = new THREE.LineBasicMaterial({
+  const panelLine = createThickLine([hingePos, panelEnd], {
     color: doorColor,
-    linewidth: theme.editor.doorLineWidth,
+    width: isSelected ? GEOMETRY.DOOR_PANEL_WIDTH_SELECTED : GEOMETRY.DOOR_PANEL_WIDTH,
+    z: Z_LAYERS.DOOR_PANEL,
   });
-  const panelLine = new THREE.Line(panelGeometry, panelMaterial);
   panelLine.userData.doorId = door.id;
   objects.push(panelLine);
 
   // 2. Swing arc (quarter circle from closed to open position)
-  const arcPoints: THREE.Vector3[] = [];
+  const arcPoints: Vector2[] = [];
 
   // For 'right' swing: hinge at doorStart, arc goes from wall direction (+normalizedDir) to perpendicular
   // For 'left' swing: hinge at doorEnd, arc goes from opposite wall direction (-normalizedDir) to perpendicular
@@ -310,7 +305,7 @@ export function createDoorGraphics(
       const angle = startAngle + (Math.PI / 2) * t * sideMultiplier;
       const x = hingePos.x + Math.cos(angle) * door.width;
       const y = hingePos.y + Math.sin(angle) * door.width;
-      arcPoints.push(new THREE.Vector3(x, y, Z_LAYERS.DOOR_ARC));
+      arcPoints.push({ x, y });
     }
   } else {
     // Arc from closed (along wall toward doorStart, i.e., -normalizedDir) to open (perpendicular)
@@ -321,19 +316,18 @@ export function createDoorGraphics(
       const angle = startAngle - (Math.PI / 2) * t * sideMultiplier;
       const x = hingePos.x + Math.cos(angle) * door.width;
       const y = hingePos.y + Math.sin(angle) * door.width;
-      arcPoints.push(new THREE.Vector3(x, y, Z_LAYERS.DOOR_ARC));
+      arcPoints.push({ x, y });
     }
   }
 
-  const arcGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
-  const arcMaterial = new THREE.LineDashedMaterial({
-    color: arcColor,
-    dashSize: DASH_PATTERNS.DOOR_ARC.dashSize,
-    gapSize: DASH_PATTERNS.DOOR_ARC.gapSize,
-  });
-  const arcLine = new THREE.Line(arcGeometry, arcMaterial);
-  arcLine.computeLineDistances();
-  objects.push(arcLine);
+  objects.push(
+    createThickLine(arcPoints, {
+      color: arcColor,
+      width: GEOMETRY.DOOR_ARC_WIDTH,
+      z: Z_LAYERS.DOOR_ARC,
+      dash: DASH_PATTERNS.DOOR_ARC,
+    })
+  );
 
   // 3. Hinge indicator (small circle)
   const hingeGeometry = new THREE.CircleGeometry(GEOMETRY.HINGE_RADIUS, GEOMETRY.HINGE_SEGMENTS);
@@ -343,19 +337,14 @@ export function createDoorGraphics(
   objects.push(hingeMesh);
 
   // 4. Door opening indicator (line across the door opening on the wall)
-  const openingPoints = [
-    new THREE.Vector3(doorStart.x, doorStart.y, Z_LAYERS.DOOR_OPENING),
-    new THREE.Vector3(doorEnd.x, doorEnd.y, Z_LAYERS.DOOR_OPENING),
-  ];
-  const openingGeometry = new THREE.BufferGeometry().setFromPoints(openingPoints);
-  const openingMaterial = new THREE.LineDashedMaterial({
-    color: doorColor,
-    dashSize: DASH_PATTERNS.DOOR_OPENING.dashSize,
-    gapSize: DASH_PATTERNS.DOOR_OPENING.gapSize,
-  });
-  const openingLine = new THREE.Line(openingGeometry, openingMaterial);
-  openingLine.computeLineDistances();
-  objects.push(openingLine);
+  objects.push(
+    createThickLine([doorStart, doorEnd], {
+      color: doorColor,
+      width: GEOMETRY.DOOR_OPENING_WIDTH,
+      z: Z_LAYERS.DOOR_OPENING,
+      dash: DASH_PATTERNS.DOOR_OPENING,
+    })
+  );
 
   return objects;
 }

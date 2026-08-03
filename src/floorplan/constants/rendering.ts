@@ -41,6 +41,10 @@ export const GEOMETRY = {
   MEASUREMENT_ANGLE_WIDTH: 0.06,
   /** Dark halo drawn under every measurement line so it reads over any floor color. */
   MEASUREMENT_OUTLINE_WIDTH: 0.05,
+  DOOR_PANEL_WIDTH: 0.08,
+  DOOR_PANEL_WIDTH_SELECTED: 0.12,
+  DOOR_ARC_WIDTH: 0.05,
+  DOOR_OPENING_WIDTH: 0.06,
   CIRCLE_SEGMENTS: 16,
   CIRCLE_SEGMENTS_HIGH: 32,
   HINGE_SEGMENTS: 12,

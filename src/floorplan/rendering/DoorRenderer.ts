@@ -47,15 +47,9 @@ export class DoorRenderer {
     const graphics = createDoorGraphics(door, wall, false);
 
     for (const obj of graphics) {
-      // Make preview semi-transparent and red if can't place
-      if (obj instanceof THREE.Line) {
-        const material = obj.material as THREE.LineBasicMaterial | THREE.LineDashedMaterial;
-        material.opacity = OPACITY.DOOR_PREVIEW;
-        material.transparent = true;
-        if (!canPlace) {
-          material.color.setHex(PREVIEW_COLORS.INVALID);
-        }
-      } else if (obj instanceof THREE.Mesh) {
+      // Make preview semi-transparent and red if can't place. Every part of a door is a
+      // mesh — the lines are quad ribbons, since WebGL won't draw a thick THREE.Line.
+      if (obj instanceof THREE.Mesh) {
         const material = obj.material as THREE.MeshBasicMaterial;
         material.opacity = OPACITY.DOOR_PREVIEW;
         material.transparent = true;
