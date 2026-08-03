@@ -97,3 +97,53 @@ describe('the plank tints', () => {
     expect(hex(colorAt(scene, 0))).not.toBe(before);
   });
 });
+
+/**
+ * A board whose end bends is one board and several instances.
+ *
+ * The renderer draws quads, and a quad's ends are each one straight cut — so a board with a
+ * corner clipped at a transition is drawn as one instance per segment of its end profile. What
+ * must not follow from that is a board that reads as two: the instances share a tint, they share
+ * the hover, and the seam is taken off the board's outer boundary only, never off the joint
+ * between two segments of one board — which is not a joint at all.
+ */
+describe('a board whose end bends', () => {
+  /** A pentagon: a 4 x 0.583 board with a corner taken off its start end. */
+  const bentPlank = plank({
+    id: 'bent',
+    center: { x: 0, y: 0 },
+    length: 4,
+    width: 0.583,
+    cut: true,
+    corners: [
+      { x: -2, y: -0.2915 },
+      { x: 2, y: -0.2915 },
+      { x: 2, y: 0 },
+      { x: 2, y: 0.2915 },
+      { x: -1.5, y: 0.2915 },
+      { x: -2, y: 0 },
+    ],
+  });
+
+  it('draws one instance per segment, and one for an ordinary board', () => {
+    const scene = new THREE.Scene();
+    const renderer = new PlankRenderer(scene);
+    renderer.update(layoutOf([plank({ id: 'plain' }), bentPlank]));
+    // One for the plain board, two for the bent one.
+    expect(fillMesh(scene).count).toBe(3);
+    renderer.dispose();
+  });
+
+  it('gives every segment of one board the same tint, and hovers them together', () => {
+    const scene = new THREE.Scene();
+    const renderer = new PlankRenderer(scene);
+    renderer.update(layoutOf([plank({ id: 'plain' }), bentPlank]));
+    expect(hex(colorAt(scene, 1))).toBe(hex(colorAt(scene, 2)));
+
+    renderer.setHovered('bent');
+    expect(hex(colorAt(scene, 1))).toBe(hex(colorAt(scene, 2)));
+    // ...and it is the hover colour, not the tint they merely agreed on before.
+    expect(hex(colorAt(scene, 1))).not.toBe(hex(colorAt(scene, 0)));
+    renderer.dispose();
+  });
+});

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Plank, PlankLayout } from '../PlankLayoutEngine';
+import { plankProfile } from '../PlankLayoutEngine';
 
 /**
  * The floor, as a single `THREE.InstancedMesh`.
@@ -29,6 +30,19 @@ import type { Plank, PlankLayout } from '../PlankLayoutEngine';
  * already pulled half a seam in from the board's ends. Scaling alone cannot inset them: the
  * shear is what decides where an end lands, so a fill that reconstructed the board's own ends
  * would sit flush against the seam quad and the joint between two boards would disappear.
+ *
+ * ## One instance per segment, not per board
+ *
+ * A sheared quad's end is one straight cut, and a board's end is not always one cut: where a
+ * boundary bends across a board — a diagonal transition running into a wall — a corner comes off
+ * an otherwise whole board and the outline is a pentagon. So an instance is a *segment* of
+ * `plankProfile`, and the ordinary board, which has one, is unchanged.
+ *
+ * Two things then have to hold or the board reads as two boards, which is the very thing the
+ * engine stopped doing. The segments share a tint and share the hover, through `owner`. And the
+ * half-seam inset is taken off the board's **outer** boundary only — the line between two
+ * segments of one board is not a joint, and insetting there would draw a seam down the middle of
+ * a board that is not cut.
  */
 
 const PLANK_COLOR = new THREE.Color(0xb98a56);
@@ -114,6 +128,15 @@ export class PlankRenderer {
 
   private layout: PlankLayout | null = null;
   private hoveredId: string | null = null;
+  /**
+   * The board each instance belongs to.
+   *
+   * An instance is a segment, and a board whose end bends is more than one of them, so instance
+   * index no longer equals plank index. This is what the hover path recolours through; keeping
+   * it is cheaper than recomputing the mapping on every `mousemove`, and it is the only piece of
+   * per-instance state the colour-only hover path needs.
+   */
+  private owner: Plank[] = [];
 
   constructor(parentScene: THREE.Scene) {
     this.group = new THREE.Group();
@@ -207,92 +230,125 @@ export class PlankRenderer {
   update(layout: PlankLayout): void {
     this.layout = layout;
     const planks = layout.planks;
-    this.ensureCapacity(planks.length);
+    // One instance per *segment*, not per plank. A board whose end bends has more than one, and
+    // they are the same board — see `owner` for what that costs and `segmentsOf` for why.
+    this.owner = planks.flatMap((plank) => {
+      const count = plank.corners.length / 2 - 1;
+      return Array.from({ length: count }, () => plank);
+    });
+    this.ensureCapacity(this.owner.length);
 
     this.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), layout.angle);
     const colors = this.mesh.instanceColor;
     const cos = Math.cos(layout.angle);
     const sin = Math.sin(layout.angle);
 
-    for (let i = 0; i < planks.length; i++) {
-      const plank = planks[i];
-
-      // The corners in the instance's own frame: rotate out the shared run angle, then measure
-      // from the nominal rectangle's ends. Which side of the board a corner is on is read off
-      // its own coordinates rather than off its index, because a mirrored start corner reverses
-      // the winding — and two corners of the four sit on each side by construction, since the
-      // engine's ends are the two edges of a band.
-      let bottomLeft = Infinity;
-      let bottomRight = -Infinity;
-      let topLeft = Infinity;
-      let topRight = -Infinity;
-      for (const corner of plank.corners) {
-        const dx = corner.x - plank.center.x;
-        const dy = corner.y - plank.center.y;
-        const along = dx * cos + dy * sin;
-        if (-dx * sin + dy * cos < 0) {
-          bottomLeft = Math.min(bottomLeft, along);
-          bottomRight = Math.max(bottomRight, along);
-        } else {
-          topLeft = Math.min(topLeft, along);
-          topRight = Math.max(topRight, along);
-        }
-      }
+    let i = 0;
+    for (const plank of planks) {
+      const profile = plankProfile(plank);
+      // The board's own frame: rotate out the shared run angle and measure from its nominal
+      // centre. `along` is the run, `across` the width.
+      const local = (p: { x: number; y: number }): { along: number; across: number } => {
+        const dx = p.x - plank.center.x;
+        const dy = p.y - plank.center.y;
+        return { along: dx * cos + dy * sin, across: -dx * sin + dy * cos };
+      };
+      const points = profile.map(([start, end]) => ({ start: local(start), end: local(end) }));
       const half = plank.length / 2;
 
-      // The fill's own ends, pulled half a seam inward from the board's. Reconstructing the
-      // board's ends here instead would put the fill right back on the seam quad's edge and the
-      // joint between two boards would vanish — the scale alone cannot inset them, because the
-      // shear is what decides where an end actually lands.
-      const inset = (low: number, high: number): [number, number] =>
-        high - low <= SEAM_FT
-          ? [(low + high) / 2, (low + high) / 2]
-          : [low + SEAM_FT / 2, high - SEAM_FT / 2];
-      const [fillBottomLeft, fillBottomRight] = inset(bottomLeft, bottomRight);
-      const [fillTopLeft, fillTopRight] = inset(topLeft, topRight);
+      for (let s = 0; s + 1 < points.length; s++) {
+        const low = points[s];
+        const high = points[s + 1];
 
-      const fillX = Math.max(plank.length - SEAM_FT, 0.01);
-      const fillHalf = fillX / 2;
-      this.position.set(plank.center.x, plank.center.y, Z_PLANK);
-      this.scale.set(fillX, Math.max(plank.width - SEAM_FT, 0.01), 1);
-      this.matrix.compose(this.position, this.quaternion, this.scale);
-      this.mesh.setMatrixAt(i, this.matrix);
-      this.shear.setXYZW(
-        i,
-        (fillBottomLeft + fillHalf) / fillX,
-        (fillBottomRight - fillHalf) / fillX,
-        (fillTopLeft + fillHalf) / fillX,
-        (fillTopRight - fillHalf) / fillX
-      );
+        // Half a seam is taken off the board's *outer* boundary only. The joint between two
+        // segments of one board is not a joint — leaving it inset would draw the seam this whole
+        // change exists to remove, straight down the middle of a board that is not cut there.
+        const lowInset = s === 0 ? SEAM_FT / 2 : 0;
+        const highInset = s + 2 === points.length ? SEAM_FT / 2 : 0;
+        const across = high.start.across - low.start.across;
+        const fillY = Math.max(across - lowInset - highInset, 0.01);
+        const centreAcross = (low.start.across + lowInset + (high.start.across - highInset)) / 2;
 
-      // Alternating row tint, a lighter cut piece and a red sliver: enough to read the stagger,
-      // to see where the off-cuts land and to find an unusable rip, without a texture.
-      const color = plank.id === this.hoveredId ? HOVER_COLOR : baseColor(plank);
-      colors?.setXYZ(i, color.r, color.g, color.b);
+        // The fill's own ends, pulled half a seam inward from the board's. Reconstructing the
+        // board's ends here instead would put the fill right back on the seam quad's edge and the
+        // joint between two boards would vanish — the scale alone cannot inset them, because the
+        // shear is what decides where an end actually lands.
+        const inset = (start: number, end: number): [number, number] =>
+          end - start <= SEAM_FT
+            ? [(start + end) / 2, (start + end) / 2]
+            : [start + SEAM_FT / 2, end - SEAM_FT / 2];
+        const [fillLowStart, fillLowEnd] = inset(low.start.along, low.end.along);
+        const [fillHighStart, fillHighEnd] = inset(high.start.along, high.end.along);
 
-      // The seam is the full-size quad behind the inset fill: one extra instance per plank,
-      // still one draw call.
-      const seamX = Math.max(plank.length, 0.01);
-      this.position.set(plank.center.x, plank.center.y, Z_SEAM);
-      this.scale.set(seamX, plank.width, 1);
-      this.matrix.compose(this.position, this.quaternion, this.scale);
-      this.seams.setMatrixAt(i, this.matrix);
-      this.seamShear.setXYZW(
-        i,
-        (bottomLeft + half) / seamX,
-        (bottomRight - half) / seamX,
-        (topLeft + half) / seamX,
-        (topRight - half) / seamX
-      );
+        const fillX = Math.max(plank.length - SEAM_FT, 0.01);
+        const fillHalf = fillX / 2;
+        this.setInstance(plank, centreAcross, cos, sin, Z_PLANK, fillX, fillY);
+        this.mesh.setMatrixAt(i, this.matrix);
+        this.shear.setXYZW(
+          i,
+          (fillLowStart + fillHalf) / fillX,
+          (fillLowEnd - fillHalf) / fillX,
+          (fillHighStart + fillHalf) / fillX,
+          (fillHighEnd - fillHalf) / fillX
+        );
+
+        // Alternating row tint, a lighter cut piece and a red sliver: enough to read the stagger,
+        // to see where the off-cuts land and to find an unusable rip, without a texture.
+        const color = plank.id === this.hoveredId ? HOVER_COLOR : baseColor(plank);
+        colors?.setXYZ(i, color.r, color.g, color.b);
+
+        // The seam is the full-size quad behind the inset fill: one extra instance per segment,
+        // still one draw call.
+        const seamX = Math.max(plank.length, 0.01);
+        this.setInstance(
+          plank,
+          (low.start.across + high.start.across) / 2,
+          cos,
+          sin,
+          Z_SEAM,
+          seamX,
+          Math.max(across, 0.01)
+        );
+        this.seams.setMatrixAt(i, this.matrix);
+        this.seamShear.setXYZW(
+          i,
+          (low.start.along + half) / seamX,
+          (low.end.along - half) / seamX,
+          (high.start.along + half) / seamX,
+          (high.end.along - half) / seamX
+        );
+        i += 1;
+      }
     }
 
-    this.mesh.count = planks.length;
-    this.seams.count = planks.length;
+    this.mesh.count = i;
+    this.seams.count = i;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.seams.instanceMatrix.needsUpdate = true;
     this.shear.needsUpdate = true;
     this.seamShear.needsUpdate = true;
     if (colors) colors.needsUpdate = true;
+  }
+
+  /**
+   * Compose one instance's matrix: the board's centre, pushed `across` along the width axis.
+   *
+   * The offset is what lets a segment sit where it belongs on a board without the shear having to
+   * carry it — the shear displaces along the run only, so the across-run placement has to be in
+   * the matrix. `(-sin, cos)` is the width axis, the run angle's normal.
+   */
+  private setInstance(
+    plank: Plank,
+    across: number,
+    cos: number,
+    sin: number,
+    z: number,
+    scaleX: number,
+    scaleY: number
+  ): void {
+    this.position.set(plank.center.x - sin * across, plank.center.y + cos * across, z);
+    this.scale.set(scaleX, scaleY, 1);
+    this.matrix.compose(this.position, this.quaternion, this.scale);
   }
 
   /**
@@ -304,9 +360,8 @@ export class PlankRenderer {
     this.hoveredId = id;
     const colors = this.mesh.instanceColor;
     if (!this.layout || !colors) return;
-    const planks = this.layout.planks;
-    for (let i = 0; i < planks.length; i++) {
-      const plank = planks[i];
+    for (let i = 0; i < this.owner.length; i++) {
+      const plank = this.owner[i];
       const color = plank.id === id ? HOVER_COLOR : baseColor(plank);
       colors.setXYZ(i, color.r, color.g, color.b);
     }

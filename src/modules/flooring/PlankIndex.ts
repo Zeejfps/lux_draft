@@ -1,5 +1,6 @@
 import type { Vector2 } from '../../floorplan/types/geometry';
 import type { Plank, PlankLayout } from './PlankLayoutEngine';
+import { pointInPolygon } from './geometry2d';
 
 /**
  * A uniform-grid spatial index over a derived floor.
@@ -59,26 +60,19 @@ export class PlankIndex {
   }
 
   /**
-   * Point-in-quad, against the four half-planes of `corners`.
+   * Point-in-polygon, against the board's own outline.
    *
    * Not point-in-rectangle in the plank's own frame: a piece cut to a diagonal boundary is a
-   * trapezoid, and the nominal rectangle would both claim the wedge outside the wall and miss
-   * nothing — so hovering just past the wall would light up a board that is not there. The sign
-   * is taken from the quad's own winding, which the mirrored start corners reverse; a degenerate
-   * edge (the triangle case, where two corners coincide) contributes a zero and is ignored.
+   * trapezoid, and the nominal rectangle would claim the wedge outside the wall — so hovering
+   * just past the wall would light up a board that is not there.
+   *
+   * Even-odd rather than the half-plane test this used to be, because a board is no longer always
+   * convex: where a boundary bends across one, `Plank.corners` is a polygon, and a bend toward
+   * the board's interior makes it concave. The half-plane test answered "outside" for points
+   * genuinely inside such a board, which is a hover that dies in the middle of a plank. Winding
+   * is not assumed either way, which matters because a mirrored start corner reverses it.
    */
   private contains(plank: Plank, point: Vector2): boolean {
-    let positive = false;
-    let negative = false;
-    const corners = plank.corners;
-    for (let i = 0; i < 4; i++) {
-      const a = corners[i];
-      const b = corners[(i + 1) % 4];
-      const cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
-      if (cross > 1e-9) positive = true;
-      else if (cross < -1e-9) negative = true;
-      if (positive && negative) return false;
-    }
-    return true;
+    return pointInPolygon(plank.corners, point);
   }
 }

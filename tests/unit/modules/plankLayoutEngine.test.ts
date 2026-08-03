@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import type { Obstacle, Vector2, WallSegment } from '../../../src/floorplan/types/geometry';
 import type { LayoutInputs } from '../../../src/modules/flooring/PlankLayoutEngine';
-import { computePlankLayout, layoutKey } from '../../../src/modules/flooring/PlankLayoutEngine';
+import {
+  computePlankLayout,
+  layoutKey,
+  plankProfile,
+} from '../../../src/modules/flooring/PlankLayoutEngine';
+import { PlankIndex } from '../../../src/modules/flooring/PlankIndex';
 import { defaultFlooringData } from '../../../src/modules/flooring/codec';
-import { pointInPolygon } from '../../../src/modules/flooring/geometry2d';
+import { interiorPoint, pointInPolygon } from '../../../src/modules/flooring/geometry2d';
 import type { LayoutConfig, PlankSpec } from '../../../src/modules/flooring/types';
 import { INCHES_PER_FOOT } from '../../../src/modules/flooring/types';
 import { makeObstacle, rectWalls } from '../../helpers/documents';
@@ -1069,7 +1074,12 @@ describe('an outline that is off true by less than a saw kerf', () => {
         inputs({ walls: wallsOf(ring(20, 20)), layout: { ...defaults.layout, runAngleDeg: 90 } })
       );
       expect(layout.narrowPieces).toBe(square.narrowPieces);
-      expect(layout.narrowestRipIn as number).toBeCloseTo(square.narrowestRipIn as number, 2);
+      // Wider than the square room's by at most the drift itself: the wedge against the crooked
+      // wall is a bend in that row's boundary, not a row of its own, so the last board takes it
+      // in and reaches the wall rather than stopping square and leaving it bare.
+      const extra = (layout.narrowestRipIn as number) - (square.narrowestRipIn as number);
+      expect(extra).toBeGreaterThanOrEqual(0);
+      expect(extra).toBeLessThanOrEqual(drift * INCHES_PER_FOOT + 1e-6);
     });
 
     it('still covers the room, since what it drops is a strip under the trim', () => {
@@ -1082,5 +1092,102 @@ describe('an outline that is off true by less than a saw kerf', () => {
     // A quarter inch is a feature, not noise: the rip against it is a real board.
     const stepped = laid(wobbly(0.25 / INCHES_PER_FOOT));
     expect(stepped.planks.length).toBeGreaterThan(laid(wallsOf(ring(20, 20))).planks.length);
+  });
+});
+
+/**
+ * A boundary that **bends** across a board is not a boundary that **steps** across it.
+ *
+ * A diagonal transition running into a wall takes a corner off an otherwise whole board: one
+ * piece of stock, two cuts on one end. Treating that as two boards ripped it lengthwise into two
+ * full-length strips — a rip no installer would make, a seam down the middle of a whole board,
+ * two boards bought for one and two lines in the cut list for one corner.
+ *
+ * The room is 20 x 20 and the plank region is all of it but a triangle notched into the left
+ * wall: out along the wall to y = 4, in to the apex at (3, 7), back to the wall at y = 10. The
+ * notch's two ends are the two cases — a corner clipped where the diagonal meets the wall, and
+ * an apex where two diagonals meet each other.
+ */
+describe('a boundary that bends across a board', () => {
+  const notched: Vector2[] = [
+    { x: 0, y: 0 },
+    { x: 20, y: 0 },
+    { x: 20, y: 20 },
+    { x: 0, y: 20 },
+    { x: 0, y: 10 },
+    { x: 3, y: 7 },
+    { x: 0, y: 4 },
+  ];
+  const noGap = { ...defaults.layout, expansionGapIn: 0 };
+  const layout = computePlankLayout(inputs({ layout: noGap, regions: [notched] }));
+
+  /** Boards whose ends do not lie on one straight cut each. */
+  const bent = layout.planks.filter((p) => p.corners.length > 4);
+
+  it('takes the corner off one board instead of ripping it into two strips', () => {
+    expect(bent.length).toBeGreaterThan(0);
+    for (const plank of bent) {
+      // The whole point: a bent end is a board of full nominal width, not two ripped strips.
+      expect(plank.width * INCHES_PER_FOOT).toBeCloseTo(defaults.plank.widthIn, 6);
+    }
+  });
+
+  it('leaves no two full-length strips stacked in one row', () => {
+    // The signature of the bug: two boards of the same row, same run extent, stacked across the
+    // width — which is one board someone sawed down the middle.
+    for (const a of layout.planks) {
+      for (const b of layout.planks) {
+        if (a.id === b.id || a.row !== b.row) continue;
+        const sameRun =
+          Math.abs(a.center.x - b.center.x) < 1e-9 && Math.abs(a.length - b.length) < 1e-9;
+        expect(sameRun && Math.abs(a.width + b.width - defaults.plank.widthIn / 12) < 1e-6).toBe(
+          false
+        );
+      }
+    }
+  });
+
+  it('keeps the ordinary board at four corners', () => {
+    // `collapseStraight`'s job: the row grid and the room's own corners split bands everywhere,
+    // and a board that does not bend must not collect a vertex from a split it never noticed.
+    const plain = layout.planks.filter((p) => p.center.x > 6);
+    expect(plain.length).toBeGreaterThan(10);
+    for (const plank of plain) expect(plank.corners).toHaveLength(4);
+  });
+
+  it('covers the region exactly, bends and all', () => {
+    // 400 sq ft less the notch, which is 3 wide at its apex over 6 of wall: 9 sq ft.
+    expect(layout.coveredSqft).toBeCloseTo(400 - 9, 4);
+  });
+
+  it('buys one board for one board', () => {
+    const strips = computePlankLayout(inputs({ layout: noGap, regions: [notched] }));
+    // Every piece is at most a full plank of stock, and the bent ones are not double-counted:
+    // the purchase model sees the board once, so it cannot exceed one plank per piece.
+    expect(strips.purchasedPlanks).toBeLessThanOrEqual(strips.planks.length);
+  });
+
+  it('hands the renderer a profile that pairs points across the same band edge', () => {
+    // What `plankProfile` promises, and what the renderer's per-segment quads depend on: entry
+    // `i` is the board's two ends at one height, so consecutive entries bound one quad.
+    const cos = Math.cos(layout.angle);
+    const sin = Math.sin(layout.angle);
+    const across = (p: Vector2): number => -p.x * sin + p.y * cos;
+    for (const plank of layout.planks) {
+      const profile = plankProfile(plank);
+      expect(profile).toHaveLength(plank.corners.length / 2);
+      for (const [start, end] of profile) expect(across(start)).toBeCloseTo(across(end), 9);
+    }
+  });
+
+  it('finds every board under its own outline, concave ones included', () => {
+    // The apex notches a V into a board, which is concave — the half-plane test this index used
+    // to run answers "outside" for points genuinely inside such a board.
+    const index = new PlankIndex(layout);
+    for (const plank of bent) {
+      const inside = interiorPoint(plank.corners);
+      expect(inside, `${plank.id} has an interior`).not.toBeNull();
+      expect(index.at(inside as Vector2)?.id, `${plank.id} from inside itself`).toBe(plank.id);
+    }
   });
 });

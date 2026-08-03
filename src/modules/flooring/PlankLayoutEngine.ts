@@ -75,6 +75,15 @@ import {
  * where the boundary actually moved on it; see `Cell` and `extend`. The board beyond the inside
  * step of an L, which has nothing above it to join, is still ripped — that rip is the room.
  *
+ * The distinction the join turns on is **step** against **bend**. A boundary that steps leaves
+ * the two pieces' ends in different places, and no single board can reach across it without
+ * being L-shaped; that is two boards. A boundary that merely bends — a diagonal transition
+ * running into a wall — leaves them meeting at the same point and takes a corner off one whole
+ * board, which is one piece of stock with two cuts on one end. So a board's end is a *profile*
+ * across its width rather than a single cut, `Plank.corners` is a polygon rather than four
+ * points, and `collapseStraight` drops the profile point again wherever the end did not really
+ * bend, leaving the ordinary board at four corners.
+ *
  * ## What is left approximate
  *
  * For straight-edged geometry — which is all this editor can draw — nothing. Every piece is cut
@@ -124,13 +133,23 @@ export interface Plank {
   /** Across-run width, feet. Less than the plank width when the row is ripped at a wall. */
   readonly width: number;
   /**
-   * World-space corners, run-frame order: `(start, low)`, `(end, low)`, `(end, high)`,
-   * `(start, high)`. A rectangle of `length` x `width` about `center` unless an end was cut to a
-   * boundary that is not square to the run, in which case that end is slanted and the piece is a
-   * trapezoid. Where two such boundaries meet it can collapse to a triangle — two of the four
-   * corners coincide, which is the piece that actually gets installed there.
+   * The board's outline, world space, as a simple polygon.
+   *
+   * **Order.** A board is `k` profile points across its width, low edge to high — see
+   * `plankProfile` — and the ring walks `start@0`, then the end side upward `end@0 … end@k-1`,
+   * then `start@k-1` and back down the start side `start@k-2 … start@1`. For the usual board
+   * `k` is 2 and this is the four corners `(start, low)`, `(end, low)`, `(end, high)`,
+   * `(start, high)`: a rectangle of `length` x `width` about `center`, or a trapezoid where an
+   * end was cut to a boundary not square to the run. Where two such boundaries meet it can
+   * collapse to a triangle — two corners coincide, which is the piece that gets installed there.
+   *
+   * `k` exceeds 2 when a boundary **bends** across the board rather than stepping: a diagonal
+   * transition meeting a wall clips a corner off an otherwise whole board, and the outline is
+   * then a pentagon. That is one board with two cuts on one end, not two boards, and the
+   * distinction is worth the general polygon — a corner clipped at a transition used to come out
+   * as a 7" board ripped into a 2 7/8" strip and a 4 1/8" strip, both full length, both bought.
    */
-  readonly corners: readonly [Vector2, Vector2, Vector2, Vector2];
+  readonly corners: readonly Vector2[];
   /** True when the piece was cut — shorter than a full plank, ripped narrower, or mitred. */
   readonly cut: boolean;
   /**
@@ -141,6 +160,31 @@ export interface Plank {
    * engine flags rather than fixes.
    */
   readonly narrow: boolean;
+}
+
+/**
+ * A board's ends across its width: `[start, end]` at each profile point, low edge to high.
+ *
+ * The inverse of the ring `Plank.corners` is built as, and the form anything drawing or measuring
+ * a board wants — consecutive entries bound one quad, so a renderer that can draw a sheared quad
+ * can draw any board by walking these in pairs. Two entries for the ordinary board; more only
+ * where a boundary bends across it.
+ *
+ * Derived rather than stored so the outline stays the single geometric truth: two representations
+ * of one shape is two things to keep in step, and the polygon is the one every other consumer —
+ * hit-testing, area, export — actually needs.
+ */
+export function plankProfile(plank: Plank): readonly (readonly [Vector2, Vector2])[] {
+  const ring = plank.corners;
+  const points = ring.length / 2;
+  const out: [Vector2, Vector2][] = [];
+  for (let i = 0; i < points; i++) {
+    // `start` runs backwards from the end of the ring, except its two extremes: index 0 is the
+    // low edge, and the high edge sits just past the end side rather than at the ring's tail.
+    const start = i === 0 ? ring[0] : i === points - 1 ? ring[points + 1] : ring[ring.length - i];
+    out.push([start, ring[1 + i]]);
+  }
+  return out;
 }
 
 /** One line of the cut list: "14 pieces at 23 1/2 in", or "3 at 48 → 41 1/2 in @ 22°". */
@@ -435,12 +479,11 @@ interface Cell {
   readonly start: number;
   readonly end: number;
   readonly startsRun: boolean;
-  bandLow: number;
-  bandHigh: number;
-  startLo: number;
-  endLo: number;
-  startHi: number;
-  endHi: number;
+  /** The band edges this board spans, ascending. Its low edge first, its high edge last. */
+  edges: number[];
+  /** The start end's x at each of `edges` — the board's end profile, not a single cut. */
+  startXs: number[];
+  endXs: number[];
 }
 
 /**
@@ -453,29 +496,64 @@ interface Cell {
 const JOIN_TOL = 1e-7;
 
 /**
+ * Drop the last profile point when the boundary did not actually turn on it.
+ *
+ * The sub-band split is an artefact of the *room's* vertices, not of this board's ends: a corner
+ * at the far side of the room breaks every row at its own height, and a board nowhere near it
+ * sees three collinear profile points where it has one straight cut. Left in, the board is a
+ * polygon carrying a redundant vertex, its cut list gains a bend of zero degrees, and the
+ * renderer draws two quads where there is one. So a joint survives only where the end really
+ * bends, and the ordinary board is still four corners.
+ *
+ * This is what the old direction test achieved by refusing the join outright. The difference is
+ * that it *only* did that: an end that genuinely bent became two boards.
+ */
+function collapseStraight(cell: Cell): void {
+  const n = cell.edges.length;
+  if (n < 3) return;
+  const y0 = cell.edges[n - 3];
+  const y1 = cell.edges[n - 2];
+  const y2 = cell.edges[n - 1];
+  const straight = (xs: number[]): boolean =>
+    Math.abs(xs[n - 3] + ((xs[n - 1] - xs[n - 3]) / (y2 - y0)) * (y1 - y0) - xs[n - 2]) <= JOIN_TOL;
+  if (!straight(cell.startXs) || !straight(cell.endXs)) return;
+  cell.edges.splice(n - 2, 1);
+  cell.startXs.splice(n - 2, 1);
+  cell.endXs.splice(n - 2, 1);
+}
+
+/**
  * Continue `cell` into the sub-band above it, or start a new board.
  *
- * Three things have to hold, and each rules out a real case: the pieces must occupy the same
- * interval along the run (or they are different boards), their ends must meet (or the boundary
- * stepped, as at the inside corner of an L), and the ends must carry on in the same direction
- * (or the boundary turned, as where two diagonal walls meet).
+ * Two things have to hold, and each rules out a real case: the pieces must occupy the same
+ * interval along the run, or they are different boards; and their ends must **meet**, or the
+ * boundary stepped, as at the inside corner of an L, where a board reaching across the step would
+ * have to be L-shaped.
+ *
+ * What is deliberately *not* required is that the ends carry on in the same direction. A boundary
+ * that bends where it meets another — a diagonal transition running into a wall — leaves the
+ * board whole and takes a corner off it. That is one board, one piece of stock and two cuts on
+ * one end. Requiring the direction to continue split exactly that board lengthwise into two
+ * full-length strips: a rip no installer would make, a seam down the middle of a whole board, two
+ * boards bought where one was needed and two lines in the cut list for one corner.
+ *
+ * The bend is kept as a profile point rather than smoothed into a single cut across the full
+ * width, because one cut through both would either overhang the transition or leave bare floor
+ * beside it, by an amount that grows without bound as the diagonal approaches parallel to the
+ * run. `collapseStraight` removes the point again wherever the boundary did not really turn.
  */
 function extend(open: Cell[], next: Cell): void {
-  const project = (lo: number, hi: number, y0: number, y1: number, y: number): number =>
-    lo + ((hi - lo) / (y1 - y0)) * (y - y0);
   for (const cell of open) {
-    if (Math.abs(cell.bandHigh - next.bandLow) > EPS) continue;
+    const top = cell.edges.length - 1;
+    if (Math.abs(cell.edges[top] - next.edges[0]) > EPS) continue;
     if (Math.abs(cell.start - next.start) > JOIN_TOL) continue;
     if (Math.abs(cell.end - next.end) > JOIN_TOL) continue;
-    if (Math.abs(cell.startHi - next.startLo) > JOIN_TOL) continue;
-    if (Math.abs(cell.endHi - next.endLo) > JOIN_TOL) continue;
-    const startOn = project(cell.startLo, cell.startHi, cell.bandLow, cell.bandHigh, next.bandHigh);
-    const endOn = project(cell.endLo, cell.endHi, cell.bandLow, cell.bandHigh, next.bandHigh);
-    if (Math.abs(startOn - next.startHi) > JOIN_TOL) continue;
-    if (Math.abs(endOn - next.endHi) > JOIN_TOL) continue;
-    cell.bandHigh = next.bandHigh;
-    cell.startHi = next.startHi;
-    cell.endHi = next.endHi;
+    if (Math.abs(cell.startXs[top] - next.startXs[0]) > JOIN_TOL) continue;
+    if (Math.abs(cell.endXs[top] - next.endXs[0]) > JOIN_TOL) continue;
+    cell.edges.push(next.edges[1]);
+    cell.startXs.push(next.startXs[1]);
+    cell.endXs.push(next.endXs[1]);
+    collapseStraight(cell);
     return;
   }
   open.push(next);
@@ -1014,12 +1092,9 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
             start: from,
             end: to,
             startsRun: first,
-            bandLow,
-            bandHigh,
-            startLo: clampAt(from, 'lo'),
-            endLo: clampAt(to, 'lo'),
-            startHi: clampAt(from, 'hi'),
-            endHi: clampAt(to, 'hi'),
+            edges: [bandLow, bandHigh],
+            startXs: [clampAt(from, 'lo'), clampAt(from, 'hi')],
+            endXs: [clampAt(to, 'lo'), clampAt(to, 'hi')],
           });
           first = false;
         }
@@ -1032,25 +1107,43 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     // counted toward `coveredSqft`, not purchased, not in the cut list, not flagged as narrow.
     const laid = open.filter(
       (cell) =>
-        cell.end - cell.start >= MIN_BOARD_FT && cell.bandHigh - cell.bandLow >= MIN_BOARD_FT
+        cell.end - cell.start >= MIN_BOARD_FT &&
+        cell.edges[cell.edges.length - 1] - cell.edges[0] >= MIN_BOARD_FT
     );
     // Bottom-to-top, then along the run: the order an installer would lay them, and the order
     // `column` and `startsRun` are only meaningful in.
-    laid.sort((a, b) => a.bandLow - b.bandLow || a.start - b.start);
+    laid.sort((a, b) => a.edges[0] - b.edges[0] || a.start - b.start);
     for (let column = 0; column < laid.length; column++) {
       if (planks.length >= MAX_PLANKS) {
         truncated = true;
         break;
       }
       const cell = laid[column];
-      const width = cell.bandHigh - cell.bandLow;
+      const points = cell.edges.length;
+      const bandLow = cell.edges[0];
+      const bandHigh = cell.edges[points - 1];
+      const width = bandHigh - bandLow;
       const length = cell.end - cell.start;
-      const lowLength = cell.endLo - cell.startLo;
-      const highLength = cell.endHi - cell.startHi;
-      const slant = Math.max(
-        Math.abs(cell.startHi - cell.startLo),
-        Math.abs(cell.endHi - cell.endLo)
-      );
+      /** The board's length at each profile point — its long point is the longest of them. */
+      const spans = cell.edges.map((_, i) => cell.endXs[i] - cell.startXs[i]);
+      /**
+       * The steepest cut on the board, and how far off square it is.
+       *
+       * Per **segment** rather than end to end: a board whose end bends is cut twice, and an
+       * installer sets the saw from the steeper of the two. Measured across that segment's own
+       * height, since an angle is a ratio and the segment is what the cut runs across.
+       */
+      let slant = 0;
+      let steepest = 0;
+      for (let i = 0; i + 1 < points; i++) {
+        const rise = cell.edges[i + 1] - cell.edges[i];
+        const run = Math.max(
+          Math.abs(cell.startXs[i + 1] - cell.startXs[i]),
+          Math.abs(cell.endXs[i + 1] - cell.endXs[i])
+        );
+        slant = Math.max(slant, run);
+        if (rise > EPS) steepest = Math.max(steepest, Math.atan2(run, rise));
+      }
       const mitred = slant > EPS;
       // A rip, and how bad. Measured against the nominal width rather than against the band grid,
       // so a board narrowed by an obstacle's corner counts the same as one narrowed by a wall —
@@ -1066,15 +1159,19 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
         column,
         center: toWorld(frame, {
           x: (cell.start + cell.end) / 2,
-          y: (cell.bandLow + cell.bandHigh) / 2,
+          y: (bandLow + bandHigh) / 2,
         }),
         length,
         width,
+        // Up the end side, then back down the start side. See `Plank.corners` for the order and
+        // why it is a polygon rather than four points.
         corners: [
-          toWorld(frame, { x: cell.startLo, y: cell.bandLow }),
-          toWorld(frame, { x: cell.endLo, y: cell.bandLow }),
-          toWorld(frame, { x: cell.endHi, y: cell.bandHigh }),
-          toWorld(frame, { x: cell.startHi, y: cell.bandHigh }),
+          toWorld(frame, { x: cell.startXs[0], y: cell.edges[0] }),
+          ...cell.edges.map((y, i) => toWorld(frame, { x: cell.endXs[i], y })),
+          ...cell.edges
+            .map((y, i) => toWorld(frame, { x: cell.startXs[i], y }))
+            .slice(1)
+            .reverse(),
         ],
         cut: length < plankLength - EPS || ripped || mitred,
         narrow,
@@ -1083,17 +1180,21 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       // as waste because `coveredSqft` counts the narrower installed strip. The extent rather
       // than the long point, because that is how much of the stock the cut consumes.
       demand.push({ length, startsRun: cell.startsRun });
-      // The trapezoid, not the nominal rectangle: this is the area actually laid.
-      covered += ((lowLength + highLength) / 2) * width;
+      // The board's own outline, not the nominal rectangle: this is the area actually laid. One
+      // trapezoid per segment, which is the same figure as before for a board that does not bend.
+      for (let i = 0; i + 1 < points; i++) {
+        covered += ((spans[i] + spans[i + 1]) / 2) * (cell.edges[i + 1] - cell.edges[i]);
+      }
       // A mitred board is a cut board even at stock length — it still has to go on a saw, and an
       // installer who cannot find it in the cut list will cut it square.
       if (mitred || length < plankLength - EPS) {
         cuts.push({
-          long: Math.max(lowLength, highLength),
-          short: Math.min(lowLength, highLength),
-          // Off square, measured across the board — which is the board's own width, not the
-          // nominal plank width, since a ripped board is cut at the width it ends up.
-          angleDeg: (Math.atan2(slant, width) * 180) / Math.PI,
+          long: Math.max(...spans),
+          short: Math.min(...spans),
+          // Off square, from the steepest of the board's cuts. A board with a corner clipped off
+          // is one piece of stock with two cuts on one end; the list carries the one an installer
+          // has to set the saw for, and the long and short points bracket what it takes off.
+          angleDeg: (steepest * 180) / Math.PI,
         });
       } else fullPieces += 1;
     }
