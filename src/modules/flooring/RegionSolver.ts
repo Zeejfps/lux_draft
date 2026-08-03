@@ -138,7 +138,7 @@ interface Attachment {
   readonly distance: number;
 }
 
-function attach(ring: readonly Vector2[], p: Vector2): Attachment {
+function nearestAttachment(ring: readonly Vector2[], p: Vector2): Attachment {
   let best: Attachment = { edge: 0, t: 0, point: ring[0], distance: Infinity };
   for (let i = 0; i < ring.length; i++) {
     const projection = nearestOnSegment(ring[i], ring[(i + 1) % ring.length], p);
@@ -147,6 +147,81 @@ function attach(ring: readonly Vector2[], p: Vector2): Attachment {
     }
   }
   return best;
+}
+
+/**
+ * Where the divider's own line meets the ring, nearest to the endpoint `p`.
+ *
+ * `null` when the line misses the ring entirely, or when `p` and `other` coincide and there is no
+ * line to follow.
+ *
+ * The ray is cast from `other` through `p` and beyond, so a divider that falls short of the wall
+ * is *extended* to it and one drawn past it is trimmed back — both along the line the user drew.
+ * Crossings are scored by how far they sit from `p` along that line, which is the same quantity
+ * the perpendicular attachment reported and so keeps `DIVIDER_ATTACH_TOLERANCE_FT` meaning what
+ * it meant. A crossing behind `other` is not a candidate: `other` is the divider's far end, and
+ * running past it would attach this end to the wall the other end came from.
+ */
+function attachAlongLine(ring: readonly Vector2[], p: Vector2, other: Vector2): Attachment | null {
+  const dx = p.x - other.x;
+  const dy = p.y - other.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= EPS) return null;
+  const ux = dx / length;
+  const uy = dy / length;
+
+  let best: Attachment | null = null;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const denom = ux * ey - uy * ex;
+    // Parallel, including collinear: a divider lying along a wall has no single crossing with
+    // it, and the edges either side of that wall will answer for it.
+    if (Math.abs(denom) <= EPS) continue;
+    const ax = a.x - other.x;
+    const ay = a.y - other.y;
+    const s = (ax * ey - ay * ex) / denom;
+    const t = (ax * uy - ay * ux) / denom;
+    if (s < -EPS || t < -EPS || t > 1 + EPS) continue;
+    const distance = Math.abs(s - length);
+    if (!best || distance < best.distance) {
+      best = {
+        edge: i,
+        t: Math.min(1, Math.max(0, t)),
+        point: { x: other.x + ux * s, y: other.y + uy * s },
+        distance,
+      };
+    }
+  }
+  return best;
+}
+
+/**
+ * Where a divider endpoint meets a face's ring.
+ *
+ * **Along the divider's own line**, not by dropping a perpendicular onto the nearest edge. The
+ * difference only shows when the endpoint is not already on the boundary — which is the case the
+ * tolerance exists for, since a wall moved after the divider was drawn leaves it floating — and
+ * there it is the difference between the chord the user drew and a different line entirely.
+ *
+ * A perpendicular foot is clamped to the edge it is dropped on, so an endpoint that overshoots a
+ * wall's end lands on that wall's *corner*. In a real document an endpoint an inch inside the
+ * room attached to the corner beside it and tilted the chord 0.037" off the drawn line over five
+ * feet — enough that the expansion gap measured against the transition read 0.247" at one end and
+ * 0.217" at the other, against the quarter inch asked for, while being exactly right against the
+ * boundary the engine had actually been given.
+ *
+ * The perpendicular foot is still taken when the endpoint is already on the boundary, where it is
+ * exact and the extended line only reproduces it to rounding, and as the fallback when the line
+ * misses the ring — a divider aimed away from the face it belongs to still has to attach or be
+ * reported unattached, and the nearest point is the honest answer to "where did you mean".
+ */
+function attach(ring: readonly Vector2[], p: Vector2, other: Vector2): Attachment {
+  const nearest = nearestAttachment(ring, p);
+  if (nearest.distance <= VERTEX_TOLERANCE_FT) return nearest;
+  return attachAlongLine(ring, p, other) ?? nearest;
 }
 
 /** Drop consecutive duplicates, which an endpoint landing exactly on a vertex produces. */
@@ -302,8 +377,8 @@ function locateFace(
   let best: { index: number; a: Attachment; b: Attachment; distance: number } | null = null;
   for (let index = 0; index < faces.length; index++) {
     const ring = faces[index].ring;
-    const a = attach(ring, divider.a);
-    const b = attach(ring, divider.b);
+    const a = attach(ring, divider.a, divider.b);
+    const b = attach(ring, divider.b, divider.a);
     if (a.distance > DIVIDER_ATTACH_TOLERANCE_FT || b.distance > DIVIDER_ATTACH_TOLERANCE_FT) {
       continue;
     }

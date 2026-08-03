@@ -6,7 +6,7 @@ import {
   regionInputsKey,
   solveRegions,
 } from '../../../src/modules/flooring/RegionSolver';
-import { pointInPolygon } from '../../../src/modules/flooring/geometry2d';
+import { nearestOnSegment, pointInPolygon } from '../../../src/modules/flooring/geometry2d';
 import type { Divider, SurfaceAssignment } from '../../../src/modules/flooring/types';
 import { rectWalls } from '../../helpers/documents';
 
@@ -141,6 +141,44 @@ describe('endpoints that do not land exactly on a wall', () => {
     expect(solution.unattached).toEqual(['d1']);
     expect(solution.regions).toHaveLength(1);
     expect(solution.transitions).toHaveLength(0);
+  });
+
+  /**
+   * The line the user drew is the line the floor is cut to.
+   *
+   * A perpendicular foot is clamped to the edge it is dropped on, so an endpoint that overshoots
+   * a wall's end lands on that wall's *corner* — and the chord through it is then a different
+   * line from the one on screen. In a real document an endpoint an inch inside the room attached
+   * to the corner beside it and tilted the chord 0.037" off the drawn line over five feet, which
+   * the layout engine then held its expansion gap against perfectly: 0.247" at one end of the
+   * transition and 0.217" at the other, against the quarter inch asked for, with nothing wrong
+   * anywhere except the boundary it had been given.
+   *
+   * So an endpoint short of the wall is extended along the divider's own direction instead.
+   */
+  it('extends a short endpoint along the divider, not sideways onto the nearest wall', () => {
+    // A chord from (0, 5) to (20, 15), with its left end pulled half a foot back along itself.
+    const back = 0.5 / Math.hypot(20, 10);
+    const pulled = { x: 20 * back, y: 5 + 10 * back };
+    const solution = solveRegions({
+      ...inputs({ dividers: [divider('d1', pulled, { x: 20, y: 15 })] }),
+      surfaces: [carpet({ x: 10, y: 2 })],
+    });
+    expect(solution.unattached).toHaveLength(0);
+    expect(solution.transitions).toHaveLength(1);
+
+    const { start, end } = solution.transitions[0];
+    // The endpoint reaches the left wall at y = 5, where the drawn line meets it — not at the
+    // pulled endpoint's own height, which is where a perpendicular would have put it.
+    const left = Math.abs(start.x) < Math.abs(end.x) ? start : end;
+    expect(left.x).toBeCloseTo(0, 9);
+    expect(left.y).toBeCloseTo(5, 9);
+    expect(left.y).not.toBeCloseTo(pulled.y, 3);
+
+    // Stated as the property: both drawn endpoints lie on the placed transition's line.
+    for (const p of [pulled, { x: 20, y: 15 }]) {
+      expect(nearestOnSegment(start, end, p).distance).toBeLessThan(1e-9);
+    }
   });
 
   it('rejects a chord lying along a single wall', () => {
