@@ -590,6 +590,59 @@ describe('the cut list and the waste figure', () => {
     expect(layout.cutPieces + layout.fullPieces).toBe(layout.planks.length);
   });
 
+  /**
+   * `Plank.cut`, the two counts and the list are one question asked three times.
+   *
+   * They used to answer it differently: the rip was in the flag and out of the counts, so a
+   * board ripped at stock length was counted as a whole board, listed nowhere, and still said
+   * "cut" when it was clicked.
+   */
+  it('is one definition of a cut board, not three', () => {
+    for (const config of [{}, { runAngleDeg: 30 }, { expansionGapIn: 0 }]) {
+      const layout = layoutOf(config);
+      const flagged = layout.planks.filter((p) => p.cut).length;
+      expect(flagged, JSON.stringify(config)).toBe(layout.cutPieces);
+      expect(layout.cutPieces + layout.fullPieces).toBe(layout.planks.length);
+    }
+  });
+
+  /**
+   * A rip is a saw setting, so it is on the line rather than folded into the length.
+   *
+   * A 20 x 20 room on a 7" plank leaves a last row of 1 1/2", and some of its boards are the same
+   * length as full-width ones elsewhere on the floor. Grouped by length alone those merged, and
+   * the list sent the installer to cut six boards at one width when one of them was a rip.
+   */
+  it('carries the rip width, and does not hide a rip in the full-width line', () => {
+    const layout = layoutOf({});
+    const ripped = layout.cutList.filter((e) => e.ripWidthIn != null);
+    expect(ripped.length).toBeGreaterThan(0);
+
+    for (const entry of ripped) {
+      expect(entry.ripWidthIn!).toBeLessThan(defaults.plank.widthIn);
+      expect(entry.ripWidthIn!).toBeGreaterThan(0);
+      // A line at the same length but full width has to still be its own line.
+      const full = layout.cutList.find(
+        (e) => e.lengthIn === entry.lengthIn && e.ripWidthIn == null
+      );
+      if (full) expect(full.key).not.toBe(entry.key);
+    }
+
+    // Every ripped board on the floor is on a line that says so.
+    const rippedBoards = layout.planks.filter(
+      (p) => p.width < defaults.plank.widthIn / INCHES_PER_FOOT - 1e-6
+    ).length;
+    expect(ripped.reduce((sum, e) => sum + e.count, 0)).toBe(rippedBoards);
+  });
+
+  it('gives each line a key that identifies it, since the panel renders on it', () => {
+    for (const config of [{}, { runAngleDeg: 30 }, { runAngleDeg: 7, expansionGapIn: 0 }]) {
+      const layout = layoutOf(config);
+      const keys = layout.cutList.map((e) => e.key);
+      expect(new Set(keys).size, JSON.stringify(config)).toBe(keys.length);
+    }
+  });
+
   it('reports lengths to the nearest eighth of an inch, descending', () => {
     const layout = layoutOf({});
     for (const entry of layout.cutList) {

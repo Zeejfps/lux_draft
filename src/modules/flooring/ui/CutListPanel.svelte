@@ -96,7 +96,9 @@
 
     <div class="section-title">Cut list</div>
     <div class="cut-list">
-      {#each layout.cutList as entry (`${entry.lengthIn}/${entry.shortIn ?? ''}/${entry.angleDeg ?? ''}`)}
+      <!-- Keyed on the entry's own key, which is what `buildCutList` grouped on. Rebuilding one
+           here from a subset of the figures merged two rows into a duplicate key. -->
+      {#each layout.cutList as entry (entry.key)}
         <div class="cut-row">
           <span class="cut-length">
             {#if entry.shortIn != null}
@@ -105,11 +107,18 @@
             {:else}
               {formatInches(entry.lengthIn)}
             {/if}
+            {#if entry.ripWidthIn != null}
+              <!-- The second setting. Without it the ripped board hides in the line for the
+                   full-width boards that happen to be the same length. -->
+              <span class="rip" class:narrow={entry.ripWidthIn < plank.minRipWidthIn}>
+                rip {formatInches(entry.ripWidthIn)}
+              </span>
+            {/if}
           </span>
           <span class="cut-count">&times; {entry.count}</span>
         </div>
       {:else}
-        <p class="empty">No cuts — every board runs full length.</p>
+        <p class="empty">No cuts — every board runs full length and full width.</p>
       {/each}
     </div>
 
@@ -215,6 +224,17 @@
 
   .cut-count {
     color: var(--text-muted);
+  }
+
+  /* Set apart from the length rather than run on from it: they are two settings, not one
+     measurement, and the eye has to be able to pick out which lines have a rip on them. */
+  .rip {
+    margin-left: 6px;
+    padding: 0 4px;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--input-bg);
+    color: var(--text-secondary);
+    font-size: 11px;
   }
 
   .remove {

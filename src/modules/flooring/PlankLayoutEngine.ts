@@ -189,6 +189,15 @@ export function plankProfile(plank: Plank): readonly (readonly [Vector2, Vector2
 
 /** One line of the cut list: "14 pieces at 23 1/2 in", or "3 at 48 → 41 1/2 in @ 22°". */
 export interface CutListEntry {
+  /**
+   * What makes this line its own line: every figure below it, in one string.
+   *
+   * Carried rather than left to the reader to rebuild, because a list keyed on a subset of what
+   * distinguishes its rows silently merges two of them — and the panel keys its `{#each}` on
+   * exactly this, so a subset would be a duplicate key and a render error rather than a quiet
+   * wrong number. There is one place the grouping is decided, and this is it.
+   */
+  readonly key: string;
   /** Long point, rounded to the nearest 1/8 in — the finest mark on a tape measure. */
   readonly lengthIn: number;
   /**
@@ -199,6 +208,16 @@ export interface CutListEntry {
   readonly shortIn?: number;
   /** The mitre off square, degrees, rounded to the nearest whole one. Absent for a square cut. */
   readonly angleDeg?: number;
+  /**
+   * Finished width, inches, when the board was **ripped** narrower than the plank's face. Absent
+   * at full width, where saying so on every line would bury the lines where it is the point.
+   *
+   * A rip is the second setting a cut list has to carry. Grouped by length alone, the last row's
+   * boards merge into the line for the full-width boards that happen to be the same length — six
+   * pieces at 32", five of them 7" wide and one ripped to 5 5/16" — and the list sends an
+   * installer to the saw with one setting for two different boards.
+   */
+  readonly ripWidthIn?: number;
   readonly count: number;
 }
 
@@ -712,11 +731,17 @@ function purchaseSimulation(demand: readonly PieceDemand[], plankLength: number)
   return purchased;
 }
 
-/** One cut piece as the cut list sees it: a long point, a short point and a mitre. Feet. */
+/**
+ * One cut piece as the cut list sees it: a long point, a short point, a mitre and a rip. Feet.
+ *
+ * `ripWidth` is `null` at full face width, which is the ordinary board — the same distinction the
+ * entry draws, made here so that only one place decides what counts as a rip.
+ */
 interface CutPiece {
   readonly long: number;
   readonly short: number;
   readonly angleDeg: number;
+  readonly ripWidth: number | null;
 }
 
 function buildCutList(cuts: readonly CutPiece[]): CutListEntry[] {
@@ -727,18 +752,26 @@ function buildCutList(cuts: readonly CutPiece[]): CutListEntry[] {
     const lengthIn = eighth(piece.long);
     const shortIn = eighth(piece.short);
     const angleDeg = Math.round(piece.angleDeg);
+    const ripWidthIn = piece.ripWidth === null ? undefined : eighth(piece.ripWidth);
     // A mitre that rounds away to nothing — a wall a fraction of a degree off square — is a
     // square cut as far as a saw is concerned, and grouping it apart would split one line of
     // the list into dozens.
     const square = angleDeg === 0 || shortIn === lengthIn;
-    const key = square ? `${lengthIn}` : `${lengthIn}/${shortIn}/${angleDeg}`;
+    // Every figure the line carries. Two boards are one line of the list exactly when an
+    // installer would set the saw once for both; a rip is a setting, so it is in the key.
+    const key = `${lengthIn}/${square ? '' : `${shortIn}/${angleDeg}`}/${ripWidthIn ?? ''}`;
     const existing = counts.get(key);
     if (existing) existing.count += 1;
-    else
-      counts.set(key, square ? { lengthIn, count: 1 } : { lengthIn, shortIn, angleDeg, count: 1 });
+    else if (square) counts.set(key, { key, lengthIn, ripWidthIn, count: 1 });
+    else counts.set(key, { key, lengthIn, shortIn, angleDeg, ripWidthIn, count: 1 });
   }
+  // Longest first, then the deepest mitre, then the narrowest rip — the boards an installer cuts
+  // from full stock at the top, and the fiddly ones grouped together at the bottom.
   return [...counts.values()].sort(
-    (a, b) => b.lengthIn - a.lengthIn || (b.shortIn ?? b.lengthIn) - (a.shortIn ?? a.lengthIn)
+    (a, b) =>
+      b.lengthIn - a.lengthIn ||
+      (b.shortIn ?? b.lengthIn) - (a.shortIn ?? a.lengthIn) ||
+      (b.ripWidthIn ?? Infinity) - (a.ripWidthIn ?? Infinity)
   );
 }
 
@@ -1201,13 +1234,32 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
         shortest = Math.min(shortest, spans[i], spans[i + 1]);
       }
       const mitred = slant > EPS;
-      // A rip, and how bad. Measured against the nominal width rather than against the band grid,
-      // so a board narrowed by an obstacle's corner counts the same as one narrowed by a wall —
-      // both are a strip the installer has to cut down the length of, and both fail the same way.
-      const ripped = width < plankWidth - EPS;
+      /**
+       * A rip, and how bad. Measured against the nominal width rather than against the band grid,
+       * so a board narrowed by an obstacle's corner counts the same as one narrowed by a wall —
+       * both are a strip the installer has to cut down the length of, and both fail the same way.
+       *
+       * At `MIN_FEATURE_FT` rather than at `EPS`, for the reason written up there: this asks
+       * whether the board is narrower than its stock, which is a question about a floor and not
+       * about two floats. A wobble in the outline left boards a hundred-thousandth of a foot
+       * under the face width, and at `EPS` each was a rip — a line of the cut list of its own,
+       * reading `rip 7"` on a 7" plank.
+       */
+      const ripped = width < plankWidth - MIN_FEATURE_FT;
       const narrow = ripped && width < minRip - EPS;
       if (narrow) narrowPieces += 1;
       if (ripped && width < narrowestRip) narrowestRip = width;
+      /**
+       * Whether this board goes on a saw at all — **one** definition, read three times.
+       *
+       * It decides `Plank.cut`, which of `cutPieces` and `fullPieces` this board lands in, and
+       * whether it gets a line of the cut list. Those used to disagree: the rip was in the first
+       * and out of the other two, so a floor of 66 boards reported 36 "full" while 32 of them
+       * answered `cut`, and the two boards that were ripped at stock length were counted as
+       * whole boards and listed nowhere at all. Clicking one said "cut" and the panel said the
+       * opposite about the same board.
+       */
+      const cut = length < plankLength - EPS || ripped || mitred;
 
       planks.push({
         id: `p${row}:${column}`,
@@ -1229,7 +1281,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
             .slice(1)
             .reverse(),
         ],
-        cut: length < plankLength - EPS || ripped || mitred,
+        cut,
         narrow,
       });
       // A ripped board consumes a full-width one, so demand is length-only; the rip shows up
@@ -1241,9 +1293,9 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       for (let i = 0; i + 1 < points; i++) {
         covered += ((spans[i] + spans[i + 1]) / 2) * (cell.edges[i + 1] - cell.edges[i]);
       }
-      // A mitred board is a cut board even at stock length — it still has to go on a saw, and an
-      // installer who cannot find it in the cut list will cut it square.
-      if (mitred || length < plankLength - EPS) {
+      // A mitred or ripped board is a cut board even at stock length — it still has to go on a
+      // saw, and an installer who cannot find it in the cut list will lay it whole.
+      if (cut) {
         cuts.push({
           // The long point over the *whole* profile, because that is the stock the cut consumes;
           // the short point only over the segments that are cuts, so a scribe does not report a
@@ -1255,6 +1307,9 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
           // is one piece of stock with two cuts on one end; the list carries the one an installer
           // has to set the saw for, and the long and short points bracket what it takes off.
           angleDeg: (steepest * 180) / Math.PI,
+          // The finished width, which is the second setting the saw needs. Null at full face
+          // width, so the ordinary board's line stays a length and nothing else.
+          ripWidth: ripped ? width : null,
         });
       } else fullPieces += 1;
     }
