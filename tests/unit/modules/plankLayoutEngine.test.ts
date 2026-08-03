@@ -1198,6 +1198,74 @@ describe('an outline that is off true by less than a saw kerf', () => {
 });
 
 /**
+ * A board's outline is a board's outline: every corner of it belongs to that board.
+ *
+ * The band model gives a span two ends and lays every piece of it from the band's floor to its
+ * ceiling. Where the span **closes to a point** inside the band — which is what a boundary
+ * running nearly along the rows does, and every hand-traced wall is a fraction of a degree off
+ * square — every piece used to take that point as an end, wherever in the room it was. Boards
+ * came out with corners feet away from themselves: outlines doubling back through themselves,
+ * `coveredSqft` counted off triangles that are not there, `PlankIndex` answering with a board
+ * nowhere near the cursor, and a cut list carrying `48" → 0" @ 90°`.
+ *
+ * The measure is deliberately crude and deliberately independent of how the outline is built: a
+ * board of `length` x `width` about its centre cannot have a corner further from that centre
+ * than its own half-diagonal, whatever it was cut to and however many corners it has.
+ */
+describe('every corner of a board belongs to that board', () => {
+  const reach = (plank: { length: number; width: number }) =>
+    Math.hypot(plank.length, plank.width) / 2 + 1e-6;
+
+  const noStrays = (layout: ReturnType<typeof layoutOf>, what: string) => {
+    expect(layout.planks.length, `${what} lays a floor at all`).toBeGreaterThan(0);
+    for (const plank of layout.planks) {
+      for (const corner of plank.corners) {
+        const away = Math.hypot(corner.x - plank.center.x, corner.y - plank.center.y);
+        expect(
+          away,
+          `${what}: ${plank.id} reaches ${((away - reach(plank)) * 12).toFixed(1)}" out`
+        ).toBeLessThanOrEqual(reach(plank));
+      }
+    }
+  };
+
+  /** 0.0162 ft over 20 ft — 0.194", a sixth of an inch, 0.05° off square. A traced room. */
+  const drift = 0.0162;
+  const traced = wallsOf([
+    { x: 0, y: 0 },
+    { x: 20 + drift, y: 0 },
+    { x: 20, y: 20 },
+    { x: drift, y: 20 },
+  ]);
+
+  it('with the run across a wall that is a fraction of a degree out of square', () => {
+    for (const runAngleDeg of [0, 90, 180, 270]) {
+      noStrays(layoutOf({ runAngleDeg }, { walls: traced }), `traced room at ${runAngleDeg}°`);
+    }
+  });
+
+  it('at every run angle, on a room that does not divide evenly by the plank', () => {
+    for (const runAngleDeg of [0, 7, 20, 33, 45, 61, 90, 127, 180]) {
+      noStrays(layoutOf({ runAngleDeg }, { walls: rectWalls(12, 10.4) }), `run ${runAngleDeg}°`);
+    }
+  });
+
+  it('on a concave room, where the boundary steps in the middle of a row', () => {
+    const ell = wallsOf([
+      { x: 0, y: 0 },
+      { x: 14, y: 0 },
+      { x: 14, y: 8 },
+      { x: 7, y: 8 },
+      { x: 7, y: 13 },
+      { x: 0, y: 13 },
+    ]);
+    for (const runAngleDeg of [0, 45, 90]) {
+      noStrays(layoutOf({ runAngleDeg }, { walls: ell }), `L room at ${runAngleDeg}°`);
+    }
+  });
+});
+
+/**
  * A boundary that **bends** across a board is not a boundary that **steps** across it.
  *
  * A diagonal transition running into a wall takes a corner off an otherwise whole board: one

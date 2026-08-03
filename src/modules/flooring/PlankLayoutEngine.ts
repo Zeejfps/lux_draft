@@ -1,7 +1,7 @@
 import type { Obstacle, Vector2, WallSegment } from '../../floorplan/types/geometry';
 import type { LayoutConfig, PlankSpec, StartCorner } from './types';
 import { INCHES_PER_FOOT, MAX_PLANKS } from './types';
-import type { BandSpan, Interval } from './geometry2d';
+import type { BandPoint, BandSpan, Interval } from './geometry2d';
 import {
   EPS,
   bandIntervalsAt,
@@ -607,10 +607,15 @@ function extend(open: Cell[], next: Cell): void {
     cell.start = Math.min(cell.start, next.start);
     cell.end = Math.max(cell.end, next.end);
     cell.startsRun = cell.startsRun || next.startsRun;
-    cell.edges.push(next.edges[1]);
-    cell.startXs.push(next.startXs[1]);
-    cell.endXs.push(next.endXs[1]);
-    collapseStraight(cell);
+    // Point by point, collapsing as it goes: `next` carries more than two of them wherever the
+    // boundary bends *inside* its band, and a run of collinear points has to fall away one at a
+    // time or the ordinary board keeps the ones in the middle.
+    for (let i = 1; i < next.edges.length; i++) {
+      cell.edges.push(next.edges[i]);
+      cell.startXs.push(next.startXs[i]);
+      cell.endXs.push(next.endXs[i]);
+      collapseStraight(cell);
+    }
     return;
   }
   open.push(next);
@@ -1144,35 +1149,89 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     const jointed = runs.flatMap((run) => layRow(run, offset, plankLength, minEndCut));
 
     for (const { low: bandLow, high: bandHigh, spans } of bands) {
+      const height = bandHigh - bandLow;
       for (const span of spans) {
         const [start, end] = extentOf(span);
         if (end - start <= EPS) continue;
 
-        // Where a piece's ends actually land, on each edge of the band. Clamping into the span
-        // rather than only slanting the first and last piece is what keeps this right when the
-        // boundary is shallow enough that its slant across one band exceeds a plank length: the
-        // pieces beyond the span's end at that edge collapse onto it instead of hanging past it.
-        const clampAt = (x: number, edge: 'lo' | 'hi'): number => {
-          const a = span[0][edge];
-          const b = span[1][edge];
-          // The span has no width on this edge — the piece is a triangle with its apex here.
-          if (b - a <= 0) return (a + b) / 2;
-          return Math.min(Math.max(x, a), b);
-        };
+        /**
+         * Either end of the span, anywhere across the band — linear in `t`, which is the property
+         * the whole band model is built to guarantee (see the header).
+         */
+        const spanEdgeAt = (p: BandPoint, t: number): number => p.lo + (p.hi - p.lo) * t;
 
         let first = true;
         for (const piece of jointed) {
-          // The row's joints, clipped to what this sub-band actually covers.
+          // The row's joints, clipped to what this sub-band covers *somewhere* in its height.
           const from = Math.max(piece.start, start);
           const to = Math.min(piece.end, end);
           if (to - from <= EPS) continue;
+
+          /**
+           * How much floor sits under this piece at height `t` across the band.
+           *
+           * A minimum of two linear functions less a maximum of two, so it is **concave** in `t`
+           * and positive on a single interval — and that interval, not the band, is the part of
+           * the band this board exists in.
+           *
+           * Reading it as the whole band is the bug this replaces. Every piece of the span was
+           * laid from `bandLow` to `bandHigh` and its ends clamped into the span at each; where
+           * the span closed to a point at one edge, every piece clamped onto that same point,
+           * wherever it was. Against a wall a fraction of a degree out of square — which is any
+           * room traced by hand, with the run across it — the span closes over a band a fifth of
+           * an inch tall and the point is the far corner of the room. Every board in that row
+           * took that corner as a corner of its own: an outline doubling back through itself,
+           * boards overlapping the width of the room, `coveredSqft` counted off triangles that
+           * are not there, and `PlankIndex` answering with a board nowhere near the cursor. On
+           * the fixture in `a transition landing on a room corner` that was 20 corners landing
+           * outside the board they belong to, the worst of them by 223 inches.
+           */
+          const widthAt = (t: number): number =>
+            Math.min(to, spanEdgeAt(span[1], t)) - Math.max(from, spanEdgeAt(span[0], t));
+
+          /**
+           * The heights the width bends at: where the boundary crosses one of the piece's own
+           * ends, so that the piece stops being bounded by its joint and starts being bounded by
+           * the room. Kept as profile points, because that bend is a real corner of the board.
+           */
+          const knots = [0, 1];
+          for (const [point, x] of [
+            [span[0], from],
+            [span[1], to],
+          ] as const) {
+            const travel = point.hi - point.lo;
+            if (Math.abs(travel) <= EPS) continue;
+            const t = (x - point.lo) / travel;
+            if (t > EPS && t < 1 - EPS) knots.push(t);
+          }
+          knots.sort((a, b) => a - b);
+
+          // The interval where there is floor. Concavity is what lets this be one interval, and
+          // what lets it be found by walking the knots once.
+          let tLow = Infinity;
+          let tHigh = -Infinity;
+          for (let i = 0; i + 1 < knots.length; i++) {
+            const t0 = knots[i];
+            const t1 = knots[i + 1];
+            const w0 = widthAt(t0);
+            const w1 = widthAt(t1);
+            if (w0 <= 0 && w1 <= 0) continue;
+            const root = t0 + ((t1 - t0) * w0) / (w0 - w1);
+            tLow = Math.min(tLow, w0 > 0 ? t0 : root);
+            tHigh = Math.max(tHigh, w1 > 0 ? t1 : root);
+          }
+          // No floor under this piece anywhere in this band. It is not a board here, and the
+          // sliver it would have been is left to the board that does reach it.
+          if (!(tHigh > tLow)) continue;
+
+          const profile = [tLow, ...knots.filter((t) => t > tLow + EPS && t < tHigh - EPS), tHigh];
           extend(open, {
             start: from,
             end: to,
             startsRun: first,
-            edges: [bandLow, bandHigh],
-            startXs: [clampAt(from, 'lo'), clampAt(from, 'hi')],
-            endXs: [clampAt(to, 'lo'), clampAt(to, 'hi')],
+            edges: profile.map((t) => bandLow + height * t),
+            startXs: profile.map((t) => Math.max(from, spanEdgeAt(span[0], t))),
+            endXs: profile.map((t) => Math.min(to, spanEdgeAt(span[1], t))),
           });
           first = false;
         }

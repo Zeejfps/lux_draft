@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import * as THREE from 'three';
 import type { EditorDocument } from '../../../src/floorplan/types/document';
+import type { Vector2 } from '../../../src/floorplan/types/geometry';
 import { applyCommand } from '../../../src/floorplan/commands';
 import { valueEqual } from '../../../src/floorplan/commands/serializable';
 import {
@@ -30,6 +31,7 @@ import { originSelection } from '../../../src/modules/flooring/selection';
 import { originEntities } from '../../../src/modules/flooring/entities';
 import { LAYOUT_ORIGIN_ID } from '../../../src/modules/flooring/constants';
 import { PlankIndex } from '../../../src/modules/flooring/PlankIndex';
+import { interiorPoint } from '../../../src/modules/flooring/geometry2d';
 import { computePlankLayout, type Plank } from '../../../src/modules/flooring/PlankLayoutEngine';
 import { addDivider, setSurfaces } from '../../../src/modules/flooring/commands';
 import { solveRegions } from '../../../src/modules/flooring/RegionSolver';
@@ -172,13 +174,13 @@ describe('planks are hit-tested, not selected', () => {
     });
     const index = new PlankIndex(layout);
 
-    // Every plank still answers for its own corners' centroid, which is inside it by convexity.
+    // Every plank still answers for a point inside its own outline. Over the corners it has,
+    // not over four of them: a board is a polygon, and one whose end bends where the boundary
+    // crosses it carries five.
     for (const plank of layout.planks.slice(0, 40)) {
-      const inside = {
-        x: plank.corners.reduce((s, c) => s + c.x, 0) / 4,
-        y: plank.corners.reduce((s, c) => s + c.y, 0) / 4,
-      };
-      expect(index.at(inside)?.id).toBe(plank.id);
+      const inside = interiorPoint(plank.corners);
+      expect(inside, `${plank.id} has an interior`).not.toBeNull();
+      expect(index.at(inside as Vector2)?.id).toBe(plank.id);
     }
     // And nothing at all answers from outside the room, however close to the wall.
     for (const t of [0.5, 2.5, 7.25, 13, 19.5]) {
