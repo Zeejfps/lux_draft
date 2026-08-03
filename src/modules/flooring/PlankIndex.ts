@@ -14,8 +14,6 @@ import type { Plank, PlankLayout } from './PlankLayoutEngine';
 export class PlankIndex {
   private readonly cells = new Map<string, Plank[]>();
   private readonly cell: number;
-  private readonly cos: number;
-  private readonly sin: number;
 
   private readonly layout: PlankLayout;
 
@@ -25,15 +23,16 @@ export class PlankIndex {
     // query never needs more than the 3x3 neighbourhood and usually needs one cell.
     const longest = layout.planks.reduce((max, p) => Math.max(max, p.length, p.width), 0);
     this.cell = Math.max(longest, 0.5);
-    this.cos = Math.cos(layout.angle);
-    this.sin = Math.sin(layout.angle);
 
     for (const plank of layout.planks) {
-      const half = Math.max(plank.length, plank.width) / 2;
-      const minX = Math.floor((plank.center.x - half) / this.cell);
-      const maxX = Math.floor((plank.center.x + half) / this.cell);
-      const minY = Math.floor((plank.center.y - half) / this.cell);
-      const maxY = Math.floor((plank.center.y + half) / this.cell);
+      // The corners are the bounding box directly — a mitred piece is a quad, and the
+      // rectangle about its centre is not a bound on it.
+      const xs = plank.corners.map((c) => c.x);
+      const ys = plank.corners.map((c) => c.y);
+      const minX = Math.floor(Math.min(...xs) / this.cell);
+      const maxX = Math.floor(Math.max(...xs) / this.cell);
+      const minY = Math.floor(Math.min(...ys) / this.cell);
+      const maxY = Math.floor(Math.max(...ys) / this.cell);
       for (let cx = minX; cx <= maxX; cx++) {
         for (let cy = minY; cy <= maxY; cy++) {
           const key = `${cx}:${cy}`;
@@ -59,12 +58,27 @@ export class PlankIndex {
     return this.layout.planks.length;
   }
 
-  /** Point-in-rectangle in the plank's own frame — the run angle is shared by every plank. */
+  /**
+   * Point-in-quad, against the four half-planes of `corners`.
+   *
+   * Not point-in-rectangle in the plank's own frame: a piece cut to a diagonal boundary is a
+   * trapezoid, and the nominal rectangle would both claim the wedge outside the wall and miss
+   * nothing — so hovering just past the wall would light up a board that is not there. The sign
+   * is taken from the quad's own winding, which the mirrored start corners reverse; a degenerate
+   * edge (the triangle case, where two corners coincide) contributes a zero and is ignored.
+   */
   private contains(plank: Plank, point: Vector2): boolean {
-    const dx = point.x - plank.center.x;
-    const dy = point.y - plank.center.y;
-    const along = dx * this.cos + dy * this.sin;
-    const across = -dx * this.sin + dy * this.cos;
-    return Math.abs(along) <= plank.length / 2 && Math.abs(across) <= plank.width / 2;
+    let positive = false;
+    let negative = false;
+    const corners = plank.corners;
+    for (let i = 0; i < 4; i++) {
+      const a = corners[i];
+      const b = corners[(i + 1) % 4];
+      const cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+      if (cross > 1e-9) positive = true;
+      else if (cross < -1e-9) negative = true;
+      if (positive && negative) return false;
+    }
+    return true;
   }
 }

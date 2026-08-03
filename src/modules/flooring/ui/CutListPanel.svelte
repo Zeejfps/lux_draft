@@ -96,9 +96,16 @@
 
     <div class="section-title">Cut list</div>
     <div class="cut-list">
-      {#each layout.cutList as entry (entry.lengthIn)}
+      {#each layout.cutList as entry (`${entry.lengthIn}/${entry.shortIn ?? ''}/${entry.angleDeg ?? ''}`)}
         <div class="cut-row">
-          <span class="cut-length">{inches(entry.lengthIn)}</span>
+          <span class="cut-length">
+            {#if entry.shortIn != null}
+              <!-- Long point, short point and the angle: what it takes to set a saw. -->
+              {inches(entry.lengthIn)} &rarr; {inches(entry.shortIn)} @ {entry.angleDeg}&deg;
+            {:else}
+              {inches(entry.lengthIn)}
+            {/if}
+          </span>
           <span class="cut-count">&times; {entry.count}</span>
         </div>
       {:else}

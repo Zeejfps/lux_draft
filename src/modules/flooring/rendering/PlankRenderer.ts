@@ -15,6 +15,20 @@ import type { PlankLayout } from '../PlankLayoutEngine';
  * instances and reused when it needs fewer, with `mesh.count` doing the truncation. That keeps
  * a wall drag, which re-derives the floor on every settled frame, allocation-free in the common
  * case.
+ *
+ * ## Sheared instances
+ *
+ * A piece cut to a boundary that is not square to the run is a trapezoid (`Plank.corners`), and
+ * a scaled 1x1 plane cannot be one. Rather than give up instancing for a merged buffer rebuilt
+ * every settled frame, each instance carries four extra floats — the along-run offset of its
+ * left and right ends at the bottom and top edges of the board — and a vertex-shader chunk
+ * injected with `onBeforeCompile` displaces `position.x` by the lerp of them. One geometry, one
+ * draw call, the growth-only buffer policy and the colour-only hover path all unchanged.
+ *
+ * The offsets are normalised by the instance's own scale, and the fill's are taken from a quad
+ * already pulled half a seam in from the board's ends. Scaling alone cannot inset them: the
+ * shear is what decides where an end lands, so a fill that reconstructed the board's own ends
+ * would sit flush against the seam quad and the joint between two boards would disappear.
  */
 
 const PLANK_COLOR = new THREE.Color(0xb98a56);
@@ -29,6 +43,35 @@ const Z_SEAM = -0.015;
 /** Seam width in feet — the visible joint between boards. */
 const SEAM_FT = 0.02;
 
+/**
+ * Displace each vertex along the run by the end offset its corner carries.
+ *
+ * `step(0.0, position.x)` picks the right end of the 1x1 plane and `position.y + 0.5` is the
+ * position across the board, so one `mix` of a `mix` covers all four corners. Applied to
+ * `transformed` — after `begin_vertex` and before the instance matrix — so it is measured in the
+ * geometry's own units, which is why the offsets are handed over pre-divided by the scale.
+ */
+const SHEAR_CHUNK = `
+  float shearEnd = step(0.0, position.x);
+  transformed.x += mix(
+    mix(aShear.x, aShear.y, shearEnd),
+    mix(aShear.z, aShear.w, shearEnd),
+    position.y + 0.5
+  );
+`;
+
+function applyShear(material: THREE.Material, cacheKey: string): void {
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = `attribute vec4 aShear;\n${shader.vertexShader}`.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>\n${SHEAR_CHUNK}`
+    );
+  };
+  // Three caches compiled programs by source; without a distinct key a patched material can be
+  // handed a program compiled from the unpatched shader.
+  material.customProgramCacheKey = () => cacheKey;
+}
+
 export class PlankRenderer {
   private readonly group: THREE.Group;
   private readonly geometry: THREE.PlaneGeometry;
@@ -37,6 +80,8 @@ export class PlankRenderer {
   private readonly seamMaterial: THREE.MeshBasicMaterial;
   private mesh: THREE.InstancedMesh;
   private seams: THREE.InstancedMesh;
+  private shear!: THREE.InstancedBufferAttribute;
+  private seamShear!: THREE.InstancedBufferAttribute;
   private capacity = 0;
 
   private readonly matrix = new THREE.Matrix4();
@@ -64,18 +109,33 @@ export class PlankRenderer {
       transparent: true,
       opacity: 0.45,
     });
+    applyShear(this.material, 'plank-fill-shear');
+    applyShear(this.seamMaterial, 'plank-seam-shear');
 
     this.mesh = this.allocate(0);
     this.seams = this.allocateSeams(0);
   }
 
+  /**
+   * The per-instance shear, `(bottomLeft, bottomRight, topLeft, topRight)`, on the geometry the
+   * instances draw. Replaced rather than resized, since a `BufferAttribute`'s array is fixed.
+   */
+  private static shearAttribute(
+    geometry: THREE.BufferGeometry,
+    count: number
+  ): THREE.InstancedBufferAttribute {
+    const attribute = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
+    attribute.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute('aShear', attribute);
+    return attribute;
+  }
+
   private allocate(count: number): THREE.InstancedMesh {
-    const mesh = new THREE.InstancedMesh(this.geometry, this.material, Math.max(count, 1));
+    const size = Math.max(count, 1);
+    this.shear = PlankRenderer.shearAttribute(this.geometry, size);
+    const mesh = new THREE.InstancedMesh(this.geometry, this.material, size);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.instanceColor = new THREE.InstancedBufferAttribute(
-      new Float32Array(Math.max(count, 1) * 3),
-      3
-    );
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(size * 3), 3);
     mesh.frustumCulled = false;
     mesh.count = 0;
     this.group.add(mesh);
@@ -83,7 +143,9 @@ export class PlankRenderer {
   }
 
   private allocateSeams(count: number): THREE.InstancedMesh {
-    const mesh = new THREE.InstancedMesh(this.seamGeometry, this.seamMaterial, Math.max(count, 1));
+    const size = Math.max(count, 1);
+    this.seamShear = PlankRenderer.shearAttribute(this.seamGeometry, size);
+    const mesh = new THREE.InstancedMesh(this.seamGeometry, this.seamMaterial, size);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
     mesh.count = 0;
@@ -111,17 +173,59 @@ export class PlankRenderer {
 
     this.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), layout.angle);
     const colors = this.mesh.instanceColor;
+    const cos = Math.cos(layout.angle);
+    const sin = Math.sin(layout.angle);
 
     for (let i = 0; i < planks.length; i++) {
       const plank = planks[i];
+
+      // The corners in the instance's own frame: rotate out the shared run angle, then measure
+      // from the nominal rectangle's ends. Which side of the board a corner is on is read off
+      // its own coordinates rather than off its index, because a mirrored start corner reverses
+      // the winding — and two corners of the four sit on each side by construction, since the
+      // engine's ends are the two edges of a band.
+      let bottomLeft = Infinity;
+      let bottomRight = -Infinity;
+      let topLeft = Infinity;
+      let topRight = -Infinity;
+      for (const corner of plank.corners) {
+        const dx = corner.x - plank.center.x;
+        const dy = corner.y - plank.center.y;
+        const along = dx * cos + dy * sin;
+        if (-dx * sin + dy * cos < 0) {
+          bottomLeft = Math.min(bottomLeft, along);
+          bottomRight = Math.max(bottomRight, along);
+        } else {
+          topLeft = Math.min(topLeft, along);
+          topRight = Math.max(topRight, along);
+        }
+      }
+      const half = plank.length / 2;
+
+      // The fill's own ends, pulled half a seam inward from the board's. Reconstructing the
+      // board's ends here instead would put the fill right back on the seam quad's edge and the
+      // joint between two boards would vanish — the scale alone cannot inset them, because the
+      // shear is what decides where an end actually lands.
+      const inset = (low: number, high: number): [number, number] =>
+        high - low <= SEAM_FT
+          ? [(low + high) / 2, (low + high) / 2]
+          : [low + SEAM_FT / 2, high - SEAM_FT / 2];
+      const [fillBottomLeft, fillBottomRight] = inset(bottomLeft, bottomRight);
+      const [fillTopLeft, fillTopRight] = inset(topLeft, topRight);
+
+      const fillX = Math.max(plank.length - SEAM_FT, 0.01);
+      const fillHalf = fillX / 2;
       this.position.set(plank.center.x, plank.center.y, Z_PLANK);
-      this.scale.set(
-        Math.max(plank.length - SEAM_FT, 0.01),
-        Math.max(plank.width - SEAM_FT, 0.01),
-        1
-      );
+      this.scale.set(fillX, Math.max(plank.width - SEAM_FT, 0.01), 1);
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.mesh.setMatrixAt(i, this.matrix);
+      this.shear.setXYZW(
+        i,
+        (fillBottomLeft + fillHalf) / fillX,
+        (fillBottomRight - fillHalf) / fillX,
+        (fillTopLeft + fillHalf) / fillX,
+        (fillTopRight - fillHalf) / fillX
+      );
 
       // Alternating row tint plus a lighter cut piece: enough to read the stagger and to see
       // at a glance where the off-cuts land, without a texture.
@@ -135,16 +239,26 @@ export class PlankRenderer {
 
       // The seam is the full-size quad behind the inset fill: one extra instance per plank,
       // still one draw call.
+      const seamX = Math.max(plank.length, 0.01);
       this.position.set(plank.center.x, plank.center.y, Z_SEAM);
-      this.scale.set(plank.length, plank.width, 1);
+      this.scale.set(seamX, plank.width, 1);
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.seams.setMatrixAt(i, this.matrix);
+      this.seamShear.setXYZW(
+        i,
+        (bottomLeft + half) / seamX,
+        (bottomRight - half) / seamX,
+        (topLeft + half) / seamX,
+        (topRight - half) / seamX
+      );
     }
 
     this.mesh.count = planks.length;
     this.seams.count = planks.length;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.seams.instanceMatrix.needsUpdate = true;
+    this.shear.needsUpdate = true;
+    this.seamShear.needsUpdate = true;
     if (colors) colors.needsUpdate = true;
   }
 

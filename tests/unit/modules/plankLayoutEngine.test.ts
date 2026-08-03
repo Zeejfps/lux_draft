@@ -3,6 +3,7 @@ import type { Obstacle, Vector2, WallSegment } from '../../../src/floorplan/type
 import type { LayoutInputs } from '../../../src/modules/flooring/PlankLayoutEngine';
 import { computePlankLayout, layoutKey } from '../../../src/modules/flooring/PlankLayoutEngine';
 import { defaultFlooringData } from '../../../src/modules/flooring/codec';
+import { pointInPolygon } from '../../../src/modules/flooring/geometry2d';
 import type { LayoutConfig, PlankSpec } from '../../../src/modules/flooring/types';
 import { makeObstacle, rectWalls } from '../../helpers/documents';
 
@@ -30,6 +31,41 @@ function inputs(over: Partial<LayoutInputs> = {}): LayoutInputs {
 
 const layoutOf = (config: Partial<LayoutConfig>, over: Partial<LayoutInputs> = {}) =>
   computePlankLayout(inputs({ layout: { ...defaults.layout, ...config }, ...over }));
+
+/** The corners of a `w` x `h` room at the origin, as a closed ring. */
+const ring = (w: number, h: number): Vector2[] => [
+  { x: 0, y: 0 },
+  { x: w, y: 0 },
+  { x: w, y: h },
+  { x: 0, y: h },
+];
+
+function wallsOf(corners: readonly Vector2[]): WallSegment[] {
+  return corners.map((start, i) => {
+    const end = corners[(i + 1) % corners.length];
+    return { id: `w${i}`, start, end, length: Math.hypot(end.x - start.x, end.y - start.y) };
+  });
+}
+
+/**
+ * How far `p` sits inside `polygon` — negative when it is outside it.
+ *
+ * The one measurement the whole plan is about: the expansion gap is a distance from *every*
+ * boundary, so it has to be checked against the outline itself rather than against a bounding
+ * box or an axis.
+ */
+function clearance(polygon: readonly Vector2[], p: Vector2): number {
+  let best = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+    best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+  }
+  return pointInPolygon(polygon, p) ? best : -best;
+}
 
 describe('a room with no floor', () => {
   it('lays nothing on an open boundary', () => {
@@ -96,13 +132,60 @@ describe('coverage', () => {
     const layout = computePlankLayout(
       inputs({ walls, layout: { ...defaults.layout, expansionGapIn: 0 } })
     );
-    // 300 sq ft, less the one-row band that straddles the inside step: a row is sampled on
-    // one line, so the band spanning y = 10 is laid as if the whole band were the narrow part.
-    // The bound is (step length) x (one plank width); the actual error here is 0.83 sq ft. The
-    // engine's doc comment names it — the price of a scan line over a polygon boolean — and it
-    // under-reports rather than over-reports.
-    expect(layout.coveredSqft).toBeLessThanOrEqual(300);
-    expect(layout.coveredSqft).toBeGreaterThan(300 - 10 * (7 / 12));
+    // Exactly 300 sq ft. The band that would straddle the inside step is split at it, so no row
+    // is laid as if all of it looked like its centreline and nothing is left over to under-report.
+    expect(layout.coveredSqft).toBeCloseTo(300, 6);
+  });
+
+  it('does not rip a whole row just because one corner of the room is in it', () => {
+    /**
+     * The artefact this guards, and it has been shipped twice: a band is split at every height
+     * an outline turns, but the split runs the whole width of the room while the vertex only
+     * changes the boundary at its own x. Emitted straight out, one room corner rips every board
+     * in its row from wall to wall — a lengthwise seam fixed in world space, immune to the plank
+     * width and to the layout origin, which is exactly how a user finds it.
+     *
+     * The L's inside corner is at y = 10. Boards in that row to the *left* of the step have room
+     * above and below and must come out full width; only the ones to the right, which have
+     * nothing above them, are ripped.
+     */
+    const corners: Vector2[] = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 10, y: 10 },
+      { x: 10, y: 20 },
+      { x: 0, y: 20 },
+    ];
+    const full = 7 / 12;
+    for (const originY of [0, 0.19, 0.31, 0.42]) {
+      const layout = computePlankLayout(
+        inputs({
+          walls: wallsOf(corners),
+          origin: { x: 0, y: originY },
+          layout: { ...defaults.layout, expansionGapIn: 0 },
+        })
+      );
+      // Left of the step and clear of the walls at y = 0 and y = 20, which do rip their rows.
+      const clearOfTheStep = layout.planks.filter(
+        (p) => p.center.x + p.length / 2 <= 10 + 1e-9 && p.center.y > 1 && p.center.y < 19
+      );
+      expect(clearOfTheStep.length).toBeGreaterThan(20);
+      for (const plank of clearOfTheStep) {
+        expect(plank.width).toBeCloseTo(full, 9);
+      }
+      // The counterpart, so this cannot pass by refusing to rip anything. Away from the walls at
+      // y = 0 and y = 20 the only rip in this room is the one the step makes, and every board it
+      // makes lies wholly *beyond* the step, where there is no floor above to join to. None of
+      // the chosen origins puts y = 10 on a row line, so there is always such a rip to find.
+      const ripped = layout.planks.filter(
+        (p) => p.width < full - 1e-9 && p.center.y > 1 && p.center.y < 19
+      );
+      expect(ripped.length).toBeGreaterThan(0);
+      for (const plank of ripped) {
+        expect(plank.center.x - plank.length / 2).toBeGreaterThan(10 - 1e-9);
+      }
+    }
   });
 
   it('rips the last row rather than dropping it', () => {
@@ -189,28 +272,78 @@ describe('the expansion gap', () => {
     // A run at 45 degrees to the walls. Trimming the interval would have backed the row off by
     // gap / cos 45; moving the wall along its own normal backs it off by the gap.
     const layout = layoutOf({ expansionGapIn: GAP_IN, runAngleDeg: 45 });
-    const walls = rectWalls(20, 20);
-    const distanceToWalls = (p: Vector2): number =>
-      Math.min(
-        ...walls.map((w) => {
-          const dx = w.end.x - w.start.x;
-          const dy = w.end.y - w.start.y;
-          const t = Math.max(
-            0,
-            Math.min(1, ((p.x - w.start.x) * dx + (p.y - w.start.y) * dy) / (dx * dx + dy * dy))
-          );
-          return Math.hypot(p.x - (w.start.x + t * dx), p.y - (w.start.y + t * dy));
+    const corners = layout.planks.flatMap((p) => [...p.corners]);
+    expect(Math.min(...corners.map((c) => clearance(ring(20, 20), c)))).toBeCloseTo(gap, 6);
+  });
+
+  /**
+   * The defect the boundary-cut plan was written for, as a property.
+   *
+   * A row used to be sampled on one scan line and emitted as an axis-aligned rectangle in the
+   * run frame, so where the boundary was neither parallel nor perpendicular to the run, half the
+   * board hung past the wall and the other half left a wedge of bare subfloor. The measured
+   * minimum clearance from any plank corner to a wall in a 12 x 10 room at 7" x 48" with a 3"
+   * gap ran: 3.000" at 0°, 3.000" at 90°, 0.525" at 45°, **−0.031"** at 30°, **−0.381"** at 15°.
+   * Negative is outside the room — and a rotated run makes *every* wall diagonal in the run
+   * frame, so this was every floor laid at an angle, not an oddly shaped room.
+   */
+  describe('every corner is cut to the boundary it meets', () => {
+    const GAP = 3;
+    const gapFt = GAP / 12;
+
+    const cornersOf = (walls: WallSegment[], runAngleDeg: number): Vector2[] =>
+      computePlankLayout(
+        inputs({ walls, layout: { ...defaults.layout, expansionGapIn: GAP, runAngleDeg } })
+      ).planks.flatMap((p) => [...p.corners]);
+
+    it('holds the gap off every wall at every run angle', () => {
+      const room = ring(12, 10);
+      for (let angle = 0; angle <= 90; angle += 5) {
+        const corners = cornersOf(wallsOf(room), angle);
+        expect(corners.length).toBeGreaterThan(0);
+        const closest = Math.min(...corners.map((c) => clearance(room, c)));
+        // At the gap, not merely inside the room: a corner short of it is a board hanging over
+        // the wall, a corner well past it is a wedge of bare subfloor.
+        expect(closest).toBeGreaterThan(gapFt - 1e-6);
+        expect(closest).toBeLessThan(gapFt + 1e-6);
+      }
+    });
+
+    it('holds it off a diagonal wall the run is not aligned to either', () => {
+      // Two walls off square, so no run angle can make the room rectilinear in the run frame.
+      const room: Vector2[] = [
+        { x: 0, y: 0 },
+        { x: 14, y: 0 },
+        { x: 18, y: 6 },
+        { x: 10, y: 12 },
+        { x: 0, y: 9 },
+      ];
+      for (const angle of [0, 17, 45, 63]) {
+        const corners = cornersOf(wallsOf(room), angle);
+        expect(corners.length).toBeGreaterThan(0);
+        const closest = Math.min(...corners.map((c) => clearance(room, c)));
+        expect(closest).toBeGreaterThan(gapFt - 1e-6);
+        expect(closest).toBeLessThan(gapFt + 1e-6);
+      }
+    });
+
+    it('reports the area it actually laid, trapezoids included', () => {
+      // A right triangle of legs 12 and 9, laid at 30° — every wall diagonal in the run frame,
+      // and the hypotenuse diagonal in any frame. Nothing left approximate means the covered
+      // area is the inset triangle's, not a count of whole rectangles.
+      const room: Vector2[] = [
+        { x: 0, y: 0 },
+        { x: 12, y: 0 },
+        { x: 0, y: 9 },
+      ];
+      const layout = computePlankLayout(
+        inputs({
+          walls: wallsOf(room),
+          layout: { ...defaults.layout, expansionGapIn: 0, runAngleDeg: 30 },
         })
       );
-
-    // The ends of each row's centreline — where the scan line meets the boundary, which is the
-    // one place the row's extent is exact rather than sampled.
-    const [c, s] = [Math.cos(layout.angle), Math.sin(layout.angle)];
-    const ends = layout.planks.flatMap((p) => [
-      { x: p.center.x - (p.length / 2) * c, y: p.center.y - (p.length / 2) * s },
-      { x: p.center.x + (p.length / 2) * c, y: p.center.y + (p.length / 2) * s },
-    ]);
-    expect(Math.min(...ends.map(distanceToWalls))).toBeCloseTo(gap, 6);
+      expect(layout.coveredSqft).toBeCloseTo(54, 6);
+    });
   });
 
   it('a gap wider than the room leaves no floor rather than an inside-out one', () => {
@@ -395,6 +528,25 @@ describe('the cut list and the waste figure', () => {
     expect(layout.purchasedPlanks).toBeGreaterThanOrEqual(layout.fullPieces);
   });
 
+  it('lets the piece past an obstacle start a run, so it can come from an off-cut', () => {
+    /**
+     * An island splits every row it crosses into two spans, and the first piece of the *second*
+     * span begins a fresh run of boards — the one place an off-cut can actually be used.
+     *
+     * The run-start has to be decided per span, not per band: a band's spans are separated by
+     * floor that is not there, so they are different runs. Scoping it per band instead makes
+     * every far-side piece buy a whole board. Measured on this fixture: 146 boards bought and
+     * 11.9% waste with the reuse, 163 and 21.1% without.
+     */
+    const island: Obstacle = makeObstacle('island', { x: 5, y: 2 }, 10);
+    const layout = layoutOf(
+      { expansionGapIn: 0, stagger: 'none', minEndCutIn: 0 },
+      { obstacles: [island] }
+    );
+    expect(layout.planks.length).toBeGreaterThan(150);
+    expect(layout.purchasedPlanks).toBeLessThan(layout.planks.length - 10);
+  });
+
   it('waste is what was bought and not installed', () => {
     const layout = layoutOf({});
     expect(layout.purchasedSqft).toBeGreaterThanOrEqual(layout.coveredSqft);
@@ -403,6 +555,33 @@ describe('the cut list and the waste figure', () => {
       9
     );
     expect(layout.wastePercent).toBeGreaterThanOrEqual(0);
+  });
+
+  it('gives a square cut a length and nothing else', () => {
+    // Rectilinear room, run square to it: every end cut is a straight one, and a short point
+    // and an angle on a straight cut are noise on the page.
+    const layout = layoutOf({});
+    for (const entry of layout.cutList) {
+      expect(entry.shortIn).toBeUndefined();
+      expect(entry.angleDeg).toBeUndefined();
+    }
+  });
+
+  it('gives a mitred cut a long point, a short point and an angle', () => {
+    // A run at 30°, where every wall is diagonal in the run frame. An installer setting a saw
+    // needs all three; a length alone would send them to cut a square end.
+    const layout = layoutOf({ runAngleDeg: 30, expansionGapIn: 0 });
+    const mitred = layout.cutList.filter((e) => e.shortIn != null);
+    expect(mitred.length).toBeGreaterThan(0);
+    for (const entry of mitred) {
+      expect(entry.shortIn!).toBeLessThan(entry.lengthIn);
+      expect(entry.angleDeg!).toBeGreaterThan(0);
+      // Rounded as the panel prints them: eighths of an inch, whole degrees.
+      expect(Math.round(entry.shortIn! * 8)).toBeCloseTo(entry.shortIn! * 8, 9);
+      expect(Math.round(entry.angleDeg!)).toBe(entry.angleDeg!);
+    }
+    // Still one line per distinct piece, and still every cut piece accounted for.
+    expect(layout.cutList.reduce((sum, e) => sum + e.count, 0)).toBe(layout.cutPieces);
   });
 
   it('an awkward room wastes more than a room that tiles', () => {
@@ -599,15 +778,20 @@ describe('laying over part of the room', () => {
   });
 });
 
-describe('a wall that runs along the rows is not a transition', () => {
+describe('a wall that runs along the rows', () => {
   /**
    * The room from the report, simplified: a rectangle with a notch dropping out of its bottom
    * edge, so the wall at x = -1 runs **along** the rows once the run is turned to 90°.
    *
-   * The bug: the row grid was broken at every vertex of the region ring, and a region's ring is
-   * mostly made of the room's own walls. That put a permanent row boundary on the notch wall —
-   * a plank split down its length at an inside corner, fixed in world space, immune to both the
-   * plank width and the layout origin, which is exactly how it was spotted.
+   * This block used to assert the opposite of what it asserts now, and the reversal is the
+   * point of the boundary-cut work. The old reading was that a row boundary on the notch wall
+   * is a plank split down its length at an inside corner for no visible reason, so a wall that
+   * ran along the rows was filtered out of the band edges. But at run 90° the boards run along
+   * world y, and the notch wall is where the room stops being there: a board straddling x = -1
+   * runs from y = −11 to y = 6 over its left half and hangs over nothing under its right. The
+   * rip is not an artefact, it is the cut an installer makes — and the band split that produces
+   * it is also what keeps every span's endpoint linear across a band, which is what makes the
+   * diagonal-wall cut exact.
    */
   const notched: Vector2[] = [
     { x: -6, y: 6 },
@@ -617,10 +801,7 @@ describe('a wall that runs along the rows is not a transition', () => {
     { x: -1, y: -11 },
     { x: -6, y: -11 },
   ];
-  const walls: WallSegment[] = notched.map((start, i) => {
-    const end = notched[(i + 1) % notched.length];
-    return { id: `w${i}`, start, end, length: Math.hypot(end.x - start.x, end.y - start.y) };
-  });
+  const walls = wallsOf(notched);
   // A diagonal divider cutting off the notch, so the region clip is live.
   const region: Vector2[] = [
     { x: -6, y: 6 },
@@ -630,9 +811,8 @@ describe('a wall that runs along the rows is not a transition', () => {
     { x: -6, y: -8 },
   ];
 
-  /** Run 90°: rows stack along world x, so a row boundary is a world-x value. */
-  const rowEdges = (widthIn: number, origin: Vector2): number[] => {
-    const layout = computePlankLayout(
+  const layoutAt = (widthIn: number, origin: Vector2) =>
+    computePlankLayout(
       inputs({
         walls,
         origin,
@@ -641,12 +821,41 @@ describe('a wall that runs along the rows is not a transition', () => {
         regions: [region],
       })
     );
-    return [...new Set(layout.planks.map((p) => Number((p.center.x - p.width / 2).toFixed(9))))]
+
+  /** Run 90°: rows stack along world x, so a row boundary is a world-x value. */
+  const rowEdges = (widthIn: number, origin: Vector2): number[] =>
+    [
+      ...new Set(
+        layoutAt(widthIn, origin).planks.map((p) => Number((p.center.x - p.width / 2).toFixed(9)))
+      ),
+    ]
       .sort((a, b) => a - b)
       .filter((v) => v > -5.9 && v < 5.9);
-  };
 
-  it('puts no row boundary on the notch wall, whatever the plank width or the origin', () => {
+  it('rips the row at it rather than hanging a board over the missing quadrant', () => {
+    for (const origin of [
+      { x: 0, y: 0 },
+      { x: 0.68, y: 0.97 },
+      { x: 2.5, y: -1.5 },
+    ]) {
+      const layout = layoutAt(15.5, origin);
+      expect(layout.planks.length).toBeGreaterThan(0);
+      // Nothing outside the room, at any origin. Before the split, the band straddling x = −1
+      // was laid at the width its centreline happened to fall on: either across the notch wall
+      // and out over bare ground, or not at all.
+      for (const plank of layout.planks) {
+        for (const corner of plank.corners) {
+          expect(clearance(notched, corner)).toBeGreaterThan(-1e-6);
+        }
+      }
+    }
+  });
+
+  it('puts every other row boundary on the grid the origin anchors', () => {
+    // The bug that first found this block: a row boundary immune to both the plank width and the
+    // layout origin. Boundaries still come from the grid and from the outline, and nowhere else,
+    // so the only ones off the grid are at heights the room or the region actually turns.
+    const turns = new Set([...notched, ...region].map((p) => Number(p.x.toFixed(6))));
     for (const widthIn of [7, 15.5]) {
       for (const origin of [
         { x: 0, y: 0 },
@@ -655,25 +864,33 @@ describe('a wall that runs along the rows is not a transition', () => {
       ]) {
         const edges = rowEdges(widthIn, origin);
         expect(edges.length).toBeGreaterThan(3);
-        // Every interior boundary lands on the grid the origin anchors — no stray one at the
-        // notch wall (x = -1), and none anywhere else the room merely turns a corner.
-        //
+        const step = widthIn / 12;
         // Every origin here is inside the room, where there is no wall to measure a gap from, so
         // the grid runs through the origin itself — see `anchorOf` in the engine.
-        const step = widthIn / 12;
         const anchor = origin.x;
         for (const edge of edges) {
           const offGrid = Math.abs(edge - anchor - Math.round((edge - anchor) / step) * step);
-          expect(offGrid).toBeLessThan(1e-6);
+          if (offGrid < 1e-6) continue;
+          // Not on the grid: it must be a corner of the outline, give or take the gap the inset
+          // moved that corner by.
+          const nearestTurn = Math.min(...[...turns].map((t) => Math.abs(edge - t)));
+          expect(nearestTurn).toBeLessThanOrEqual(defaults.layout.expansionGapIn / 12 + 1e-6);
         }
       }
     }
   });
 
-  it('still moves every boundary when the origin moves', () => {
-    // The counterpart to the above: a boundary that ignored the origin was the symptom.
-    const a = rowEdges(15.5, { x: 0, y: 0 });
+  it('still moves the grid boundaries when the origin moves', () => {
+    // The counterpart: a floor whose joints ignored the origin was the original symptom. The
+    // boundaries that come from the outline stay put, which is the whole reason they exist.
+    const fixed = new Set([...notched, ...region].map((p) => Number(p.x.toFixed(6))));
+    const isOnOutline = (edge: number): boolean =>
+      Math.min(...[...fixed].map((t) => Math.abs(edge - t))) <=
+      defaults.layout.expansionGapIn / 12 + 1e-6;
+
+    const a = rowEdges(15.5, { x: 0, y: 0 }).filter((e) => !isOnOutline(e));
     const b = rowEdges(15.5, { x: 0.4, y: 0 });
+    expect(a.length).toBeGreaterThan(0);
     for (const edge of a) expect(b).not.toContain(edge);
   });
 });

@@ -121,6 +121,119 @@ export function intersectIntervals(a: readonly Interval[], b: readonly Interval[
 }
 
 // ============================================
+// Bands — interval algebra that varies across a band
+// ============================================
+
+/**
+ * One end of a span, given at the **two edges of a band** rather than at one scan line.
+ *
+ * This is what makes a piece cut to a diagonal boundary exact. The caller guarantees that no
+ * polygon vertex lies strictly inside the band, so an endpoint travels along a single straight
+ * edge for the band's whole height and is therefore *linear* in y: `lo` and `hi` are its x at
+ * the band's low and high edges, and everything between is a lerp.
+ */
+export interface BandPoint {
+  readonly lo: number;
+  readonly hi: number;
+}
+
+/** A span across a band, `[start, end]` — a trapezoid, given by its two ends. */
+export type BandSpan = readonly [BandPoint, BandPoint];
+
+/**
+ * The endpoint's x at the band's centreline.
+ *
+ * Every ordering decision below is made on this value rather than on `lo`/`hi` separately, and
+ * that is deliberate: it is the one comparison that cannot disagree with itself. Comparing at
+ * `lo` and at `hi` independently would let a span be "before" another at one edge and "after"
+ * it at the other, which is not a case the interval algebra can represent — and it only arises
+ * for boundaries that actually cross inside the band, where the answer is degenerate anyway.
+ */
+export function bandMid(p: BandPoint): number {
+  return (p.lo + p.hi) / 2;
+}
+
+/**
+ * The spans of `polygon` that cross the band `[yLo, yHi]`, as trapezoids.
+ *
+ * The band's centreline decides *which* edges are crossed and in *what order* — a simple
+ * polygon's edges cannot swap order within a band, since crossing would mean self-intersection
+ * and touching would mean a vertex inside the band. Each crossing is then extrapolated along
+ * its own edge to both band edges, which is exact.
+ */
+export function bandIntervalsAt(polygon: readonly Vector2[], yLo: number, yHi: number): BandSpan[] {
+  const y = (yLo + yHi) / 2;
+  const hits: BandPoint[] = [];
+  const n = polygon.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const a = polygon[j];
+    const b = polygon[i];
+    // Straddling the centreline implies `b.y !== a.y`, so the slope is finite. A horizontal
+    // edge never straddles, which is why it needs no special case here — and why the caller
+    // must put a band edge at every vertex, or one would be interior and unrepresentable.
+    if (a.y > y !== b.y > y) {
+      const slope = (b.x - a.x) / (b.y - a.y);
+      hits.push({ lo: a.x + (yLo - a.y) * slope, hi: a.x + (yHi - a.y) * slope });
+    }
+  }
+  hits.sort((p, q) => bandMid(p) - bandMid(q));
+  const out: BandSpan[] = [];
+  for (let i = 0; i + 1 < hits.length; i += 2) {
+    if (bandMid(hits[i + 1]) - bandMid(hits[i]) > EPS) out.push([hits[i], hits[i + 1]]);
+  }
+  return out;
+}
+
+/** `spans` minus `holes`. The scalar `subtractIntervals`, with endpoints carried through. */
+export function subtractBandSpans(spans: BandSpan[], holes: BandSpan[]): BandSpan[] {
+  if (holes.length === 0) return spans;
+  let current = spans;
+  for (const [hs, he] of holes) {
+    const next: BandSpan[] = [];
+    for (const [s, e] of current) {
+      if (bandMid(he) <= bandMid(s) + EPS || bandMid(hs) >= bandMid(e) - EPS) {
+        next.push([s, e]);
+        continue;
+      }
+      if (bandMid(hs) - bandMid(s) > EPS) next.push([s, hs]);
+      if (bandMid(e) - bandMid(he) > EPS) next.push([he, e]);
+    }
+    current = next;
+  }
+  return current;
+}
+
+/** Merge overlapping or touching spans. Input need not be sorted; output is ascending. */
+export function unionBandSpans(spans: readonly BandSpan[]): BandSpan[] {
+  const sorted = spans
+    .filter(([s, e]) => bandMid(e) - bandMid(s) > EPS)
+    .sort((p, q) => bandMid(p[0]) - bandMid(q[0]));
+  const out: [BandPoint, BandPoint][] = [];
+  for (const [s, e] of sorted) {
+    const last = out[out.length - 1];
+    if (last && bandMid(s) <= bandMid(last[1]) + EPS) {
+      if (bandMid(e) > bandMid(last[1])) last[1] = e;
+    } else out.push([s, e]);
+  }
+  return out;
+}
+
+/** Both ascending and non-overlapping; the result is too. */
+export function intersectBandSpans(a: readonly BandSpan[], b: readonly BandSpan[]): BandSpan[] {
+  const out: BandSpan[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const start = bandMid(a[i][0]) > bandMid(b[j][0]) ? a[i][0] : b[j][0];
+    const end = bandMid(a[i][1]) < bandMid(b[j][1]) ? a[i][1] : b[j][1];
+    if (bandMid(end) - bandMid(start) > EPS) out.push([start, end]);
+    if (bandMid(a[i][1]) < bandMid(b[j][1])) i++;
+    else j++;
+  }
+  return out;
+}
+
+// ============================================
 // Points and segments
 // ============================================
 

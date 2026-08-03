@@ -157,6 +157,37 @@ describe('planks are hit-tested, not selected', () => {
     expect(index.at({ x: -5, y: -5 })).toBeNull();
   });
 
+  it('tests the point against the quad, not the nominal rectangle', () => {
+    // A run at 45°, so every wall is diagonal in the run frame and the pieces against them are
+    // trapezoids. The nominal rectangle about a mitred piece's centre reaches past the wall, so
+    // a point-in-rectangle test would claim the wedge outside the room — hovering just past a
+    // wall would light up a board that is not there.
+    const layout = computePlankLayout({
+      walls: rectWalls(20, 20),
+      isClosed: true,
+      obstacles: [],
+      plank: defaults.plank,
+      layout: { ...defaults.layout, expansionGapIn: 0, runAngleDeg: 45 },
+      origin: defaults.origin,
+    });
+    const index = new PlankIndex(layout);
+
+    // Every plank still answers for its own corners' centroid, which is inside it by convexity.
+    for (const plank of layout.planks.slice(0, 40)) {
+      const inside = {
+        x: plank.corners.reduce((s, c) => s + c.x, 0) / 4,
+        y: plank.corners.reduce((s, c) => s + c.y, 0) / 4,
+      };
+      expect(index.at(inside)?.id).toBe(plank.id);
+    }
+    // And nothing at all answers from outside the room, however close to the wall.
+    for (const t of [0.5, 2.5, 7.25, 13, 19.5]) {
+      expect(index.at({ x: t, y: -0.001 })).toBeNull();
+      expect(index.at({ x: -0.001, y: t })).toBeNull();
+      expect(index.at({ x: t, y: 20.001 })).toBeNull();
+    }
+  });
+
   it('a grid lookup does not degrade with the size of the floor', () => {
     const build = (widthIn: number) =>
       new PlankIndex(
