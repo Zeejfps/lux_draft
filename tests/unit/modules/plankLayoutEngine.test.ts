@@ -371,6 +371,39 @@ describe('the expansion gap', () => {
       }
     });
 
+    /**
+     * The mitre used to be capped at four gaps, to stop a vertex shooting off as a corner
+     * approaches a spike. The inward mitre's reach is `gap / sin(θ/2)`, so that cap fired for
+     * **every corner sharper than 29°** — and it fired by dragging the vertex back toward the
+     * corner, leaving it `4 · gap · sin(θ/2)` from the two walls that meet there instead of
+     * `gap`. Measured on an 8.5° wedge at a quarter-inch gap: 0.075" at a square run and 0.0006"
+     * at 45°, against the quarter inch asked for. The boards crept toward the wall as the corner
+     * narrowed, which is what a floor buckling at a transition looks like on a drawing.
+     *
+     * There is no cap that avoids it: the mitre point is where the two offset lines cross, which
+     * *is* the set of points a gap from both edges, so pulling it in by any amount closes one of
+     * the two gaps by the same amount.
+     */
+    it('holds the gap into a corner far sharper than a mitre cap would allow', () => {
+      // A wedge of 8.5°: a 20 x 20 room cut by a chord from (0, 17) to the far top corner.
+      const wedge: Vector2[] = [
+        { x: 20, y: 20 },
+        { x: 0, y: 20 },
+        { x: 0, y: 17 },
+      ];
+      for (const angle of [0, 45, 90]) {
+        const corners = computePlankLayout(
+          inputs({
+            layout: { ...defaults.layout, expansionGapIn: GAP, runAngleDeg: angle },
+            regions: [wedge],
+          })
+        ).planks.flatMap((p) => [...p.corners]);
+        expect(corners.length, `angle ${angle}`).toBeGreaterThan(0);
+        const closest = Math.min(...corners.map((c) => clearance(wedge, c)));
+        expect(closest, `angle ${angle}`).toBeGreaterThan(gapFt - 1e-6);
+      }
+    });
+
     it('reports the area it actually laid, trapezoids included', () => {
       // A right triangle of legs 12 and 9, laid at 30° — every wall diagonal in the run frame,
       // and the hypotenuse diagonal in any frame. Nothing left approximate means the covered
@@ -1188,6 +1221,115 @@ describe('a boundary that bends across a board', () => {
       const inside = interiorPoint(plank.corners);
       expect(inside, `${plank.id} has an interior`).not.toBeNull();
       expect(index.at(inside as Vector2)?.id, `${plank.id} from inside itself`).toBe(plank.id);
+    }
+  });
+});
+
+/**
+ * A traced room with a transition landing on one of its corners.
+ *
+ * From a real document, and it is the shape that found three separate defects, so it is kept as
+ * the geometry rather than as a tidied-up stand-in. Two things about it matter and neither
+ * survives simplification: the left and right walls run 11 and 13 ft while drifting 0.0162 ft, so
+ * they are a fraction of a degree off square; and the divider lands exactly on the room's corner
+ * at (-0.2994, -7.7153), where the room turns 90° and the plank area turns 152°. Inset by the
+ * expansion gap those two corners mitre to *different* heights a third of an inch apart, which
+ * puts two band edges inside one row — and that is the row every one of the defects was in.
+ */
+describe('a transition landing on a room corner', () => {
+  const traced: Vector2[] = [
+    { x: -5.3207, y: 5.9676 },
+    { x: 5.6844, y: 5.9676 },
+    { x: 5.7006, y: -7.7153 },
+    { x: -0.2994, y: -7.7153 },
+    { x: -0.2994, y: -12.5766 },
+    { x: -9.2737, y: -7.2167 },
+    { x: -5.3045, y: -5.0948 },
+  ];
+  /** The plank area: everything above the chord from the left wall to the room's corner. */
+  const plankArea: Vector2[] = [
+    { x: -0.2994, y: -7.7153 },
+    { x: 5.7006, y: -7.7153 },
+    { x: 5.6844, y: 5.9676 },
+    { x: -5.3207, y: 5.9676 },
+    { x: -5.3045, y: -5.0948 },
+  ];
+  const GAP_IN = 0.25;
+  const gapFt = GAP_IN / INCHES_PER_FOOT;
+  const layout = computePlankLayout(
+    inputs({
+      walls: wallsOf(traced),
+      layout: { ...defaults.layout, runAngleDeg: 90, expansionGapIn: GAP_IN },
+      origin: { x: -0.09, y: 0 },
+      regions: [plankArea],
+    })
+  );
+
+  it('holds the gap off the transition, and off every wall', () => {
+    const closest = Math.min(
+      ...layout.planks.flatMap((p) => p.corners.map((c) => clearance(plankArea, c)))
+    );
+    expect(closest).toBeGreaterThan(gapFt - 1e-9);
+  });
+
+  it('leaves no bare floor beyond the gap along the transition', () => {
+    // The defect: a break landing a hair from where the run already ended cut off a piece too
+    // small to lay, the emit dropped it, and the floor stopped 0.42" from the wall where a
+    // quarter inch was asked for. Walk the boundary and find the first board inward.
+    // The floor is the region eroded by the gap, so *every* point a gap inside the boundary is a
+    // point a board has to reach. Sampling just inside that edge is the tightest place to ask,
+    // and asking it this way needs no exception at a corner: a point near one that is short of
+    // the gap from the adjoining edge is not in the eroded region at all, and drops out by the
+    // same test rather than by an angle-dependent margin guessed per vertex.
+    const index = new PlankIndex(layout);
+    let checked = 0;
+    for (let i = 0; i < plankArea.length; i++) {
+      const a = plankArea[i];
+      const b = plankArea[(i + 1) % plankArea.length];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const nx = -(b.y - a.y) / len;
+      const ny = (b.x - a.x) / len;
+      for (let s = 0.02; s < len; s += 0.02) {
+        const depth = gapFt + 0.004;
+        const q = {
+          x: a.x + ((b.x - a.x) * s) / len + nx * depth,
+          y: a.y + ((b.y - a.y) * s) / len + ny * depth,
+        };
+        if (clearance(plankArea, q) < gapFt) continue;
+        checked += 1;
+        // Before the break tolerance this was bare for the first 0.3ft of the bottom wall beside
+        // the transition, and the floor stopped 0.42" from it where a quarter inch was asked for.
+        expect(index.at(q), `edge ${i} at ${s.toFixed(2)}ft`).not.toBeNull();
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);
+  });
+
+  it('lays the board beside the transition whole, with its corner taken off', () => {
+    // The board at the transition is one piece of full nominal width whose end bends.
+    const bent = layout.planks.filter((p) => p.corners.length > 4);
+    expect(bent.length).toBeGreaterThan(0);
+    expect(
+      bent.some((p) => Math.abs(p.width * INCHES_PER_FOOT - defaults.plank.widthIn) < 1e-6)
+    ).toBe(true);
+  });
+
+  it('never saws one board into two strips down its length', () => {
+    // The signature of the defect: two boards of one row, stacked across the width, whose widths
+    // add to one plank. That is a board someone ripped lengthwise, which is what refusing to join
+    // across a bend produced — first because the ends turned, then because their long points
+    // disagreed by the depth of the corner being taken off.
+    const plankWidth = defaults.plank.widthIn / INCHES_PER_FOOT;
+    for (const a of layout.planks) {
+      for (const b of layout.planks) {
+        if (a.id === b.id || a.row !== b.row) continue;
+        const stacked =
+          Math.abs(a.width + b.width - plankWidth) < 1e-6 &&
+          // Overlapping along the run — the two halves of one board, not two boards end to end.
+          Math.min(a.length, b.length) > 0 &&
+          Math.abs(a.center.x - b.center.x) + Math.abs(a.center.y - b.center.y) < plankWidth;
+        expect(stacked, `${a.id} and ${b.id}`).toBe(false);
+      }
     }
   });
 });

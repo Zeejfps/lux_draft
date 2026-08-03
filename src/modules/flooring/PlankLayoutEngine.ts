@@ -332,8 +332,27 @@ function toWorld(frame: Frame, p: Vector2): Vector2 {
 // The expansion gap
 // ============================================
 
-/** How far a mitred vertex may travel, in gaps, before it is clamped. */
-const MAX_MITER = 4;
+/**
+ * Why the mitre is **not** capped.
+ *
+ * It used to be, at four gaps, to stop a vertex shooting off toward infinity as a corner
+ * approaches a spike. But the inward mitre's reach is `distance / sin(θ/2)` for an interior angle
+ * θ, so a cap at four gaps fires for every corner sharper than **29°** — and what it does there
+ * is drag the vertex back toward the corner, leaving it `4 · gap · sin(θ/2)` from the two walls
+ * that meet at it instead of `gap`. At 8° that is a thirteenth of an inch where a quarter inch
+ * was asked for, and the boards laid into the corner creep toward the wall as it narrows, which
+ * is exactly what a floor buckling at a transition looks like on the drawing.
+ *
+ * There is no cap that avoids this. The mitre point is the intersection of the two offset lines,
+ * and that intersection *is* the set of points a gap away from both edges: pull it in by any
+ * amount and one of the two gaps closes by the same amount. So the reach is left alone, and the
+ * two checks below — no edge may come out running backwards, and the winding may not flip — are
+ * what catch a corner sharp enough to consume the feature. They are the honest test, because they
+ * ask whether there is any floor left rather than guessing a distance at which there is not.
+ *
+ * A spike thin enough to reverse an edge needs an interior angle under about a degree at these
+ * dimensions, which is a room this editor cannot draw on purpose.
+ */
 
 /**
  * The polygon pulled inward by `distance`; a negative distance pushes it outward, which is what
@@ -349,8 +368,8 @@ const MAX_MITER = 4;
  * Winding is detected, not assumed: `toLocal` mirrors for two of the four start corners, which
  * reverses it.
  *
- * Joins are mitred — exact for the rectilinear corner that every room here is made of — and
- * clamped, since an uncapped miter shoots off toward infinity as a vertex approaches a spike. A
+ * Joins are mitred, and the mitre is **exact at every angle** — see `MAX_MITER`'s epitaph above
+ * for why capping it was a quiet way of not holding the gap at any corner sharper than 29°. A
  * distance large enough to collapse a narrow feature can still self-intersect; with a gap of an
  * inch or two against walls measured in feet that needs a room this editor cannot draw, and the
  * scan line's even-odd rule degrades to dropping the inverted lobe rather than to nonsense.
@@ -390,14 +409,11 @@ function insetPolygon(polygon: readonly Vector2[], distance: number): Vector2[] 
       continue;
     }
     const scale = distance / denom;
-    let ox = (before.x + after.x) * scale;
-    let oy = (before.y + after.y) * scale;
-    const reach = Math.hypot(ox, oy);
-    const limit = Math.abs(distance) * MAX_MITER;
-    if (reach > limit) {
-      ox *= limit / reach;
-      oy *= limit / reach;
-    }
+    const ox = (before.x + after.x) * scale;
+    const oy = (before.y + after.y) * scale;
+    // A corner sharp enough to overflow a double has already failed the `denom` test above, but
+    // the offset is what every later stage divides by, so it is checked where it is made.
+    if (!Number.isFinite(ox) || !Number.isFinite(oy)) return [];
     out.push({ x: p.x + ox, y: p.y + oy });
   }
 
@@ -475,10 +491,18 @@ interface Piece {
  * inside step of an L, which has nothing above it to join) and disappears where it never was.
  */
 interface Cell {
-  /** Fixed: the nominal x interval, which is what decides whether two pieces are the same board. */
-  readonly start: number;
-  readonly end: number;
-  readonly startsRun: boolean;
+  /**
+   * The nominal x interval — the board's **long point** at each end, which is what the cut list
+   * is measured against and how much stock the cut consumes.
+   *
+   * Not fixed, and not a test of whether two pieces are the same board. A bend moves the long
+   * point: the sub-band a board's end meets square reaches further along the run than the one the
+   * diagonal cuts, so the two halves of one board disagree about it by exactly the depth of the
+   * corner being taken off. Joining takes the union, which is the long point of the whole board.
+   */
+  start: number;
+  end: number;
+  startsRun: boolean;
   /** The band edges this board spans, ascending. Its low edge first, its high edge last. */
   edges: number[];
   /** The start end's x at each of `edges` — the board's end profile, not a single cut. */
@@ -525,17 +549,27 @@ function collapseStraight(cell: Cell): void {
 /**
  * Continue `cell` into the sub-band above it, or start a new board.
  *
- * Two things have to hold, and each rules out a real case: the pieces must occupy the same
- * interval along the run, or they are different boards; and their ends must **meet**, or the
- * boundary stepped, as at the inside corner of an L, where a board reaching across the step would
- * have to be L-shaped.
+ * Two things have to hold, and each rules out a real case: the two pieces' ends must **meet**, or
+ * the boundary stepped, as at the inside corner of an L, where a board reaching across the step
+ * would have to be L-shaped; and their nominal intervals must **overlap**, or they are two boards
+ * of one run laid end to end, which touch at a joint and share nothing else.
  *
- * What is deliberately *not* required is that the ends carry on in the same direction. A boundary
- * that bends where it meets another — a diagonal transition running into a wall — leaves the
- * board whole and takes a corner off it. That is one board, one piece of stock and two cuts on
- * one end. Requiring the direction to continue split exactly that board lengthwise into two
- * full-length strips: a rip no installer would make, a seam down the middle of a whole board, two
- * boards bought where one was needed and two lines in the cut list for one corner.
+ * What is deliberately *not* required is that the ends carry on in the same direction, nor that
+ * the nominal intervals agree. A boundary that bends where it meets another — a diagonal
+ * transition running into a wall — leaves the board whole and takes a corner off it. That is one
+ * board, one piece of stock and two cuts on one end. Requiring the direction to continue split
+ * exactly that board lengthwise into two full-length strips: a rip no installer would make, a
+ * seam down the middle of a whole board, two boards bought where one was needed and two lines in
+ * the cut list for one corner.
+ *
+ * Requiring the *intervals* to agree was the same bug wearing the other hat, and it survived the
+ * first fix. The nominal interval is the long point, and a bend is precisely what moves it: the
+ * half of the board whose end meets the wall square runs further along than the half the diagonal
+ * cuts back, by the depth of the corner. Comparing long points therefore rejected exactly the
+ * boards the direction test had just been relaxed to accept — a 7" board beside a transition came
+ * out as a 2 3/4" strip and a 4 1/4" strip whose ends differed by a sixth of an inch. The ends
+ * meeting is the test that separates a bend from a step; the interval carried no information the
+ * ends did not already carry, beyond rejecting the case this exists to keep.
  *
  * The bend is kept as a profile point rather than smoothed into a single cut across the full
  * width, because one cut through both would either overhang the transition or leave bare floor
@@ -546,10 +580,14 @@ function extend(open: Cell[], next: Cell): void {
   for (const cell of open) {
     const top = cell.edges.length - 1;
     if (Math.abs(cell.edges[top] - next.edges[0]) > EPS) continue;
-    if (Math.abs(cell.start - next.start) > JOIN_TOL) continue;
-    if (Math.abs(cell.end - next.end) > JOIN_TOL) continue;
     if (Math.abs(cell.startXs[top] - next.startXs[0]) > JOIN_TOL) continue;
     if (Math.abs(cell.endXs[top] - next.endXs[0]) > JOIN_TOL) continue;
+    // Overlapping, not merely touching: two boards of one run meet end to end at a joint, and
+    // their ends meet there too, so this is what tells that apart from one board that bends.
+    if (Math.min(cell.end, next.end) - Math.max(cell.start, next.start) <= EPS) continue;
+    cell.start = Math.min(cell.start, next.start);
+    cell.end = Math.max(cell.end, next.end);
+    cell.startsRun = cell.startsRun || next.startsRun;
     cell.edges.push(next.edges[1]);
     cell.startXs.push(next.startXs[1]);
     cell.endXs.push(next.endXs[1]);
@@ -1055,7 +1093,14 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       const out: Interval[] = [];
       let prev = a;
       for (const x of [...breaks].sort((p, q) => p - q)) {
-        if (x <= prev + EPS || x >= b - EPS) continue;
+        // At `MIN_BOARD_FT` rather than at `EPS`: a break this close to where the run already
+        // starts or ends cuts a piece off it too small to lay, and the emit then drops that piece
+        // and leaves the floor short by its length. That is how a quarter inch of bare subfloor
+        // appeared beside a transition where two boundaries meet at a shallow angle — the wall's
+        // end of the row and the diagonal's long point are a hair apart there, and the hair
+        // became a break, then a sliver, then a hole. Not breaking is the same board reaching the
+        // wall, which is what an installer would cut.
+        if (x <= prev + MIN_BOARD_FT || x >= b - MIN_BOARD_FT) continue;
         out.push([prev, x]);
         prev = x;
       }
