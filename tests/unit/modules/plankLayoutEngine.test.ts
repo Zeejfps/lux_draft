@@ -5,6 +5,7 @@ import { computePlankLayout, layoutKey } from '../../../src/modules/flooring/Pla
 import { defaultFlooringData } from '../../../src/modules/flooring/codec';
 import { pointInPolygon } from '../../../src/modules/flooring/geometry2d';
 import type { LayoutConfig, PlankSpec } from '../../../src/modules/flooring/types';
+import { INCHES_PER_FOOT } from '../../../src/modules/flooring/types';
 import { makeObstacle, rectWalls } from '../../helpers/documents';
 
 /**
@@ -790,7 +791,12 @@ describe('laying over part of the room', () => {
       const highest = Math.max(...layout.planks.map((p) => p.center.y + p.width / 2));
       // The region tops out at y = 8; the floor stops one expansion gap short of it, whatever
       // the origin. Before the fix this ranged over 7.71 … 8.23.
-      expect(highest).toBeCloseTo(8 - gapFt, 6);
+      //
+      // Short of it by up to a quarter inch, because where the grid leaves a strip narrower than
+      // that against the edge there is no board to lay — see `MIN_BOARD_FT`. That is a strip the
+      // trim covers; the half-foot swing this test exists to catch is not.
+      expect(highest).toBeLessThanOrEqual(8 - gapFt + 1e-9);
+      expect(highest).toBeGreaterThan(8 - gapFt - 0.25 / 12);
     }
   });
 
@@ -990,5 +996,91 @@ describe('the minimum rip width', () => {
     expect(layoutKey(inputs({ plank: { ...defaults.plank, minRipWidthIn: 2 } }))).not.toBe(
       layoutKey(inputs({ plank: { ...defaults.plank, minRipWidthIn: 3 } }))
     );
+  });
+});
+
+/**
+ * The outlines reaching the engine have been through a region merge, a divider snap and a polygon
+ * inset, and each leaves vertices off true by a fraction of an inch or less. Separated at `EPS`,
+ * such a vertex became a band of its own — and a band becomes boards, one per joint along the
+ * run: a row of zero-inch planks against a wall, cut, counted, priced and flagged as ripped below
+ * the minimum, on a floor where there is visibly nothing there.
+ *
+ * The floor a wobbly outline lays must be the floor a clean one lays, board for board.
+ */
+describe('an outline that is off true by less than a saw kerf', () => {
+  /** A 20 x 20 room with one extra vertex `offset` feet off the left wall's line. */
+  const wobbly = (offset: number): WallSegment[] =>
+    wallsOf([...ring(20, 20), { x: offset, y: 10 }]);
+
+  const laid = (walls: WallSegment[]) =>
+    computePlankLayout(inputs({ walls, layout: { ...defaults.layout, runAngleDeg: 90 } }));
+
+  it('lays no board thinner than a saw can cut', () => {
+    for (const offset of [1e-9, 1e-7, 1e-5, 1e-4]) {
+      const layout = laid(wobbly(offset));
+      const slivers = layout.planks.filter((p) => p.width * INCHES_PER_FOOT < 1 / 32);
+      expect(slivers, `offset ${offset}`).toHaveLength(0);
+      expect(layout.narrowestRipIn ?? Infinity, `offset ${offset}`).toBeGreaterThan(1 / 32);
+    }
+  });
+
+  it('lays the same floor the clean room lays', () => {
+    const clean = laid(wallsOf(ring(20, 20)));
+    const wobble = laid(wobbly(1e-5));
+    expect(wobble.planks).toHaveLength(clean.planks.length);
+    expect(wobble.narrowPieces).toBe(clean.narrowPieces);
+    expect(wobble.narrowestRipIn).toBeCloseTo(clean.narrowestRipIn as number, 6);
+    expect(wobble.coveredSqft).toBeCloseTo(clean.coveredSqft, 4);
+    expect(wobble.cutList).toHaveLength(clean.cutList.length);
+  });
+
+  /**
+   * The case from a real document: a room traced by hand, so its left and right walls run 11 and
+   * 13 ft while drifting 0.0162 ft — 0.194", a sixth of an inch, 0.08° off square. With the run
+   * *parallel* to those walls, the band grid must break at each of their endpoints, and the band
+   * between them is a row 0.194" tall spanning the wall's whole length. That was eight boards
+   * against two walls plus a crumb in a corner: nine pieces, cut, counted, priced and flagged as
+   * ripped below the minimum, on a floor showing nothing there at all.
+   */
+  describe('a wall a fraction of a degree out of square, with the run parallel to it', () => {
+    const drift = 0.0162;
+    const traced = wallsOf([
+      { x: 0, y: 0 },
+      { x: 20 + drift, y: 0 },
+      { x: 20, y: 20 },
+      { x: drift, y: 20 },
+    ]);
+    const layout = computePlankLayout(
+      inputs({ walls: traced, layout: { ...defaults.layout, runAngleDeg: 90 } })
+    );
+
+    it('lays no board too narrow to install', () => {
+      for (const plank of layout.planks) {
+        expect(plank.width * INCHES_PER_FOOT).toBeGreaterThanOrEqual(0.25);
+        expect(plank.length * INCHES_PER_FOOT).toBeGreaterThanOrEqual(0.25);
+      }
+    });
+
+    it('warns about the rip that is real and not about the wall being crooked', () => {
+      // The square room's own last row is 1.5" and is genuinely below the minimum — that warning
+      // is the feature. What must not be added to it is the wedge along the crooked wall.
+      const square = computePlankLayout(
+        inputs({ walls: wallsOf(ring(20, 20)), layout: { ...defaults.layout, runAngleDeg: 90 } })
+      );
+      expect(layout.narrowPieces).toBe(square.narrowPieces);
+      expect(layout.narrowestRipIn as number).toBeCloseTo(square.narrowestRipIn as number, 2);
+    });
+
+    it('still covers the room, since what it drops is a strip under the trim', () => {
+      // The wedges left bare are 0.194" x 20 ft twice — under a hundredth of the floor.
+      expect(layout.coveredSqft).toBeGreaterThan(0.99 * 20 * 20 - 20);
+    });
+  });
+
+  it('still resolves a step it could actually cut to', () => {
+    // A quarter inch is a feature, not noise: the rip against it is a real board.
+    const stepped = laid(wobbly(0.25 / INCHES_PER_FOOT));
+    expect(stepped.planks.length).toBeGreaterThan(laid(wallsOf(ring(20, 20))).planks.length);
   });
 });

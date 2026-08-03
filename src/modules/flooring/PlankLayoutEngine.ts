@@ -627,6 +627,75 @@ function buildCutList(cuts: readonly CutPiece[]): CutListEntry[] {
 }
 
 /**
+ * The finest distinction this engine will draw between two heights, feet — 1/32".
+ *
+ * `EPS` is a *numerical* tolerance: it asks whether two floats are the same number. This is a
+ * **physical** one, and it asks the question the band model actually needs answered — whether two
+ * heights are the same place on a floor. They are not the same question, and using the first for
+ * the second is what put zero-width boards on the floor.
+ *
+ * A band's edges come from the row grid and from every height at which an outline turns, and the
+ * outlines reaching here have been through a region merge, a divider snap and a polygon inset,
+ * each of which leaves vertices off true by a fraction of an inch or less. Separated at `EPS`,
+ * a wall vertex a hundred-thousandth of a foot off its own wall line becomes a band 0.0001" tall
+ * running the full length of that wall — and a band becomes boards, one per joint along the run.
+ * A dozen of them, cut, counted, priced, and flagged as ripped below the minimum, on a floor
+ * where the user can see nothing there at all.
+ *
+ * 1/32" because that is already finer than anything downstream can express: the cut list rounds
+ * to 1/8", the panels display to 1/16", and no saw is set from either. Nothing a room can
+ * legitimately contain is lost by refusing to resolve below it.
+ */
+const MIN_FEATURE_FT = 1 / 32 / INCHES_PER_FOOT;
+
+/**
+ * The smallest piece this engine will lay, feet — 1/4".
+ *
+ * `MIN_FEATURE_FT` is about *resolving* geometry; this is about **installing** it. A wall a
+ * fraction of a degree out of square — which is every wall a user traces over a photo — leaves a
+ * wedge between itself and the row grid, and where the run happens to be parallel to that wall
+ * the wedge is a full row long. A wall 11 ft long and 0.194" out of true is a band 0.194" tall
+ * spanning the room, and bands become boards: four of them, cut, counted, priced and flagged as
+ * ripped below the minimum, on a floor where the user can see nothing at all. There is one board
+ * there in reality and an installer scribes it to the wall; a plank's width is constant along its
+ * length here, so the engine cannot describe that cut, and describing it as four sliver boards
+ * instead is worse than not describing it.
+ *
+ * So the wedge is left bare, which is also what happens on site: a strip a quarter inch wide sits
+ * under the base shoe with the expansion gap, and the gap against that wall reads as 0.25" at one
+ * end and 0.44" at the other. Nothing visible, nothing purchased, nothing warned about.
+ *
+ * A quarter inch because that is the expansion gap's own scale — the trim covers it by definition
+ * — and because no locking profile survives a rip that narrow, so a board this small is never a
+ * board that gets installed. A rip the installer *would* cut, a genuine last row of half an inch
+ * against a square wall, is above this and is still laid and still flagged.
+ */
+const MIN_BOARD_FT = 0.25 / INCHES_PER_FOOT;
+
+/**
+ * Band edges, with heights closer together than `MIN_FEATURE_FT` merged into one.
+ *
+ * Ascending in, ascending out. The **lower** of a merged pair survives, except at the top of the
+ * room: `maxY` is the room's own extent and dropping it would end the floor short of the wall, so
+ * where the last edge is absorbed it replaces the one that absorbed it rather than vanishing.
+ *
+ * What this costs is that a vertex within a thirty-second of an inch of a band edge is now
+ * *interior* to that band, which the band model says cannot happen — so the endpoint travelling
+ * through it is extrapolated along one of its two edges instead of bending at the vertex. The
+ * error is bounded by the vertex's own distance from the edge, and it is spent on a feature no
+ * saw could cut. A band that is genuinely there and genuinely that thin is not a board.
+ */
+function mergeBandEdges(sorted: readonly number[]): number[] {
+  const out: number[] = [];
+  for (const y of sorted) {
+    if (out.length === 0 || y - out[out.length - 1] > MIN_FEATURE_FT) out.push(y);
+  }
+  const top = sorted[sorted.length - 1];
+  if (out.length > 1 && out[out.length - 1] < top) out[out.length - 1] = top;
+  return out;
+}
+
+/**
  * Every height at which an outline turns, in the run-aligned frame.
  *
  * Both properties the band model rests on come from here — no band straddles a boundary that
@@ -817,7 +886,9 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   for (const y of outlineHeights([room, ...holes, ...(clips ?? [])])) {
     if (y > minY + EPS && y < maxY - EPS) boundaries.add(y);
   }
-  const bandEdges = [...boundaries].sort((a, b) => a - b);
+  // Merged at a physical tolerance, not at `EPS`: see `mergeBandEdges`. Sub-tolerance wobble in
+  // an outline is not a row of boards.
+  const bandEdges = mergeBandEdges([...boundaries].sort((a, b) => a - b));
 
   const planks: Plank[] = [];
   const demand: PieceDemand[] = [];
@@ -955,15 +1026,23 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       }
     }
 
+    // What is actually installable, on both axes: the wedge against an out-of-square wall and
+    // the crumb in the corner where two boundaries converge are floor, but they are not boards.
+    // See `MIN_BOARD_FT`. What is dropped here is dropped from everything — not laid, not
+    // counted toward `coveredSqft`, not purchased, not in the cut list, not flagged as narrow.
+    const laid = open.filter(
+      (cell) =>
+        cell.end - cell.start >= MIN_BOARD_FT && cell.bandHigh - cell.bandLow >= MIN_BOARD_FT
+    );
     // Bottom-to-top, then along the run: the order an installer would lay them, and the order
     // `column` and `startsRun` are only meaningful in.
-    open.sort((a, b) => a.bandLow - b.bandLow || a.start - b.start);
-    for (let column = 0; column < open.length; column++) {
+    laid.sort((a, b) => a.bandLow - b.bandLow || a.start - b.start);
+    for (let column = 0; column < laid.length; column++) {
       if (planks.length >= MAX_PLANKS) {
         truncated = true;
         break;
       }
-      const cell = open[column];
+      const cell = laid[column];
       const width = cell.bandHigh - cell.bandLow;
       const length = cell.end - cell.start;
       const lowLength = cell.endLo - cell.startLo;

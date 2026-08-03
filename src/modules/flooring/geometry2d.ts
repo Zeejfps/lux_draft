@@ -173,7 +173,17 @@ export function bandIntervalsAt(polygon: readonly Vector2[], yLo: number, yHi: n
     // must put a band edge at every vertex, or one would be interior and unrepresentable.
     if (a.y > y !== b.y > y) {
       const slope = (b.x - a.x) / (b.y - a.y);
-      hits.push({ lo: a.x + (yLo - a.y) * slope, hi: a.x + (yHi - a.y) * slope });
+      // Clamped to the edge's own span, which is a **no-op** whenever the caller's guarantee
+      // holds: an edge with no vertex inside the band reaches both band edges, so extrapolating
+      // to them lands on the segment. It matters only when the guarantee is bent, and there it
+      // is the difference between an endpoint pinned to the vertex the edge actually ends at and
+      // one flung across the room — a shallow edge has a huge `slope`, so extrapolating it a
+      // hundredth of a foot past its own end moves x by feet. Pinning is what the boundary does.
+      const lowX = Math.min(a.x, b.x);
+      const highX = Math.max(a.x, b.x);
+      const at = (yEdge: number): number =>
+        Math.min(highX, Math.max(lowX, a.x + (yEdge - a.y) * slope));
+      hits.push({ lo: at(yLo), hi: at(yHi) });
     }
   }
   hits.sort((p, q) => bandMid(p) - bandMid(q));
