@@ -18,6 +18,25 @@ export interface PlankSpec {
   lengthIn: number;
   /** What the box says. Shown in the cut list header; not an id. */
   name: string;
+  /**
+   * Narrowest finished rip this board tolerates, inches. `0` turns the check off.
+   *
+   * A row ripped below this is the defect an installer calls a sliver, and it is three failures
+   * at once: ripping lengthwise removes one whole edge profile, so what is left has almost no
+   * material behind the tongue and snaps on install; a strip that narrow has no weight and no
+   * span to hold itself down; and with a quarter-inch expansion gap plus base shoe over it, part
+   * of it disappears under the trim and the rest reads as a wavy shadow line.
+   *
+   * It belongs to the **product** rather than to `LayoutConfig` because it is a property of the
+   * board — the locking profile and the manufacturer's warranty set it, and the figure ranges
+   * from a third of the face width down to an inch of hard minimum across the SKUs in
+   * `PLANK_PRESETS`. A single number on the layout would be wrong for half of them.
+   *
+   * This is a **warning, not a constraint**: the engine flags the boards and lays them anyway.
+   * The fix an installer makes is to rip the *first* row too so both ends are half the shortfall,
+   * and that is a judgement about which wall is visible — not something to do behind their back.
+   */
+  minRipWidthIn: number;
 }
 
 /**
@@ -140,6 +159,7 @@ export const DEFAULT_PLANK_SPEC: PlankSpec = {
   widthIn: 7,
   lengthIn: 48,
   name: '7" x 48" LVP',
+  minRipWidthIn: 2.25,
 };
 
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
@@ -154,15 +174,36 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
 
 export const DEFAULT_LAYOUT_ORIGIN: Vector2 = { x: 0, y: 0 };
 
-/** Plank sizes the tool panel offers. Any width/length is legal; these are the common ones. */
+/**
+ * Plank sizes the tool panel offers. Any width/length is legal; these are the common ones.
+ *
+ * Every `minRipWidthIn` here is `suggestedMinRipWidthIn(widthIn)`, written out rather than
+ * computed so the table stays greppable and a preset can depart from the rule if a real SKU does.
+ * Strip oak is the case that shows why this rides on the product at all: a third of 2 1/4" is
+ * 3/4", and holding it to the 2 1/4" a 7" plank wants would flag rips that are normal for a strip
+ * floor.
+ */
 export const PLANK_PRESETS: readonly PlankSpec[] = [
-  { widthIn: 5, lengthIn: 48, name: '5" x 48" LVP' },
-  { widthIn: 6, lengthIn: 48, name: '6" x 48" LVP' },
-  { widthIn: 7, lengthIn: 48, name: '7" x 48" LVP' },
-  { widthIn: 7, lengthIn: 60, name: '7" x 60" LVP' },
-  { widthIn: 9, lengthIn: 60, name: '9" x 60" plank' },
-  { widthIn: 2.25, lengthIn: 36, name: '2 1/4" strip oak' },
+  { widthIn: 5, lengthIn: 48, name: '5" x 48" LVP', minRipWidthIn: 1.75 },
+  { widthIn: 6, lengthIn: 48, name: '6" x 48" LVP', minRipWidthIn: 2 },
+  { widthIn: 7, lengthIn: 48, name: '7" x 48" LVP', minRipWidthIn: 2.25 },
+  { widthIn: 7, lengthIn: 60, name: '7" x 60" LVP', minRipWidthIn: 2.25 },
+  { widthIn: 9, lengthIn: 60, name: '9" x 60" plank', minRipWidthIn: 3 },
+  { widthIn: 2.25, lengthIn: 36, name: '2 1/4" strip oak', minRipWidthIn: 1 },
 ];
+
+/**
+ * The rule of thumb: a third of the face, to the quarter inch, never below an inch and never
+ * above the board itself.
+ *
+ * The panel uses it to keep the minimum following a **custom** width — but only while the value
+ * still *is* the suggestion for the width it had. Type a figure of your own and it stays put,
+ * which is the only way a per-product number is worth having.
+ */
+export function suggestedMinRipWidthIn(widthIn: number): number {
+  if (!Number.isFinite(widthIn) || widthIn <= 0) return 0;
+  return Math.min(widthIn, Math.max(1, Math.round((widthIn / 3) * 4) / 4));
+}
 
 /** Kept short enough to read whole in the panel's select rather than truncate. */
 export const STAGGER_LABELS: Readonly<Record<StaggerRule, string>> = {

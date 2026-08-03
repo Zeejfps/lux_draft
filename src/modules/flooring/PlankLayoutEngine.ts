@@ -133,6 +133,14 @@ export interface Plank {
   readonly corners: readonly [Vector2, Vector2, Vector2, Vector2];
   /** True when the piece was cut — shorter than a full plank, ripped narrower, or mitred. */
   readonly cut: boolean;
+  /**
+   * True when `width` is below the plank's `minRipWidthIn` — a sliver.
+   *
+   * Advisory. The board is laid exactly where it would be anyway; this only marks it, so the
+   * renderer can colour it and the panels can count it. See `PlankSpec.minRipWidthIn` for why the
+   * engine flags rather than fixes.
+   */
+  readonly narrow: boolean;
 }
 
 /** One line of the cut list: "14 pieces at 23 1/2 in", or "3 at 48 → 41 1/2 in @ 22°". */
@@ -164,6 +172,16 @@ export interface PlankLayout {
   readonly coveredSqft: number;
   readonly purchasedSqft: number;
   readonly wastePercent: number;
+  /** How many boards came out below `PlankSpec.minRipWidthIn`. */
+  readonly narrowPieces: number;
+  /**
+   * The narrowest board on the floor, inches — `null` when nothing was ripped at all.
+   *
+   * Reported whether or not it trips the minimum, because the useful thing to say next to the
+   * count is *how* narrow, and a floor sitting just inside the limit is the one where nudging the
+   * origin is worth it.
+   */
+  readonly narrowestRipIn: number | null;
   /** True when `MAX_PLANKS` stopped the run; the figures below it are then a floor, not a total. */
   readonly truncated: boolean;
 }
@@ -179,6 +197,8 @@ export const EMPTY_LAYOUT: PlankLayout = {
   coveredSqft: 0,
   purchasedSqft: 0,
   wastePercent: 0,
+  narrowPieces: 0,
+  narrowestRipIn: null,
   truncated: false,
 };
 
@@ -209,7 +229,10 @@ export function layoutKey(inputs: LayoutInputs): string {
     // `null` is the unrestricted case and must key identically to a document written before
     // regions existed, so it contributes a fixed token rather than the room's own ring.
     inputs.regions == null ? 'all' : inputs.regions.map(ring).join('|'),
-    `${n(plank.widthIn)}x${n(plank.lengthIn)}`,
+    // The rip minimum is in the key even though it moves no geometry: it decides `Plank.narrow`
+    // and the two summary figures, so a layout cached under the old value would come back with
+    // the wrong boards flagged.
+    `${n(plank.widthIn)}x${n(plank.lengthIn)}@${n(plank.minRipWidthIn)}`,
     [
       n(layout.runAngleDeg),
       layout.startCorner,
@@ -689,6 +712,18 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   const gap = Math.max(0, layout.expansionGapIn) / INCHES_PER_FOOT;
   const minEndCut = Math.max(0, layout.minEndCutIn) / INCHES_PER_FOOT;
 
+  /**
+   * The rip minimum, in feet, clamped into `(0, plankWidth]`.
+   *
+   * Capped at the board's own width because a minimum above it would flag every board on the
+   * floor including the un-ripped ones, which is not a warning but noise. A non-finite value
+   * falls to zero — the check off — rather than poisoning the comparison into never firing,
+   * which would look identical to a clean floor.
+   */
+  const minRip = Number.isFinite(plank.minRipWidthIn)
+    ? Math.min(plankWidth, Math.max(0, plank.minRipWidthIn / INCHES_PER_FOOT))
+    : 0;
+
   // The gap is taken out of the geometry once, here, so every wall gets it — including the ones
   // the run is parallel to, and the edges of an obstacle, which the planks stop short of too.
   const room = insetPolygon(
@@ -789,6 +824,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   const cuts: CutPiece[] = [];
   let covered = 0;
   let fullPieces = 0;
+  let narrowPieces = 0;
+  let narrowestRip = Infinity;
   let truncated = false;
 
   /** The row a band belongs to — sub-bands of one row share its offset and so its joints. */
@@ -936,6 +973,13 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
         Math.abs(cell.endHi - cell.endLo)
       );
       const mitred = slant > EPS;
+      // A rip, and how bad. Measured against the nominal width rather than against the band grid,
+      // so a board narrowed by an obstacle's corner counts the same as one narrowed by a wall —
+      // both are a strip the installer has to cut down the length of, and both fail the same way.
+      const ripped = width < plankWidth - EPS;
+      const narrow = ripped && width < minRip - EPS;
+      if (narrow) narrowPieces += 1;
+      if (ripped && width < narrowestRip) narrowestRip = width;
 
       planks.push({
         id: `p${row}:${column}`,
@@ -953,7 +997,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
           toWorld(frame, { x: cell.endHi, y: cell.bandHigh }),
           toWorld(frame, { x: cell.startHi, y: cell.bandHigh }),
         ],
-        cut: length < plankLength - EPS || width < plankWidth - EPS || mitred,
+        cut: length < plankLength - EPS || ripped || mitred,
+        narrow,
       });
       // A ripped board consumes a full-width one, so demand is length-only; the rip shows up
       // as waste because `coveredSqft` counts the narrower installed strip. The extent rather
@@ -994,6 +1039,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     coveredSqft,
     purchasedSqft,
     wastePercent,
+    narrowPieces,
+    narrowestRipIn: narrowestRip === Infinity ? null : narrowestRip * INCHES_PER_FOOT,
     truncated,
   };
 }

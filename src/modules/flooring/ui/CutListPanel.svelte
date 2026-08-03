@@ -83,6 +83,17 @@
       <div class="panel-info-row"><span>Plank</span><span>{plank.name}</span></div>
       <div class="panel-info-row"><span>Full boards</span><span>{layout.fullPieces}</span></div>
       <div class="panel-info-row"><span>Cut pieces</span><span>{layout.cutPieces}</span></div>
+      {#if layout.narrowestRipIn != null}
+        <!-- Only once something was ripped: on a floor that came out even this row would be a
+             blank the reader has to interpret. -->
+        <div class="panel-info-row">
+          <span>Narrowest rip</span>
+          <span class:narrow={layout.narrowPieces > 0}>
+            {inches(layout.narrowestRipIn)}
+            {#if layout.narrowPieces > 0}&times; {layout.narrowPieces}{/if}
+          </span>
+        </div>
+      {/if}
       <div class="panel-info-row">
         <span>Purchased area</span><span>{sqft(layout.purchasedSqft)} sq ft</span>
       </div>
@@ -137,6 +148,9 @@
         Row {$hoveredPlank.row}, board {$hoveredPlank.column + 1} &mdash;
         {inches($hoveredPlank.length * 12)}
         {$hoveredPlank.cut ? '(cut)' : '(full)'}
+        {#if $hoveredPlank.narrow}
+          <span class="narrow">&mdash; ripped to {inches($hoveredPlank.width * 12)}</span>
+        {/if}
       </div>
     {/if}
   {/if}
@@ -168,6 +182,11 @@
 
   .total-value.high {
     color: var(--status-warning, #f59e0b);
+  }
+
+  /* The red the flagged boards are drawn in. */
+  .narrow {
+    color: #d9483b;
   }
 
   .total-label {

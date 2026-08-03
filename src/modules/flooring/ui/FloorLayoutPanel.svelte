@@ -8,6 +8,7 @@
     flooringData,
     layoutConfig,
     layoutPanelVisible,
+    plankLayout,
     plankSpec,
     removeFloorDivider,
     setFloorDividerKind,
@@ -24,6 +25,7 @@
     START_CORNER_LABELS,
     SURFACE_LABELS,
     TRANSITION_LABELS,
+    suggestedMinRipWidthIn,
   } from '../types';
 
   /**
@@ -69,8 +71,33 @@
     if (!Number.isFinite(value) || value <= 0) return;
     const next: PlankSpec = { ...plank, [field]: value };
     next.name = `${next.widthIn}" x ${next.lengthIn}"`;
+    // A rip minimum still sitting at the rule of thumb follows the board; one the user typed
+    // stays where they put it. Without this, narrowing a 9" board to 2 1/4" would keep a 3"
+    // minimum and flag every rip on the floor.
+    if (field === 'widthIn' && plank.minRipWidthIn === suggestedMinRipWidthIn(plank.widthIn)) {
+      next.minRipWidthIn = suggestedMinRipWidthIn(value);
+    }
     setPlank(next);
   }
+
+  function setMinRipWidth(e: Event): void {
+    const value = parseFloat((e.target as HTMLInputElement).value);
+    if (!Number.isFinite(value) || value < 0) return;
+    setPlank({ ...plank, minRipWidthIn: value });
+  }
+
+  /** 2.25 -> `2 1/4"`. Same reading as the cut list: a tape measure, not a calculator. */
+  function inches(value: number): string {
+    const whole = Math.floor(value + 1e-9);
+    const eighths = Math.round((value - whole) * 8);
+    if (eighths === 0) return `${whole}"`;
+    if (eighths === 8) return `${whole + 1}"`;
+    const divisor = eighths % 4 === 0 ? 4 : eighths % 2 === 0 ? 2 : 1;
+    return `${whole ? `${whole} ` : ''}${eighths / divisor}/${8 / divisor}"`;
+  }
+
+  $: narrowPieces = $plankLayout.narrowPieces;
+  $: narrowestRipIn = $plankLayout.narrowestRipIn;
 
   function setNumber(field: 'runAngleDeg' | 'minEndCutIn' | 'expansionGapIn' | 'seed', e: Event) {
     const value = parseFloat((e.target as HTMLInputElement).value);
@@ -170,6 +197,32 @@
         <span class="unit">in</span>
       </div>
     </label>
+
+    <label class="control-row">
+      <span>Min rip width</span>
+      <div class="input-group">
+        <input
+          class="panel-input"
+          type="number"
+          min="0"
+          max={plank.widthIn}
+          step="0.25"
+          title="Narrowest acceptable ripped row. Boards below it are drawn red. 0 turns the check off."
+          value={plank.minRipWidthIn}
+          on:change={setMinRipWidth}
+        />
+        <span class="unit">in</span>
+      </div>
+    </label>
+
+    {#if narrowPieces > 0 && narrowestRipIn != null}
+      <p class="hint warn-hint">
+        <strong>{narrowPieces}</strong>
+        {narrowPieces === 1 ? 'board is' : 'boards are'} ripped below {inches(plank.minRipWidthIn)} —
+        narrowest {inches(narrowestRipIn)}. They are drawn red. Rip the first row down as well so
+        both ends of the room are even, or move the origin across the run.
+      </p>
+    {/if}
   </div>
 
   <div class="section" class:highlight={originSelected}>
@@ -450,6 +503,20 @@
   .warn {
     font-size: 10px;
     color: #ef4444;
+  }
+
+  /* The same red the flagged boards are drawn in, so the message and the floor read as one thing. */
+  .warn-hint {
+    margin-top: 6px;
+    padding: 4px 6px;
+    border-left: 2px solid #d9483b;
+    border-radius: var(--radius-sm);
+    background: var(--panel-bg-alt);
+    color: var(--text-secondary);
+  }
+
+  .warn-hint strong {
+    color: #d9483b;
   }
 
   .remove {

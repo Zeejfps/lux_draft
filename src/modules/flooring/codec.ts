@@ -139,6 +139,10 @@ function readPlank(value: unknown): PlankSpec {
     if (value.lengthIn <= 0) fail('plank.lengthIn must be greater than zero');
     base.lengthIn = value.lengthIn;
   }
+  if (isFiniteNumber(value.minRipWidthIn)) {
+    if (value.minRipWidthIn < 0) fail('plank.minRipWidthIn must not be negative');
+    base.minRipWidthIn = value.minRipWidthIn;
+  }
   if (typeof value.name === 'string') base.name = value.name;
   return base;
 }

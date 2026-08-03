@@ -79,7 +79,7 @@ describe('a room with no floor', () => {
   });
 
   it('lays nothing for a degenerate plank', () => {
-    const plank: PlankSpec = { widthIn: 0, lengthIn: 48, name: 'bad' };
+    const plank: PlankSpec = { widthIn: 0, lengthIn: 48, name: 'bad', minRipWidthIn: 2 };
     expect(computePlankLayout(inputs({ plank })).planks).toHaveLength(0);
   });
 
@@ -92,7 +92,7 @@ describe('a room with no floor', () => {
    */
   describe.each([Number.NaN, Number.POSITIVE_INFINITY])('a non-finite input (%p)', (bad) => {
     it('lays nothing for a plank dimension', () => {
-      const plank: PlankSpec = { widthIn: bad, lengthIn: 48, name: 'bad' };
+      const plank: PlankSpec = { widthIn: bad, lengthIn: 48, name: 'bad', minRipWidthIn: 2 };
       expect(computePlankLayout(inputs({ plank })).planks).toHaveLength(0);
       expect(
         computePlankLayout(inputs({ plank: { ...plank, widthIn: 7, lengthIn: bad } })).planks
@@ -694,7 +694,7 @@ describe('layoutKey — the cache key', () => {
 
 describe('bounded work', () => {
   it('a degenerate plank truncates instead of hanging the tab', () => {
-    const plank: PlankSpec = { widthIn: 0.005, lengthIn: 0.005, name: 'absurd' };
+    const plank: PlankSpec = { widthIn: 0.005, lengthIn: 0.005, name: 'absurd', minRipWidthIn: 0 };
     const layout = computePlankLayout(inputs({ plank }));
     expect(layout.truncated).toBe(true);
     expect(layout.planks.length).toBeLessThanOrEqual(20000);
@@ -930,5 +930,65 @@ describe('a wall that runs along the rows', () => {
     const b = rowEdges(15.5, { x: 0.4, y: 0 });
     expect(a.length).toBeGreaterThan(0);
     for (const edge of a) expect(b).not.toContain(edge);
+  });
+});
+
+describe('the minimum rip width', () => {
+  /** 20 ft of height is 34.28 rows of 7": the last row rips to exactly 2". */
+  const withMinRip = (minRipWidthIn: number) =>
+    computePlankLayout(
+      inputs({
+        plank: { ...defaults.plank, minRipWidthIn },
+        layout: { ...defaults.layout, expansionGapIn: 0 },
+      })
+    );
+
+  it('flags the boards ripped below it and no others', () => {
+    const layout = withMinRip(2.25);
+    const narrow = layout.planks.filter((p) => p.narrow);
+    expect(narrow.length).toBeGreaterThan(0);
+    expect(narrow.length).toBe(layout.narrowPieces);
+    for (const plank of layout.planks) {
+      expect(plank.narrow).toBe(plank.width * 12 < 2.25 - 1e-9);
+    }
+  });
+
+  it('flags nothing when the rip clears the minimum', () => {
+    const layout = withMinRip(1.5);
+    expect(layout.narrowPieces).toBe(0);
+    expect(layout.planks.some((p) => p.narrow)).toBe(false);
+    // Still ripped — the check is advisory, so the geometry is the same floor either way.
+    expect(layout.narrowestRipIn).toBeCloseTo(2, 4);
+    expect(layout.planks.length).toBe(withMinRip(2.25).planks.length);
+  });
+
+  it('is off at zero', () => {
+    expect(withMinRip(0).narrowPieces).toBe(0);
+  });
+
+  it('never flags a board that was not ripped, whatever the minimum', () => {
+    // Clamped to the plank's own width: a minimum above it would otherwise light up the
+    // full-width rows too, which is noise rather than a warning.
+    const layout = withMinRip(defaults.plank.widthIn * 2);
+    expect(layout.narrowPieces).toBeGreaterThan(0);
+    for (const plank of layout.planks) {
+      if (plank.narrow) expect(plank.width).toBeLessThan(defaults.plank.widthIn / 12 - 1e-9);
+    }
+  });
+
+  it('reports the narrowest rip, and nothing when the floor came out even', () => {
+    expect(withMinRip(2.25).narrowestRipIn).toBeCloseTo(2, 4);
+    // 21 ft of height is exactly 36 rows of 7", so no row is ripped at all.
+    const even = computePlankLayout(
+      inputs({ walls: rectWalls(20, 21), layout: { ...defaults.layout, expansionGapIn: 0 } })
+    );
+    expect(even.narrowestRipIn).toBeNull();
+    expect(even.narrowPieces).toBe(0);
+  });
+
+  it('is part of the structural key, since it decides which boards are flagged', () => {
+    expect(layoutKey(inputs({ plank: { ...defaults.plank, minRipWidthIn: 2 } }))).not.toBe(
+      layoutKey(inputs({ plank: { ...defaults.plank, minRipWidthIn: 3 } }))
+    );
   });
 });

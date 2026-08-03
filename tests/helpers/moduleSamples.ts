@@ -57,7 +57,9 @@ export const COMMAND_SAMPLES: Record<string, unknown> = {
       seed: 7,
     },
   },
-  [flooring.setPlankSpec.type]: { plank: { widthIn: 6, lengthIn: 36, name: 'Sample plank' } },
+  [flooring.setPlankSpec.type]: {
+    plank: { widthIn: 6, lengthIn: 36, name: 'Sample plank', minRipWidthIn: 2 },
+  },
   [flooring.moveOrigin.type]: { position: { x: 2, y: 3 } },
   [flooring.addTransition.type]: {
     transition: { id: 'sample-transition', doorId: 'sample-door', kind: 'reducer' },

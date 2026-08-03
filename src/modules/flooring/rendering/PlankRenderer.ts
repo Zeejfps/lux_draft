@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { PlankLayout } from '../PlankLayoutEngine';
+import type { Plank, PlankLayout } from '../PlankLayoutEngine';
 
 /**
  * The floor, as a single `THREE.InstancedMesh`.
@@ -35,6 +35,29 @@ const PLANK_COLOR = new THREE.Color(0xb98a56);
 const PLANK_COLOR_ALT = new THREE.Color(0xa97c4c);
 const CUT_PLANK_COLOR = new THREE.Color(0xc99a63);
 const HOVER_COLOR = new THREE.Color(0x38bdf8);
+
+/**
+ * A board ripped below the plank's `minRipWidthIn`.
+ *
+ * Red rather than another tan: the three wood tints above differ by a few percent of lightness
+ * because they are all the same floor, and a sliver is the one thing on it that is a *defect*.
+ * It has to be findable at a glance in a room of 700 boards, and against a floor that is entirely
+ * warm mid-tones only a hue this far off it is.
+ */
+const NARROW_PLANK_COLOR = new THREE.Color(0xd9483b);
+
+/**
+ * The tint a plank draws at, before hover.
+ *
+ * One function, because the update loop and the hover path both need it and had drifted into two
+ * copies of the same ternary — which is how the narrow tint would have shown up on a fresh layout
+ * and vanished the moment the pointer crossed the floor.
+ */
+function baseColor(plank: Plank): THREE.Color {
+  if (plank.narrow) return NARROW_PLANK_COLOR;
+  if (plank.cut) return CUT_PLANK_COLOR;
+  return plank.row % 2 === 0 ? PLANK_COLOR : PLANK_COLOR_ALT;
+}
 
 /** Drawn under the walls, over the grid. */
 const Z_PLANK = -0.02;
@@ -98,8 +121,23 @@ export class PlankRenderer {
 
     // A 1x1 plane scaled per instance: one geometry for every plank, whatever its length.
     this.geometry = new THREE.PlaneGeometry(1, 1);
+    /**
+     * **No `vertexColors`.** The per-plank tint arrives through `instanceColor`, and asking for
+     * both silently renders the whole floor black.
+     *
+     * Three derives `USE_COLOR` from two different expressions. The vertex stage takes it from
+     * `material.vertexColors` alone (`WebGLProgram.js:566`) and then runs `vColor *= color`; the
+     * fragment stage takes it from `vertexColors || instancingColor` (`:735`). This geometry has
+     * no `color` attribute — nothing here is a per-vertex colour — so with `vertexColors: true`
+     * that multiply ran against a missing attribute, which WebGL supplies as `(0, 0, 0)`. The
+     * following `vColor *= instanceColor` then multiplied into zero, so every plank drew black
+     * and the floor's apparent colour was the seam quad's brown at 45% over it. Alternating rows,
+     * the cut tint and the hover highlight were all being written and all being discarded.
+     *
+     * Dropping the flag leaves `USE_INSTANCING_COLOR` to open `vColor` at `vec3(1.0)`, and the
+     * fragment stage still applies it because `instancingColor` is enough for its own define.
+     */
     this.material = new THREE.MeshBasicMaterial({
-      vertexColors: true,
       transparent: true,
       opacity: 0.9,
     });
@@ -227,14 +265,9 @@ export class PlankRenderer {
         (fillTopRight - fillHalf) / fillX
       );
 
-      // Alternating row tint plus a lighter cut piece: enough to read the stagger and to see
-      // at a glance where the off-cuts land, without a texture.
-      const base = plank.cut
-        ? CUT_PLANK_COLOR
-        : plank.row % 2 === 0
-          ? PLANK_COLOR
-          : PLANK_COLOR_ALT;
-      const color = plank.id === this.hoveredId ? HOVER_COLOR : base;
+      // Alternating row tint, a lighter cut piece and a red sliver: enough to read the stagger,
+      // to see where the off-cuts land and to find an unusable rip, without a texture.
+      const color = plank.id === this.hoveredId ? HOVER_COLOR : baseColor(plank);
       colors?.setXYZ(i, color.r, color.g, color.b);
 
       // The seam is the full-size quad behind the inset fill: one extra instance per plank,
@@ -274,12 +307,7 @@ export class PlankRenderer {
     const planks = this.layout.planks;
     for (let i = 0; i < planks.length; i++) {
       const plank = planks[i];
-      const base = plank.cut
-        ? CUT_PLANK_COLOR
-        : plank.row % 2 === 0
-          ? PLANK_COLOR
-          : PLANK_COLOR_ALT;
-      const color = plank.id === id ? HOVER_COLOR : base;
+      const color = plank.id === id ? HOVER_COLOR : baseColor(plank);
       colors.setXYZ(i, color.r, color.g, color.b);
     }
     colors.needsUpdate = true;

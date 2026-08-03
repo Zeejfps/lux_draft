@@ -46,7 +46,7 @@ beforeEach(() => {
 describe('every setter is one command and one history entry', () => {
   const cases: [string, () => void][] = [
     ['layout', () => updateLayoutConfig({ stagger: 'half' })],
-    ['plank', () => setPlank({ widthIn: 5, lengthIn: 36, name: 'Narrow' })],
+    ['plank', () => setPlank({ widthIn: 5, lengthIn: 36, name: 'Narrow', minRipWidthIn: 1.75 })],
     ['origin', () => setOrigin({ x: 1, y: 2 })],
     ['transition', () => addDoorTransition('d1')],
     ['divider', () => addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 })],
@@ -65,7 +65,7 @@ describe('every setter is one command and one history entry', () => {
   it('labels the entry for what the user did, not for what changed', () => {
     updateLayoutConfig({ stagger: 'half' });
     expect(sessionStore.current().history.past.at(-1)?.label).toBe('Change floor layout');
-    setPlank({ widthIn: 5, lengthIn: 36, name: 'Narrow' });
+    setPlank({ widthIn: 5, lengthIn: 36, name: 'Narrow', minRipWidthIn: 1.75 });
     expect(sessionStore.current().history.past.at(-1)?.label).toBe('Change plank size');
   });
 
@@ -84,7 +84,7 @@ describe('every setter is one command and one history entry', () => {
 describe('reads', () => {
   it('the committed projections track the document', () => {
     expect(get(plankSpec).widthIn).toBe(7);
-    setPlank({ widthIn: 9, lengthIn: 60, name: 'Wide' });
+    setPlank({ widthIn: 9, lengthIn: 60, name: 'Wide', minRipWidthIn: 3 });
     expect(get(plankSpec).widthIn).toBe(9);
     expect(get(layoutConfig)).toEqual(slice().layout);
     expect(get(committedFlooringData)).toEqual(slice());
