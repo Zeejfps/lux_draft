@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Vector2, UnitFormat } from '../types';
 import { formatDegrees, formatImperial } from '../utils/format';
-import { clearGroup, createTextSprite } from '../utils/three';
+import { clearGroup, createTextSprite, createThickLine } from '../utils/three';
 import {
   Z_LAYERS,
   GEOMETRY,
@@ -15,6 +15,10 @@ interface MeasurementColors {
   xComponent: number;
   yComponent: number;
 }
+
+/** Halo color and strength, shared by every measurement line and marker. */
+const MEASUREMENT_OUTLINE_COLOR = 0x000000;
+const MEASUREMENT_OUTLINE_OPACITY = 0.55;
 
 const DEFAULT_COLORS: MeasurementColors = {
   main: 0xff00ff,
@@ -80,21 +84,52 @@ export class MeasurementRenderer {
     }
   }
 
+  /**
+   * Draws a measurement line, with a dark halo underneath so it stays legible over light
+   * flooring as well as a dark canvas. The halo goes on the base measurement layer and
+   * the colored line just above it.
+   */
+  private addLine(
+    points: Vector2[],
+    color: number,
+    width: number,
+    dash?: { dashSize: number; gapSize: number }
+  ): void {
+    this.group.add(
+      createThickLine(points, {
+        color: MEASUREMENT_OUTLINE_COLOR,
+        width: width + GEOMETRY.MEASUREMENT_OUTLINE_WIDTH * 2,
+        z: Z_LAYERS.MEASUREMENT,
+        dash,
+        opacity: MEASUREMENT_OUTLINE_OPACITY,
+      })
+    );
+    this.group.add(
+      createThickLine(points, { color, width, z: Z_LAYERS.MEASUREMENT + 0.002, dash })
+    );
+  }
+
   private renderDiagonalLine(from: Vector2, to: Vector2): void {
-    const points = [
-      new THREE.Vector3(from.x, from.y, Z_LAYERS.MEASUREMENT),
-      new THREE.Vector3(to.x, to.y, Z_LAYERS.MEASUREMENT),
-    ];
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
-      color: this.colors.main,
-      linewidth: 2,
-    });
-    this.group.add(new THREE.Line(geometry, material));
+    this.addLine([from, to], this.colors.main, GEOMETRY.MEASUREMENT_LINE_WIDTH);
   }
 
   private renderEndpointMarkers(from: Vector2, to: Vector2): void {
     for (const point of [from, to]) {
+      // Halo ring, matching the one under the lines.
+      const halo = new THREE.Mesh(
+        new THREE.CircleGeometry(
+          GEOMETRY.MEASUREMENT_MARKER_RADIUS + GEOMETRY.MEASUREMENT_OUTLINE_WIDTH,
+          GEOMETRY.CIRCLE_SEGMENTS
+        ),
+        new THREE.MeshBasicMaterial({
+          color: MEASUREMENT_OUTLINE_COLOR,
+          transparent: true,
+          opacity: MEASUREMENT_OUTLINE_OPACITY,
+        })
+      );
+      halo.position.set(point.x, point.y, Z_LAYERS.MEASUREMENT + 0.008);
+      this.group.add(halo);
+
       const geometry = new THREE.CircleGeometry(
         GEOMETRY.MEASUREMENT_MARKER_RADIUS,
         GEOMETRY.CIRCLE_SEGMENTS
@@ -113,20 +148,12 @@ export class MeasurementRenderer {
     distance: number,
     color: number
   ): void {
-    // Dashed line
-    const points = [
-      new THREE.Vector3(lineStart.x, lineStart.y, Z_LAYERS.MEASUREMENT),
-      new THREE.Vector3(lineEnd.x, lineEnd.y, Z_LAYERS.MEASUREMENT),
-    ];
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineDashedMaterial({
+    this.addLine(
+      [lineStart, lineEnd],
       color,
-      dashSize: DASH_PATTERNS.MEASUREMENT_COMPONENT.dashSize,
-      gapSize: DASH_PATTERNS.MEASUREMENT_COMPONENT.gapSize,
-    });
-    const line = new THREE.Line(geometry, material);
-    line.computeLineDistances();
-    this.group.add(line);
+      GEOMETRY.MEASUREMENT_COMPONENT_WIDTH,
+      DASH_PATTERNS.MEASUREMENT_COMPONENT
+    );
 
     // Label
     const label = this.createLabel(
@@ -213,21 +240,15 @@ export class MeasurementRenderer {
     while (sweep > Math.PI) sweep -= 2 * Math.PI;
     while (sweep < -Math.PI) sweep += 2 * Math.PI;
 
-    const points: THREE.Vector3[] = [];
+    const points: Vector2[] = [];
     for (let i = 0; i <= GEOMETRY.ARC_SEGMENTS; i++) {
       const theta = startAngle + (sweep * i) / GEOMETRY.ARC_SEGMENTS;
-      points.push(
-        new THREE.Vector3(
-          corner.x + Math.cos(theta) * radius,
-          corner.y + Math.sin(theta) * radius,
-          Z_LAYERS.MEASUREMENT
-        )
-      );
+      points.push({
+        x: corner.x + Math.cos(theta) * radius,
+        y: corner.y + Math.sin(theta) * radius,
+      });
     }
-
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color });
-    this.group.add(new THREE.Line(geometry, material));
+    this.addLine(points, color, GEOMETRY.MEASUREMENT_ANGLE_WIDTH);
 
     // Label sits just outside the arc, on the bisector.
     const bisector = startAngle + sweep / 2;

@@ -34,6 +34,13 @@ export const GEOMETRY = {
   HINGE_RADIUS: 0.08,
   MEASUREMENT_MARKER_RADIUS: 0.15,
   MEASUREMENT_ANGLE_RADIUS: 0.8,
+  // Line widths in world units — WebGL ignores `linewidth`, so measurement lines are
+  // built as geometry (see createThickLine).
+  MEASUREMENT_LINE_WIDTH: 0.09,
+  MEASUREMENT_COMPONENT_WIDTH: 0.07,
+  MEASUREMENT_ANGLE_WIDTH: 0.06,
+  /** Dark halo drawn under every measurement line so it reads over any floor color. */
+  MEASUREMENT_OUTLINE_WIDTH: 0.05,
   CIRCLE_SEGMENTS: 16,
   CIRCLE_SEGMENTS_HIGH: 32,
   HINGE_SEGMENTS: 12,
