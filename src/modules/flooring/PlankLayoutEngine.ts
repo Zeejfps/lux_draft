@@ -645,7 +645,40 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
 
   const plankWidth = plank.widthIn / INCHES_PER_FOOT;
   const plankLength = plank.lengthIn / INCHES_PER_FOOT;
-  if (!isClosed || walls.length < 3 || plankWidth <= 0 || plankLength <= 0) {
+  /**
+   * Every number the frame, the grid or the gap is built from, checked for being a number.
+   *
+   * Both non-finite values get through an ordered comparison, and each does its own damage.
+   * `NaN` passes *every* bound below — including `rowCount > MAX_PLANKS` — and comes out the far
+   * end as a floor of planks whose corners are all `NaN`: drawn as nothing, hit-tested as
+   * nothing, and listed in the cut list as a length no saw can be set to. `Infinity` passes the
+   * `> 0` tests honestly and then lays one board per row that reaches the far wall, with a
+   * purchased area of `Infinity` and a waste figure of `NaN`. An empty layout says what both of
+   * them mean, and says it once.
+   *
+   * The codec validates each of these with `Number.isFinite` on the way in, so a stored or an
+   * imported document cannot arrive here with one. A command payload is copied verbatim, so a
+   * programmatic caller can, and this engine is public and pure — a test or a future caller may
+   * hand it inputs no document ever held. `layout.seed` is absent deliberately: `hashFraction`
+   * truncates it, so a non-finite seed is already a well-defined floor rather than a broken one.
+   */
+  const finite = (...values: readonly number[]): boolean => values.every(Number.isFinite);
+  if (
+    !isClosed ||
+    walls.length < 3 ||
+    !(plankWidth > 0) ||
+    !(plankLength > 0) ||
+    !finite(
+      plankWidth,
+      plankLength,
+      origin.x,
+      origin.y,
+      layout.runAngleDeg,
+      layout.expansionGapIn,
+      layout.minEndCutIn,
+      ...layout.rowOffsetPattern
+    )
+  ) {
     return { ...EMPTY_LAYOUT, key };
   }
 

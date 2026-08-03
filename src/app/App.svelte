@@ -386,6 +386,29 @@
     border-color: var(--button-active);
   }
 
+  /*
+   * The native spin buttons, off everywhere.
+   *
+   * WebKit paints `::-webkit-inner-spin-button` *inside* the content box rather than beside it,
+   * so on a right-aligned field it lands on top of the last digit or two — the value is
+   * unreadable exactly while the pointer is over the control that changes it. Every numeric
+   * field in this app is narrow, monospace and right-aligned, which is the arrangement that
+   * shows the overlap worst. Reserving room for the arrows instead would widen every panel by
+   * about 16px to keep a control a few pixels tall at this row height; the up and down keys
+   * step by the same `step` attribute and go on working with the arrows hidden.
+   */
+  :global(input[type='number']) {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  :global(input[type='number']::-webkit-inner-spin-button),
+  :global(input[type='number']::-webkit-outer-spin-button) {
+    appearance: none;
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
   :global(.panel-info-box) {
     background: var(--input-bg);
     border: 1px solid var(--border-color);

@@ -413,7 +413,8 @@
   }
 
   .input-group input {
-    width: 52px;
+    /* Five monospace digits: `0.125` is a legal value at this step, and at 52px it clipped. */
+    width: 58px;
   }
 
   .unit {

@@ -82,6 +82,44 @@ describe('a room with no floor', () => {
     const plank: PlankSpec = { widthIn: 0, lengthIn: 48, name: 'bad' };
     expect(computePlankLayout(inputs({ plank })).planks).toHaveLength(0);
   });
+
+  /**
+   * A non-finite number passes every ordered comparison in the engine — including the bound on
+   * `rowCount` — so without the guard these produce a floor of planks whose every corner is
+   * `NaN`: invisible, unhittable, and a cut list of lengths no saw can be set to. The codec
+   * rejects all of them at the document boundary; the engine is public and pure, so it rejects
+   * them again here.
+   */
+  describe.each([Number.NaN, Number.POSITIVE_INFINITY])('a non-finite input (%p)', (bad) => {
+    it('lays nothing for a plank dimension', () => {
+      const plank: PlankSpec = { widthIn: bad, lengthIn: 48, name: 'bad' };
+      expect(computePlankLayout(inputs({ plank })).planks).toHaveLength(0);
+      expect(
+        computePlankLayout(inputs({ plank: { ...plank, widthIn: 7, lengthIn: bad } })).planks
+      ).toHaveLength(0);
+    });
+
+    it('lays nothing for an origin', () => {
+      expect(computePlankLayout(inputs({ origin: { x: bad, y: 0 } })).planks).toHaveLength(0);
+      expect(computePlankLayout(inputs({ origin: { x: 0, y: bad } })).planks).toHaveLength(0);
+    });
+
+    it.each(['runAngleDeg', 'expansionGapIn', 'minEndCutIn'] as const)(
+      'lays nothing for %s',
+      (field) => {
+        expect(layoutOf({ [field]: bad }).planks).toHaveLength(0);
+      }
+    );
+
+    it('lays nothing for a row offset pattern entry', () => {
+      expect(layoutOf({ stagger: 'pattern', rowOffsetPattern: [0, bad] }).planks).toHaveLength(0);
+    });
+  });
+
+  /** `hashFraction` truncates the seed, so a non-finite one is a defined floor, not a broken one. */
+  it('still lays a floor for a non-finite random seed', () => {
+    expect(layoutOf({ stagger: 'random', seed: Number.NaN }).planks.length).toBeGreaterThan(0);
+  });
 });
 
 describe('coverage', () => {
