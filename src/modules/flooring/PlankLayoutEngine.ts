@@ -1172,22 +1172,33 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       /** The board's length at each profile point — its long point is the longest of them. */
       const spans = cell.edges.map((_, i) => cell.endXs[i] - cell.startXs[i]);
       /**
-       * The steepest cut on the board, and how far off square it is.
+       * The steepest cut on the board, how far off square it is, and the short point it leaves.
        *
        * Per **segment** rather than end to end: a board whose end bends is cut twice, and an
        * installer sets the saw from the steeper of the two. Measured across that segment's own
        * height, since an angle is a ratio and the segment is what the cut runs across.
+       *
+       * A segment shorter than `MIN_BOARD_FT` across the board's width is skipped, and that is
+       * the difference between a cut and a **scribe**. The boundary a board meets is only as
+       * straight as the wall it was traced from, so the last row against a wall a fraction of a
+       * degree out of square carries a taper a fifth of an inch tall at one corner. Read as a
+       * cut it is a mitre of nearly 90° down to a short point of zero — a saw setting that does
+       * not exist, on a line of the cut list for a board that was cut square and scribed to the
+       * wall. Read as what it is, the board is what the rest of its width says it is.
        */
       let slant = 0;
       let steepest = 0;
+      let shortest = Infinity;
       for (let i = 0; i + 1 < points; i++) {
         const rise = cell.edges[i + 1] - cell.edges[i];
+        if (rise < MIN_BOARD_FT) continue;
         const run = Math.max(
           Math.abs(cell.startXs[i + 1] - cell.startXs[i]),
           Math.abs(cell.endXs[i + 1] - cell.endXs[i])
         );
         slant = Math.max(slant, run);
-        if (rise > EPS) steepest = Math.max(steepest, Math.atan2(run, rise));
+        steepest = Math.max(steepest, Math.atan2(run, rise));
+        shortest = Math.min(shortest, spans[i], spans[i + 1]);
       }
       const mitred = slant > EPS;
       // A rip, and how bad. Measured against the nominal width rather than against the band grid,
@@ -1234,8 +1245,12 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       // installer who cannot find it in the cut list will cut it square.
       if (mitred || length < plankLength - EPS) {
         cuts.push({
+          // The long point over the *whole* profile, because that is the stock the cut consumes;
+          // the short point only over the segments that are cuts, so a scribe does not report a
+          // board as tapering to nothing. With no cut to measure the two coincide, and
+          // `buildCutList` lists it as the square cut it is.
           long: Math.max(...spans),
-          short: Math.min(...spans),
+          short: shortest === Infinity ? Math.max(...spans) : shortest,
           // Off square, from the steepest of the board's cuts. A board with a corner clipped off
           // is one piece of stock with two cuts on one end; the list carries the one an installer
           // has to set the saw for, and the long and short points bracket what it takes off.

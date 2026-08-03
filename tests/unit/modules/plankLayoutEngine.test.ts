@@ -1119,6 +1119,22 @@ describe('an outline that is off true by less than a saw kerf', () => {
       // The wedges left bare are 0.194" x 20 ft twice — under a hundredth of the floor.
       expect(layout.coveredSqft).toBeGreaterThan(0.99 * 20 * 20 - 20);
     });
+
+    /**
+     * A taper a fifth of an inch tall at one corner of a board is a **scribe**, not a mitre.
+     *
+     * The board is cut square and shaved to the wall on site; the saw is set from the rest of
+     * its width. Read as a cut, the same taper reported a mitre of nearly 90° down to a short
+     * point of zero — `48" → 0" @ 90°`, a line for a board that was never cut that way, in a
+     * room whose walls are a fifteenth of a degree off square. Which is every traced room.
+     */
+    it('does not report the crooked wall as a mitre no saw can be set to', () => {
+      for (const entry of layout.cutList) {
+        if (entry.angleDeg == null) continue;
+        expect(entry.angleDeg, JSON.stringify(entry)).toBeLessThan(60);
+        expect(entry.shortIn, JSON.stringify(entry)).toBeGreaterThan(0);
+      }
+    });
   });
 
   it('still resolves a step it could actually cut to', () => {
