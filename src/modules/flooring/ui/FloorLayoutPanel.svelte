@@ -19,6 +19,7 @@
     updateLayoutConfig,
   } from '../store';
   import type { PlankSpec, StaggerRule, StartCorner, SurfaceKind, TransitionKind } from '../types';
+  import { formatInches } from './format';
   import {
     PLANK_PRESETS,
     STAGGER_LABELS,
@@ -84,16 +85,6 @@
     const value = parseFloat((e.target as HTMLInputElement).value);
     if (!Number.isFinite(value) || value < 0) return;
     setPlank({ ...plank, minRipWidthIn: value });
-  }
-
-  /** 2.25 -> `2 1/4"`. Same reading as the cut list: a tape measure, not a calculator. */
-  function inches(value: number): string {
-    const whole = Math.floor(value + 1e-9);
-    const eighths = Math.round((value - whole) * 8);
-    if (eighths === 0) return `${whole}"`;
-    if (eighths === 8) return `${whole + 1}"`;
-    const divisor = eighths % 4 === 0 ? 4 : eighths % 2 === 0 ? 2 : 1;
-    return `${whole ? `${whole} ` : ''}${eighths / divisor}/${8 / divisor}"`;
   }
 
   $: narrowPieces = $plankLayout.narrowPieces;
@@ -218,9 +209,10 @@
     {#if narrowPieces > 0 && narrowestRipIn != null}
       <p class="hint warn-hint">
         <strong>{narrowPieces}</strong>
-        {narrowPieces === 1 ? 'board is' : 'boards are'} ripped below {inches(plank.minRipWidthIn)} —
-        narrowest {inches(narrowestRipIn)}. They are drawn red. Rip the first row down as well so
-        both ends of the room are even, or move the origin across the run.
+        {narrowPieces === 1 ? 'board is' : 'boards are'} ripped below {formatInches(
+          plank.minRipWidthIn
+        )} — narrowest {formatInches(narrowestRipIn)}. They are drawn red. Rip the first row down as
+        well so both ends of the room are even, or move the origin across the run.
       </p>
     {/if}
   </div>

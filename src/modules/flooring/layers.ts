@@ -8,7 +8,14 @@ import { FLOORING_TOOL_DIVIDER } from './constants';
 import { layoutInputsOf, regionsOf } from './layoutProjection';
 import { layoutKey } from './PlankLayoutEngine';
 import { isOriginSelected } from './selection';
-import { hoveredPlank, pendingDivider, planksVisible, plankLayout, requestLayout } from './store';
+import {
+  hoveredPlank,
+  pendingDivider,
+  planksVisible,
+  plankLayout,
+  requestLayout,
+  selectedPlank,
+} from './store';
 import { PlankRenderer } from './rendering/PlankRenderer';
 import { TransitionRenderer } from './rendering/TransitionRenderer';
 import { OriginMarkerRenderer } from './rendering/OriginMarkerRenderer';
@@ -51,6 +58,7 @@ export function createFlooringLayers(scene: THREE.Scene): FlooringLayers {
   // document change.
   const stopLayout = plankLayout.subscribe((layout) => plankRenderer.update(layout));
   const stopHover = hoveredPlank.subscribe((plank) => plankRenderer.setHovered(plank?.id ?? null));
+  const stopPick = selectedPlank.subscribe((plank) => plankRenderer.setSelected(plank?.id ?? null));
   const stopVisible = planksVisible.subscribe((next) => {
     visible = next;
     applyVisibility();
@@ -72,6 +80,7 @@ export function createFlooringLayers(scene: THREE.Scene): FlooringLayers {
     dispose: () => {
       stopLayout();
       stopHover();
+      stopPick();
       stopVisible();
       plankRenderer.dispose();
     },

@@ -147,3 +147,37 @@ describe('a board whose end bends', () => {
     renderer.dispose();
   });
 });
+
+describe('the picked board', () => {
+  const build = () => {
+    const scene = new THREE.Scene();
+    const renderer = new PlankRenderer(scene);
+    renderer.update(layoutOf([plank({ id: 'a', row: 0 }), plank({ id: 'b', row: 1 })]));
+    return { scene, renderer };
+  };
+
+  it('keeps its highlight while the pointer wanders onto another board', () => {
+    // The pick outranks the hover, or reading a board's dimensions would mean holding the mouse
+    // still on it — and the panel would be describing a board with no mark on the floor.
+    const { scene, renderer } = build();
+    renderer.setSelected('a');
+    const picked = hex(colorAt(scene, 0));
+    renderer.setHovered('b');
+    expect(hex(colorAt(scene, 0))).toBe(picked);
+    // ...and the hovered one still reads as hovered, distinctly from the pick.
+    expect(hex(colorAt(scene, 1))).not.toBe(picked);
+    expect(hex(colorAt(scene, 1))).not.toBe(hex(colorAt(scene, 0)));
+    renderer.dispose();
+  });
+
+  it('outranks the hover on the same board, and is given back when cleared', () => {
+    const { scene, renderer } = build();
+    renderer.setHovered('a');
+    const hovered = hex(colorAt(scene, 0));
+    renderer.setSelected('a');
+    expect(hex(colorAt(scene, 0))).not.toBe(hovered);
+    renderer.setSelected(null);
+    expect(hex(colorAt(scene, 0))).toBe(hovered);
+    renderer.dispose();
+  });
+});

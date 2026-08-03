@@ -51,6 +51,15 @@ const CUT_PLANK_COLOR = new THREE.Color(0xc99a63);
 const HOVER_COLOR = new THREE.Color(0x38bdf8);
 
 /**
+ * The board whose dimensions are being read out.
+ *
+ * A deeper tone of the hover blue rather than a different hue: the pointer is usually on the
+ * picked board, so the two are seen together more often than apart, and they have to read as the
+ * same gesture at two strengths — otherwise moving off a picked board looks like the pick moved.
+ */
+const SELECTED_COLOR = new THREE.Color(0x1d4ed8);
+
+/**
  * A board ripped below the plank's `minRipWidthIn`.
  *
  * Red rather than another tan: the three wood tints above differ by a few percent of lightness
@@ -128,6 +137,7 @@ export class PlankRenderer {
 
   private layout: PlankLayout | null = null;
   private hoveredId: string | null = null;
+  private selectedId: string | null = null;
   /**
    * The board each instance belongs to.
    *
@@ -294,7 +304,7 @@ export class PlankRenderer {
 
         // Alternating row tint, a lighter cut piece and a red sliver: enough to read the stagger,
         // to see where the off-cuts land and to find an unusable rip, without a texture.
-        const color = plank.id === this.hoveredId ? HOVER_COLOR : baseColor(plank);
+        const color = this.tint(plank);
         colors?.setXYZ(i, color.r, color.g, color.b);
 
         // The seam is the full-size quad behind the inset fill: one extra instance per segment,
@@ -352,17 +362,37 @@ export class PlankRenderer {
   }
 
   /**
+   * What one board draws at. The pick wins over the hover, so a picked board keeps its highlight
+   * while the pointer wanders across the rest of the floor.
+   */
+  private tint(plank: Plank): THREE.Color {
+    if (plank.id === this.selectedId) return SELECTED_COLOR;
+    if (plank.id === this.hoveredId) return HOVER_COLOR;
+    return baseColor(plank);
+  }
+
+  /**
    * Highlight one plank. Rewrites colours only — no matrices, no allocation — because this runs
    * on `mousemove` and the geometry has not changed.
    */
   setHovered(id: string | null): void {
     if (this.hoveredId === id) return;
     this.hoveredId = id;
+    this.recolour();
+  }
+
+  /** The board being read out. Same colour-only path as the hover, for the same reason. */
+  setSelected(id: string | null): void {
+    if (this.selectedId === id) return;
+    this.selectedId = id;
+    this.recolour();
+  }
+
+  private recolour(): void {
     const colors = this.mesh.instanceColor;
     if (!this.layout || !colors) return;
     for (let i = 0; i < this.owner.length; i++) {
-      const plank = this.owner[i];
-      const color = plank.id === id ? HOVER_COLOR : baseColor(plank);
+      const color = this.tint(this.owner[i]);
       colors.setXYZ(i, color.r, color.g, color.b);
     }
     colors.needsUpdate = true;

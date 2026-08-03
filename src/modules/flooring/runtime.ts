@@ -14,7 +14,14 @@ import { FLOORING_MODULE_ID, type FlooringData } from './codec';
 import { FLOORING_TOOL_DIVIDER, FLOORING_TOOL_TRANSITION } from './constants';
 import { originEntities } from './entities';
 import { createFlooringLayers } from './layers';
-import { DividerPlacementHandler, PlankHoverHandler, TransitionPlacementHandler } from './handlers';
+import {
+  DividerPlacementHandler,
+  PlankHoverHandler,
+  PlankPickHandler,
+  TransitionPlacementHandler,
+} from './handlers';
+import { selection } from '../../floorplan/stores/selectionStore';
+import { isEmptySelection } from '../../floorplan/types/selection';
 import {
   addDoorTransition,
   addFloorDivider,
@@ -24,6 +31,8 @@ import {
   pendingDivider,
   planksVisible,
   removeDoorTransition,
+  selectPlank,
+  selectedPlank,
   startLayoutService,
   summaryVisible,
   toggleLayoutPanel,
@@ -32,6 +41,7 @@ import {
 } from './store';
 import CutListPanel from './ui/CutListPanel.svelte';
 import FloorLayoutPanel from './ui/FloorLayoutPanel.svelte';
+import PlankInfoPanel from './ui/PlankInfoPanel.svelte';
 
 /**
  * The flooring module's **lazy** half (invariant 7).
@@ -41,7 +51,7 @@ import FloorLayoutPanel from './ui/FloorLayoutPanel.svelte';
  * `decodeDocument` needs.
  *
  * This file is the honest measure of how additive a second module is. It declares tools,
- * overlays, one entity, three layers, two handlers and two surfaces, and **nothing
+ * overlays, one entity, three layers, four handlers and three surfaces, and **nothing
  * else** — no routing, no toolbar wiring, no selection plumbing, no hit-testing, no keyboard
  * handling, no share support, no persistence. All of that already worked.
  */
@@ -135,7 +145,7 @@ export const flooringRuntime: ModuleRuntime = {
   // No selection-driven panels: the origin is edited in the Floor Layout surface, which
   // highlights its Origin section when the marker is selected.
 
-  surfaces: [FloorLayoutPanel, CutListPanel] as unknown as PanelComponent[],
+  surfaces: [FloorLayoutPanel, CutListPanel, PlankInfoPanel] as unknown as PanelComponent[],
 
   shortcuts: [
     { key: 'f', description: 'Toggle floor layout settings', run: () => toggleLayoutPanel() },
@@ -166,6 +176,10 @@ export const flooringRuntime: ModuleRuntime = {
         plankAt: (position) => currentPlankIndex()?.at(position) ?? null,
         setHovered: (plank) => hoveredPlank.set(plank),
       }),
+      new PlankPickHandler({
+        plankAt: (position) => currentPlankIndex()?.at(position) ?? null,
+        setSelected: (plank) => selectPlank(plank),
+      }),
     ];
   },
 
@@ -177,6 +191,18 @@ export const flooringRuntime: ModuleRuntime = {
     // rather than delivered into a disposed renderer.
     scope.own(startLayoutService(scope.signal));
     scope.own(() => hoveredPlank.set(null));
+    // A board read-out and a core selection are two answers to the same click, so the later one
+    // wins: `PlankPickHandler` runs first and core's selection handler runs after it, which means
+    // a click that landed on a wall, a vertex, a door, an obstacle or the origin marker ends with
+    // a selection and drops the board it also passed through. A click on bare floor selects
+    // nothing, so the board stands. Cheaper and more honest than re-running core's hit tests
+    // inside the flooring handler, which would have to agree with them forever.
+    scope.own(
+      selection.subscribe((current) => {
+        if (!isEmptySelection(current)) selectPlank(null);
+      })
+    );
+    scope.own(() => selectedPlank.set(null));
     // A half-drawn divider is a gesture, and a gesture does not survive a mode switch.
     scope.own(() => pendingDivider.set(null));
   },

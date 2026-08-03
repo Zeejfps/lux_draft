@@ -120,6 +120,21 @@ export function toggleSummary(): void {
 /** The plank under the cursor. Fed by `PlankHoverHandler` through the spatial index. */
 export const hoveredPlank: Writable<Plank | null> = writable(null);
 
+/**
+ * The plank the user clicked, whose dimensions the board panel reads out.
+ *
+ * Session-local, and **not** a core `Selection`, for the reason `selection.ts` gives: a plank is
+ * derived output, re-derived on every geometry edit, so a selection naming one would be a
+ * reference into a value that does not survive the next wall drag. This store holds the board
+ * itself rather than an id, and `publish` re-resolves it against each new floor — so the panel
+ * follows the same board through a config change and empties when that board stops existing.
+ */
+export const selectedPlank: Writable<Plank | null> = writable(null);
+
+export function selectPlank(plank: Plank | null): void {
+  selectedPlank.set(plank);
+}
+
 // ============================================
 // The layout service
 // ============================================
@@ -143,6 +158,12 @@ function publish(layout: PlankLayout): void {
   // hovers never pays for one.
   index = null;
   layoutStore.set(layout);
+  // A picked board is a *value* out of the old floor, so re-resolve it by id: widen the plank
+  // and the board the panel is reading grows with it rather than freezing at its old figures.
+  // A board whose row no longer exists simply drops the panel, which is the honest answer.
+  selectedPlank.update((plank) =>
+    plank ? (layout.planks.find((p) => p.id === plank.id) ?? null) : null
+  );
 }
 
 /**

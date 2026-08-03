@@ -12,6 +12,7 @@
   } from '../store';
   import { liveTransitions } from '../codec';
   import { TRANSITION_LABELS } from '../types';
+  import { formatInches } from './format';
 
   /**
    * The estimate: cut list, waste and the doorways being trimmed.
@@ -25,18 +26,6 @@
   $: plank = $plankSpec;
   $: doors = $roomStore.geometry.doors;
   $: transitions = liveTransitions($committedFlooringData.transitions, doors);
-
-  /** 23.5 -> `23 1/2"`. A cut list is read off a tape measure, not a calculator. */
-  function inches(value: number): string {
-    const whole = Math.floor(value + 1e-9);
-    const eighths = Math.round((value - whole) * 8);
-    if (eighths === 0) return `${whole}"`;
-    if (eighths === 8) return `${whole + 1}"`;
-    const numerator = eighths;
-    const denominator = 8;
-    const divisor = numerator % 4 === 0 ? 4 : numerator % 2 === 0 ? 2 : 1;
-    return `${whole} ${numerator / divisor}/${denominator / divisor}"`;
-  }
 
   function sqft(value: number): string {
     return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -89,7 +78,7 @@
         <div class="panel-info-row">
           <span>Narrowest rip</span>
           <span class:narrow={layout.narrowPieces > 0}>
-            {inches(layout.narrowestRipIn)}
+            {formatInches(layout.narrowestRipIn)}
             {#if layout.narrowPieces > 0}&times; {layout.narrowPieces}{/if}
           </span>
         </div>
@@ -112,9 +101,9 @@
           <span class="cut-length">
             {#if entry.shortIn != null}
               <!-- Long point, short point and the angle: what it takes to set a saw. -->
-              {inches(entry.lengthIn)} &rarr; {inches(entry.shortIn)} @ {entry.angleDeg}&deg;
+              {formatInches(entry.lengthIn)} &rarr; {formatInches(entry.shortIn)} @ {entry.angleDeg}&deg;
             {:else}
-              {inches(entry.lengthIn)}
+              {formatInches(entry.lengthIn)}
             {/if}
           </span>
           <span class="cut-count">&times; {entry.count}</span>
@@ -146,10 +135,10 @@
     {#if $hoveredPlank}
       <div class="hovered">
         Row {$hoveredPlank.row}, board {$hoveredPlank.column + 1} &mdash;
-        {inches($hoveredPlank.length * 12)}
+        {formatInches($hoveredPlank.length * 12)}
         {$hoveredPlank.cut ? '(cut)' : '(full)'}
         {#if $hoveredPlank.narrow}
-          <span class="narrow">&mdash; ripped to {inches($hoveredPlank.width * 12)}</span>
+          <span class="narrow">&mdash; ripped to {formatInches($hoveredPlank.width * 12)}</span>
         {/if}
       </div>
     {/if}

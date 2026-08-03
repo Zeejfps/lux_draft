@@ -30,10 +30,10 @@ import { originSelection } from '../../../src/modules/flooring/selection';
 import { originEntities } from '../../../src/modules/flooring/entities';
 import { LAYOUT_ORIGIN_ID } from '../../../src/modules/flooring/constants';
 import { PlankIndex } from '../../../src/modules/flooring/PlankIndex';
-import { computePlankLayout } from '../../../src/modules/flooring/PlankLayoutEngine';
+import { computePlankLayout, type Plank } from '../../../src/modules/flooring/PlankLayoutEngine';
 import { addDivider, setSurfaces } from '../../../src/modules/flooring/commands';
 import { solveRegions } from '../../../src/modules/flooring/RegionSolver';
-import { DividerPlacementHandler } from '../../../src/modules/flooring/handlers';
+import { DividerPlacementHandler, PlankPickHandler } from '../../../src/modules/flooring/handlers';
 import { setActiveTool } from '../../../src/floorplan/stores/appStore';
 
 import { FLOORING_TOOL_DIVIDER } from '../../../src/modules/flooring/constants';
@@ -239,10 +239,10 @@ describe('flooring activated through the registry', () => {
       'flooring.transitions',
       'flooring.origin',
     ]);
-    expect(record.handlers).toHaveLength(3);
+    expect(record.handlers).toHaveLength(4);
     expect(record.tools.map((t) => t.id)).toEqual(['flooring.transition', 'flooring.divider']);
     expect(record.overlays.map((o) => o.id)).toContain('flooring.summary');
-    expect(record.surfaces).toHaveLength(2);
+    expect(record.surfaces).toHaveLength(3);
     expect(resolvePanel(originSelection.panelKey)).toBeNull();
     // The shell's count row, straight off the entity seam.
     expect(get(moduleEntitySummary)).toEqual({ label: 'Layout origin', count: 1 });
@@ -462,5 +462,76 @@ describe('the divider tool does not leave a line behind', () => {
     const escape = { worldPos: { x: 0, y: 0 }, key: 'Escape' } as unknown as InputEvent;
     expect(handler.handleKeyDown(escape, ctx('flooring.divider'))).toBe(true);
     expect(pending).toBeNull();
+  });
+});
+
+describe('clicking a board reads out its dimensions', () => {
+  const defaults = defaultFlooringData();
+  const layout = computePlankLayout({
+    walls: rectWalls(20, 20),
+    isClosed: true,
+    obstacles: [],
+    plank: defaults.plank,
+    layout: { ...defaults.layout, expansionGapIn: 0 },
+    origin: defaults.origin,
+  });
+  const index = new PlankIndex(layout);
+
+  let picked: Plank | null;
+  let handler: PlankPickHandler;
+
+  /** Select mode: nothing owns the pointer, which is when a board can be picked. */
+  const selecting = (over: Partial<InteractionContext> = {}) =>
+    ({
+      isDrawingEnabled: false,
+      isModuleToolActive: false,
+      isPlacingDoors: false,
+      isObstacleDrawing: false,
+      isMeasuring: false,
+      isGrabMode: false,
+      ...over,
+    }) as unknown as InteractionContext;
+  const at = (x: number, y: number, key?: string) =>
+    ({ worldPos: { x, y }, key }) as unknown as InputEvent;
+
+  beforeEach(() => {
+    picked = null;
+    handler = new PlankPickHandler({
+      plankAt: (position) => index.at(position),
+      setSelected: (plank) => {
+        picked = plank;
+      },
+    });
+  });
+
+  it('picks the board under the click and never consumes it', () => {
+    const target = layout.planks[10];
+    // False, always: core's selection handler has to see this click too, or the wall, vertex,
+    // door and origin marker that all sit over the floor would stop being clickable.
+    expect(handler.handleClick(at(target.center.x, target.center.y), selecting())).toBe(false);
+    expect(picked?.id).toBe(target.id);
+  });
+
+  it('empties the read-out on a click off the floor', () => {
+    handler.handleClick(at(layout.planks[0].center.x, layout.planks[0].center.y), selecting());
+    expect(picked).not.toBeNull();
+    handler.handleClick(at(-5, -5), selecting());
+    expect(picked).toBeNull();
+  });
+
+  it('stands down while a tool owns the pointer', () => {
+    // Placing a divider is not picking a board, even though the click lands on one.
+    const target = layout.planks[10];
+    const placing = selecting({ isModuleToolActive: true });
+    expect(handler.canHandle(at(0, 0), placing)).toBe(false);
+    handler.handleClick(at(target.center.x, target.center.y), placing);
+    expect(picked).toBeNull();
+  });
+
+  it('dismisses on Escape, and still passes the key on', () => {
+    const target = layout.planks[10];
+    handler.handleClick(at(target.center.x, target.center.y), selecting());
+    expect(handler.handleKeyDown(at(0, 0, 'Escape'), selecting())).toBe(false);
+    expect(picked).toBeNull();
   });
 });

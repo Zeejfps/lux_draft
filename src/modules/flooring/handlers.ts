@@ -232,3 +232,62 @@ export class PlankHoverHandler extends BaseInteractionHandler {
     return false;
   }
 }
+
+export interface PlankPickConfig {
+  plankAt(position: Vector2): Plank | null;
+  setSelected(plank: Plank | null): void;
+}
+
+/**
+ * Click a board to read out its dimensions; click off the floor to put the read-out away.
+ *
+ * Like the hover handler this **observes** — `handleClick` returns false — and for a sharper
+ * reason than convenience. Core's `SelectionHandler` consumes every click in select mode, hit or
+ * miss (a miss starts a box select), so a handler below it would never see one; and a handler
+ * above it that *consumed* would take the click away from the wall, vertex, door, obstacle and
+ * origin marker that sit over the floor, since every one of them is inside a board. Sitting just
+ * above it and passing the click on means the board is picked and core's selection still happens
+ * exactly as it did.
+ *
+ * What resolves the overlap is that the two are cleared against each other rather than
+ * arbitrated here: picking a board is only left standing when core selected nothing — see the
+ * subscription in `runtime.ts`. So clicking the origin marker selects the origin, and clicking
+ * the bare floor under it reads out the board.
+ */
+export class PlankPickHandler extends BaseInteractionHandler {
+  readonly name = 'flooringPlankPick';
+  // Just above core's selection (50), well below any placement tool.
+  readonly priority = 55;
+
+  private readonly config: PlankPickConfig;
+
+  constructor(config: PlankPickConfig) {
+    super();
+    this.config = config;
+  }
+
+  canHandle(_event: InputEvent, context: InteractionContext): boolean {
+    // The same conditions core's selection handler runs under: a tool that owns the pointer is
+    // placing something, and a click that places something is not a click on a board.
+    return (
+      !context.isDrawingEnabled &&
+      !context.isModuleToolActive &&
+      !context.isPlacingDoors &&
+      !context.isObstacleDrawing &&
+      !context.isMeasuring &&
+      !context.isGrabMode
+    );
+  }
+
+  handleClick(event: InputEvent, context: InteractionContext): boolean {
+    if (!this.canHandle(event, context)) return false;
+    this.config.setSelected(this.config.plankAt(event.worldPos));
+    return false;
+  }
+
+  /** Escape dismisses the read-out, and still reaches everything else that wants Escape. */
+  handleKeyDown(event: InputEvent, context: InteractionContext): boolean {
+    if (this.canHandle(event, context) && event.key === 'Escape') this.config.setSelected(null);
+    return false;
+  }
+}
