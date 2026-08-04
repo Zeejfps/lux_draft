@@ -173,6 +173,20 @@ export interface Plank {
    */
   readonly narrow: boolean;
   /**
+   * True when the board is narrower than the stock it came off — one definition, read everywhere.
+   *
+   * It is a **physical** test, at `MIN_FEATURE_FT` rather than at a float epsilon, for the reason
+   * written up at that constant: the outlines reaching the engine have been through a region
+   * merge, a divider snap and a polygon inset, and a board a hundred-thousandth of a foot under
+   * the face width is a 7" board on a 7" plank, not a rip.
+   *
+   * Carried rather than left to the reader to recompute, because the board panel *did* recompute
+   * it — at `1e-6` — and the two answers disagreed on exactly those boards. The panel printed
+   * `7" from 7"`, promising a rip, while the engine reported an uncut board and offered no edge
+   * to measure it from, so the field the text was inviting the user into never appeared.
+   */
+  readonly ripped: boolean;
+  /**
    * Which of the board's two long edges was cut to a **boundary** rather than falling on the row
    * grid, run-frame — the side a rip is measured from, and so the `edge` a rip pin needs.
    *
@@ -296,10 +310,9 @@ export interface PlankLayout {
    *
    * Measured off the laid floor rather than argued from the solve, which is what makes **one**
    * mechanism cover every way a pin can miss: a target the stock cannot reach (60" off a 48"
-   * board), a room redrawn out from under a seed, the single-scan-line approximation the joint
-   * solve makes beside an inside corner, and `stagger: 'offcut'`, which has no shared joint phase
-   * to pin at all. The alternative was a special case per cause, or — the honest prediction —
-   * none.
+   * board), a room redrawn out from under a seed, and the single-scan-line approximation the
+   * joint solve makes beside an inside corner. The alternative was a special case per cause, or —
+   * the honest prediction — none.
    */
   readonly pinsUnsatisfied?: readonly PinKind[];
   /**
@@ -1183,6 +1196,15 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     readonly target: number;
   }
 
+  /**
+   * A joint pin also carries the **absolute** position its joint has to land on, not just the
+   * phase. `stagger: 'offcut'` places each row by a search rather than off a shared anchor, so a
+   * phase is not enough to tell it where to put one — see `solveJoint`.
+   */
+  interface JointSolve extends PinSolve {
+    readonly grid: number;
+  }
+
   const pins: LayoutPins = inputs.pins ?? {};
   const pinnable = (pin: LayoutPin): boolean =>
     finite(pin.seed.x, pin.seed.y, pin.targetIn) && pin.targetIn > 0;
@@ -1237,12 +1259,21 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
    * one that board is actually laid in. That is left to the post-check rather than paid for with
    * more machinery — it is the same mechanism an impossible pin needs anyway.
    *
-   * `stagger: 'offcut'` is refused outright: its offsets come from a search over off-cut
-   * candidates rather than from `ANCHOR_X`, so there is no shared phase to pin. The post-check
-   * reports it, and the panel disables the field.
+   * ## `stagger: 'offcut'`
+   *
+   * The one rule with no shared phase to move: its offsets come from a search over off-cut
+   * candidates row by row, not from `ANCHOR_X`. So the pin is applied to that row **directly** —
+   * `grid` below is the absolute position the joint has to land on, and the row loop hands it to
+   * the pinned row as its only candidate. The rows above resume the search from it, which is what
+   * off-cut staggering does anyway: every row reads the row beneath it, and the pinned row is
+   * simply a row whose grid was decided rather than searched for.
+   *
+   * Refusing the pin outright was the first cut of this, and it made off-cut a dead end — the
+   * length field vanished with a note to pick another stagger rule, on a floor where off-cut is
+   * usually the reason the user chose the rule at all.
    */
-  const solveJoint = (pin: LayoutPin | undefined): PinSolve | null => {
-    if (!pin || !pinnable(pin) || layout.stagger === 'offcut') return null;
+  const solveJoint = (pin: LayoutPin | undefined): JointSolve | null => {
+    if (!pin || !pinnable(pin)) return null;
     const seed = toLocal(frame, pin.seed);
     let spans = bandIntervalsAt(room, seed.y, seed.y);
     if (clips !== null) {
@@ -1265,13 +1296,16 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     const row = Math.floor((seed.y - ANCHOR_Y) / plankWidth);
     return {
       anchor: mod(far - rowOffset(row, layout, plankLength), plankLength),
+      grid: far,
       probe: toWorld(frame, { x: (near + far) / 2, y: seed.y }),
       target: pin.targetIn / INCHES_PER_FOOT,
     };
   };
 
   const joint = solveJoint(pins.joint);
-  const ANCHOR_X = joint?.anchor ?? anchorOf(minX, maxX);
+  // Under `offcut` the shared anchor is not what places a row, so the pin does not move it; the
+  // row loop takes `joint.grid` instead. Everywhere else this *is* the placement.
+  const ANCHOR_X = (layout.stagger === 'offcut' ? null : joint?.anchor) ?? anchorOf(minX, maxX);
 
   /**
    * The row and the run a joint pin sits in — what `layRow` has to be told to leave alone.
@@ -1475,7 +1509,13 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
      * none clears — the room admits no legal grid at all — the roomiest one stands.
      */
     const candidates: number[] = [];
-    if (layout.stagger === 'offcut') {
+    if (joint !== null && row === pinnedRow && layout.stagger === 'offcut') {
+      // The one row on an off-cut floor whose grid is decided rather than searched for. A single
+      // candidate, so the search below cannot move it: the ladder guard is a default and the
+      // figure the user typed is not. Rows above resume the search from here — `lastOffset` is
+      // written from what actually got laid, which is exactly what off-cut staggering reads.
+      candidates.push(joint.grid);
+    } else if (layout.stagger === 'offcut') {
       const runStart = runs.length > 0 ? runs[0][0] : ANCHOR_X;
       const from = lastOffset ?? runStart;
       if (carry > 0) candidates.push(runStart + carry);
@@ -1685,30 +1725,47 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       const ripped = width < plankWidth - MIN_FEATURE_FT;
       const narrow = ripped && width < minRip - EPS;
       /**
-       * Which edge and which end were cut to a boundary rather than to a grid — the two answers
-       * a pin needs and only this frame can give. See `Plank.ripEdge`.
+       * Which edge and which end were cut to a **boundary** rather than to a grid — the two
+       * answers a pin needs and only this frame can give. See `Plank.ripEdge`.
        *
-       * An edge that is *on* a grid line is a joint with the next board; the other one is
-       * therefore the boundary, and it is the one a size is measured from. Both on the grid
-       * cannot happen for a ripped board, and neither on it is a strip between two boundaries,
-       * which no phase can move.
+       * Exactly one of the two sides has to be the boundary for there to be anything to pin. Both
+       * on the grid is an uncut board, and neither on it is a strip trapped between two
+       * boundaries — no phase moves that one, so it is not offered.
        */
-      const onGrid = (v: number, anchor: number, pitch: number): boolean =>
-        Math.abs(v - anchor - Math.round((v - anchor) / pitch) * pitch) <= MIN_FEATURE_FT;
+      /**
+       * Both arguments answer the **same** question — "is this side cut to the room?" — and the
+       * answer is the side that is. Spelled this way because the first cut of it took "is this
+       * side on the grid" for one axis and "is this side on the boundary" for the other, which
+       * are opposite predicates: the end pin came out naming the wrong end of every board.
+       */
       const boundarySide = (low: boolean, high: boolean): 'low' | 'high' | undefined =>
-        low === high ? undefined : low ? 'high' : 'low';
-      const ripEdge = ripped
-        ? boundarySide(
-            onGrid(bandLow, ANCHOR_Y, plankWidth),
-            onGrid(bandHigh, ANCHOR_Y, plankWidth)
-          )
-        : undefined;
+        low === high ? undefined : low ? 'low' : 'high';
+
+      // Across the run the grid is exact — `ANCHOR_Y + k * plankWidth`, with nothing downstream
+      // free to move it — so the edge that is not on it is the wall.
+      const onRowGrid = (y: number): boolean =>
+        Math.abs(y - ANCHOR_Y - Math.round((y - ANCHOR_Y) / plankWidth) * plankWidth) <=
+        MIN_FEATURE_FT;
+      const ripEdge = ripped ? boundarySide(!onRowGrid(bandLow), !onRowGrid(bandHigh)) : undefined;
+
+      /**
+       * Along the run the same arithmetic is **not** available, and that is not a detail.
+       *
+       * `offset` is the grid this row *asked for*; `layRow` moves the whole grid — and gives up a
+       * whole board to do it — whenever that would leave an end cut under the minimum, which on an
+       * ordinary floor is a good fraction of the rows. Measured against `offset`, both ends of
+       * every board on such a row miss the grid, `cutEnd` comes out undefined, and the length
+       * field silently never appears. That is the bug this replaces.
+       *
+       * So the question is asked structurally instead: an end that lands where its **run** ends is
+       * cut to the room, and every other end is a joint with the next board. It needs no grid, so
+       * no later shift can invalidate it.
+       */
+      const atRunEdge = (x: number, side: 0 | 1): boolean =>
+        runs.some((run) => Math.abs(x - run[side]) <= MIN_FEATURE_FT);
       const cutEnd =
         length < plankLength - MIN_FEATURE_FT
-          ? boundarySide(
-              onGrid(cell.start, offset, plankLength),
-              onGrid(cell.end, offset, plankLength)
-            )
+          ? boundarySide(atRunEdge(cell.start, 0), atRunEdge(cell.end, 1))
           : undefined;
       if (narrow) narrowPieces += 1;
       if (ripped && width < narrowestRip) narrowestRip = width;
@@ -1746,6 +1803,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
         ],
         cut,
         narrow,
+        ripped,
         ripEdge,
         cutEnd,
       });
@@ -1785,9 +1843,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
    *
    * Measured off the floor that was laid, which is the point: a pin can miss for four unrelated
    * reasons (see `PlankLayout.pinsUnsatisfied`) and this asks the one question that covers all of
-   * them. A pin whose solve returned nothing at all — an unreachable stagger rule, a seed the
-   * room no longer contains — is unsatisfied by the same rule, since there is no probe to find a
-   * board at.
+   * them. A pin whose solve returned nothing at all — a seed the room no longer contains — is
+   * unsatisfied by the same rule, since there is no probe to find a board at.
    */
   const pinnedIds: string[] = [];
   const pinsUnsatisfied: PinKind[] = [];

@@ -4,7 +4,6 @@
   import { measurePlank } from '../plankMeasure';
   import {
     clearBoardPin,
-    layoutConfig,
     layoutPins,
     pinBoardSize,
     plankLayout,
@@ -43,8 +42,17 @@
   $: measurements = plank ? measurePlank(plank, $plankLayout.angle) : null;
   $: spec = $plankSpec;
   $: pins = $layoutPins;
-  /** A rip is a board narrower than the stock it came off. */
-  $: ripped = measurements ? measurements.widthIn < spec.widthIn - 1e-6 : false;
+  /**
+   * A rip is a board narrower than the stock it came off — the **engine's** answer, not a second
+   * one computed here. Recomputing it at `1e-6` disagreed with the engine's physical tolerance on
+   * boards a rounding error under the face width: this panel printed `7" from 7"` and offered no
+   * field, because the engine had reported an uncut board with no edge to measure from.
+   */
+  $: ripped = plank?.ripped ?? false;
+
+  /** Where a size can be typed, and — just as important — where it cannot. */
+  $: canPinWidth = ripped && plank?.ripEdge != null;
+  $: canPinLength = plank?.cutEnd != null;
 
   /**
    * The seed a pin is anchored to: the centroid of the board's outline.
@@ -84,10 +92,6 @@
     .map((kind) => ({ kind, pin: pins[kind] }))
     .filter((entry): entry is { kind: PinKind; pin: LayoutPin } => entry.pin != null);
 
-  // `offcut` chooses its joints from the row below rather than from a shared phase, so there is
-  // nothing for a length pin to move. Said out loud below rather than by a field that does nothing.
-  $: jointPinnable = $layoutConfig.stagger !== 'offcut';
-
   /**
    * What the far wall gets, live, while the user types.
    *
@@ -103,12 +107,18 @@
     : 0;
 </script>
 
+<!--
+  `maxWidth` is not optional here even though the panel had gone without one. A floating panel is
+  sized by its content and `FloatingPanel` leaves the maximum unset, so a single sentence of prose
+  stretches it the width of the viewport — which is what the first hint long enough to matter did.
+-->
 <FloatingPanel
   visible={plank != null}
   title="Board"
   defaultX={16}
   defaultY={220}
   minWidth="248px"
+  maxWidth="288px"
   persistenceKey="flooring-board-panel"
   showCloseButton={true}
   onClose={() => selectPlank(null)}
@@ -124,7 +134,7 @@
     <div class="panel-info-box">
       <div class="panel-info-row">
         <span>Length</span>
-        {#if plank.cutEnd && jointPinnable}
+        {#if canPinLength && plank.cutEnd}
           <span class="input-group">
             <input
               class="panel-input"
@@ -157,7 +167,7 @@
       {/if}
       <div class="panel-info-row">
         <span>Width</span>
-        {#if ripped && plank.ripEdge}
+        {#if canPinWidth && plank.ripEdge}
           <span class="input-group">
             <input
               class="panel-input"
@@ -190,7 +200,7 @@
       </div>
     </div>
 
-    {#if ripped && plank.ripEdge}
+    {#if canPinWidth}
       <p class="panel-hint">
         {formatInches(measurements.widthIn)} here &rarr; {formatInches(complementIn)} at the far wall.
         The two always add up to the same thing, so setting one sets the other.
@@ -204,10 +214,22 @@
       </p>
     {/if}
 
-    {#if plank.cutEnd && !jointPinnable}
+    {#if !canPinWidth && !canPinLength}
+      <!--
+        A board with no size to set is the common case, not the error case: only the row against a
+        boundary and the piece at the end of a run are free, and everything between them is a whole
+        board. Saying so is the difference between a panel that is read-only here and a panel that
+        looks broken — which is exactly how it read when it offered nothing and explained nothing.
+      -->
       <p class="panel-hint">
-        Off-cut staggering is choosing where this row's joints land, so a length cannot be set here.
-        Pick another stagger rule to pin one.
+        {#if !ripped && !plank.cutEnd}
+          A whole board, so there is no size to set — a board in the middle of a run is always full.
+          Click the row against a wall to set its width, or the piece at the end of a run to set its
+          length.
+        {:else}
+          Both {ripped ? 'edges' : 'ends'} of this piece are cut to the room, so nothing the layout can
+          move would change its size. Try a board with a joint on one {ripped ? 'edge' : 'end'}.
+        {/if}
       </p>
     {/if}
 

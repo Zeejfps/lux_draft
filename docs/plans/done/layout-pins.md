@@ -28,6 +28,42 @@ Three departures from the plan, each forced by something the plan did not have i
 `PlankLayout.ripSumIn` was added for the live consequence line — the panel cannot compute
 `(maxY - minY) mod plankWidth` without the run frame.
 
+`Plank.ripped` was added after the first build shipped a panel with no field to type in. Three
+faults, each of which alone was enough to hide the whole feature:
+
+- **`cutEnd` was measured against the grid the row asked for.** `layRow` moves that grid — and
+  gives up a whole board to do it — whenever an end cut would fall under the minimum, which on an
+  ordinary floor is a good fraction of the rows. On every one of them both ends read as joints and
+  the length field never rendered. The end of a run is a property of the **run**, so it is asked
+  that way now and no later shift can invalidate it.
+- **The panel recomputed `ripped` at `1e-6` against the engine's `MIN_FEATURE_FT`.** A board a
+  rounding error under the face width printed `7" from 7"` — text promising a rip — while the
+  engine reported a whole board and offered no edge to measure from. One definition now, on the
+  plank.
+- **`boundarySide` was fed opposite predicates on its two axes** — "is on the grid" for the rip and
+  "is on the boundary" for the end — so a length pin named the wrong end of every board. It takes
+  one question on both axes now.
+
+The panel also says _why_ when a board offers no size, rather than showing a read-only box: a whole
+board mid-run is the common case, not the error case.
+
+**Phase 2's `offcut` deferral was not deferrable.** The plan disabled the length field under
+off-cut staggering with a note to pick another rule, and left forcing the pinned row's candidate
+list to "later". In use that is a dead end rather than a limitation — off-cut is a rule people
+choose on purpose, and a floor laid under it offers no length pin anywhere. So the later fix is the
+built one: `JointSolve.grid` carries the absolute position the joint must land on, the row loop
+hands it to the pinned row as its only candidate, and the rows above resume the search from it,
+which is what off-cut staggering does with every row anyway.
+
+The pin costs saw cuts there, and the cut list reports them rather than the engine hiding them:
+forcing one row's grid changes the off-cut it hands upward, and some lengths chain worse than
+others — on a 20ft room a 24" or 47.5" pin is free and a 30" pin costs about a third more passes of
+the saw. Purchases and coverage are unchanged, so the rule is still re-using off-cuts above the
+pinned row; what is lost is the free first piece on the rows the new phase does not suit.
+
+`PlankInfoPanel` also gained a `maxWidth`. `FloatingPanel` leaves the maximum unset and sizes to
+content, so the first hint long enough to matter stretched the panel the width of the viewport.
+
 ## Goal
 
 Click a board, type a dimension, and have the rest of the floor lay itself around it — "the row

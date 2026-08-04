@@ -1837,15 +1837,42 @@ describe('pinned board sizes', () => {
         unsatisfied({ pins: { joint: { seed: { x: 80, y: 80 }, targetIn: 30, edge: 'low' } } })
       ).toEqual(['joint']);
     });
+  });
 
-    it('off-cut staggering, which has no shared joint phase to move', () => {
-      expect(
-        unsatisfied({
-          layout: { ...defaults.layout, stagger: 'offcut' },
-          pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' } },
-        })
-      ).toEqual(['joint']);
-    });
+  /**
+   * Off-cut staggering places each row by searching the row below it rather than off a shared
+   * phase, so the pin is handed to that row as its only candidate. Refusing it outright was the
+   * first cut, and it made the rule a dead end: the length field vanished with a note to pick a
+   * different stagger, on the floors where off-cut is the reason the rule was chosen.
+   */
+  it('pins a length under off-cut staggering, and lets the rows above resume the search', () => {
+    const config = { ...defaults.layout, stagger: 'offcut' as const };
+    const pinned = computePlankLayout(
+      inputs({
+        layout: config,
+        pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' } },
+      })
+    );
+    expect(pinned.pinsUnsatisfied).toEqual([]);
+
+    const firstOf = (l: ReturnType<typeof computePlankLayout>, row: number) =>
+      l.planks.filter((p) => p.row === row).sort((a, b) => a.center.x - b.center.x)[0];
+    expect(widthIn(firstOf(pinned, 0).length)).toBeCloseTo(30, 6);
+
+    /**
+     * The rule still works above the pinned row: off-cuts are still being re-used, so the floor
+     * buys what it bought before.
+     *
+     * Saw *cuts* are deliberately not asserted, because the pin genuinely costs some. Forcing one
+     * row's grid changes the off-cut it hands upward, and some lengths chain worse than others —
+     * on this room a 24" or 47.5" pin is free, while 30" costs about a third more passes of the
+     * saw. That is the true price of overriding a rule whose whole job is choosing joint lengths,
+     * and the cut list reports it rather than the engine hiding it.
+     */
+    const bare = computePlankLayout(inputs({ layout: config }));
+    expect(pinned.purchasedPlanks).toBeLessThanOrEqual(bare.purchasedPlanks + 1);
+    // …and it is the same floor: a pin moves joints, it does not leave subfloor bare.
+    expect(pinned.coveredSqft).toBeCloseTo(bare.coveredSqft, 6);
   });
 
   it('names the edge a size is measured from, since only the frame knows it', () => {
@@ -1854,6 +1881,58 @@ describe('pinned board sizes', () => {
     expect(rowAt(layout, 'high').ripEdge).toBe('high');
     // A full-width board has no rip to measure and so no edge to name.
     expect(rowAt(layout, 'low').ripEdge).toBeUndefined();
+  });
+
+  /**
+   * The regression the screenshot caught: a panel that offered no field to type in.
+   *
+   * `layRow` moves a row's whole joint grid to keep an end cut legal, on whatever fraction of the
+   * rows need it. Reading a board's ends against the grid the row *asked for* therefore reported
+   * both ends as joints on exactly those rows, `cutEnd` came out undefined, and the length field
+   * silently never rendered. The end of a run is a property of the run, not of the grid.
+   */
+  it('names the cut end on every row, including the ones the minimum end cut moved', () => {
+    // A 20ft run at 48" boards leaves 47.5" over, so raising the minimum past it forces the shift.
+    const layout = computePlankLayout(inputs({ layout: { ...defaults.layout, minEndCutIn: 30 } }));
+    const full = defaults.plank.lengthIn / INCHES_PER_FOOT;
+    const rows = [...new Set(layout.planks.map((p) => p.row))];
+    expect(rows.length).toBeGreaterThan(4);
+
+    let named = 0;
+    for (const row of rows) {
+      const inRow = layout.planks
+        .filter((p) => p.row === row)
+        .sort((a, b) => a.center.x - b.center.x);
+      const first = inRow[0];
+      const last = inRow[inRow.length - 1];
+      // A short end piece is cut to the room and says which side it was cut on. A row whose grid
+      // happens to start at the wall has a *full* board there, and nothing to offer — which is the
+      // distinction the old grid arithmetic could not draw once `layRow` had moved the grid.
+      if (first.length < full - 1e-6) expect(first.cutEnd, `row ${row} first`).toBe('low');
+      if (last.length < full - 1e-6) expect(last.cutEnd, `row ${row} last`).toBe('high');
+      named += [first, last].filter((p) => p.cutEnd != null).length;
+      // A whole board in the middle of the run has no end to measure and offers nothing.
+      for (const board of inRow.slice(1, -1)) {
+        if (board.length >= full - 1e-6) expect(board.cutEnd, board.id).toBeUndefined();
+      }
+    }
+    // Not vacuous: most rows really do have a short piece at one end or the other.
+    expect(named).toBeGreaterThan(rows.length);
+  });
+
+  it('reports the rip at the tolerance the panel prints, so the two cannot disagree', () => {
+    for (const plankSpec of [defaults.plank, { ...defaults.plank, widthIn: 5.5 }]) {
+      for (const board of computePlankLayout(inputs({ plank: plankSpec })).planks) {
+        // `ripped` is the one definition. A board it calls whole must be offering no rip edge,
+        // and must not be a hair under its stock either — which is what printed `7" from 7"`.
+        if (!board.ripped) {
+          expect(board.ripEdge, board.id).toBeUndefined();
+          expect(widthIn(board.width), board.id).toBeCloseTo(plankSpec.widthIn, 4);
+        } else {
+          expect(widthIn(board.width), board.id).toBeLessThan(plankSpec.widthIn);
+        }
+      }
+    }
   });
 
   it('keys a pin into the layout, so a cached floor cannot come back unpinned', () => {

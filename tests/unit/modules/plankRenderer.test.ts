@@ -25,6 +25,7 @@ function plank(over: Partial<Plank> = {}): Plank {
     corners: [corner, corner, corner, corner],
     cut: false,
     narrow: false,
+    ripped: false,
     ...over,
   };
 }
@@ -95,6 +96,45 @@ describe('the plank tints', () => {
     renderer.setHovered('full-even');
     expect(hex(colorAt(scene, 3))).toBe(before);
     expect(hex(colorAt(scene, 0))).not.toBe(before);
+  });
+});
+
+describe('a pinned board is visible without being hovered', () => {
+  const scene = new THREE.Scene();
+  const renderer = new PlankRenderer(scene);
+  const planks = [
+    plank({ id: 'plain', row: 0 }),
+    plank({ id: 'held', row: 1, cut: true }),
+    plank({ id: 'held-sliver', row: 2, cut: true, narrow: true, ripped: true, width: 0.125 }),
+  ];
+  renderer.update({ ...EMPTY_LAYOUT, planks, pinnedIds: ['held', 'held-sliver'] });
+
+  it('accents the board a pin landed on, distinctly from the wood and the cut tints', () => {
+    const held = colorAt(scene, 1);
+    expect(hex(held)).not.toBe(hex(colorAt(scene, 0)));
+    // Violet: neither of the two blues, which come and go with the pointer, nor a tan.
+    expect(held.b).toBeGreaterThan(held.g * 2);
+  });
+
+  it('still shows a pinned sliver as a sliver, since that is the case to see', () => {
+    const sliver = colorAt(scene, 2);
+    expect(sliver.r).toBeGreaterThan(sliver.b * 2);
+    expect(hex(sliver)).not.toBe(hex(colorAt(scene, 1)));
+  });
+
+  it('survives the colour-only hover path, which is a separate walk of the same tint', () => {
+    const before = hex(colorAt(scene, 1));
+    renderer.setHovered('plain');
+    expect(hex(colorAt(scene, 1))).toBe(before);
+  });
+
+  it('gives the accent back when the pin is cleared', () => {
+    renderer.setHovered(null);
+    renderer.update({ ...EMPTY_LAYOUT, planks });
+    expect(hex(colorAt(scene, 1))).not.toBe(hex(colorAt(scene, 0)));
+    // …to the ordinary cut tint, not to the violet it was holding.
+    const cutTint = colorAt(scene, 1);
+    expect(cutTint.b).toBeLessThan(cutTint.g);
   });
 });
 
