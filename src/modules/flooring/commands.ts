@@ -12,6 +12,7 @@ import type {
 } from './types';
 import type { FlooringData } from './codec';
 import { clonePins, flooringCodec, normalizeAngle } from './codec';
+import { emptyPins } from './types';
 
 /**
  * Flooring's edits, as registered commands over `FlooringData`. **Eager** alongside the codec:
@@ -82,7 +83,11 @@ export const moveOrigin: CommandKind<{ position: Vector2 }> = defineCommand(
   'origin.move',
   {
     label: () => 'Move layout origin',
-    apply: (_doc, payload, prev) => ({ ...prev, origin: { ...payload.position }, pins: {} }),
+    apply: (_doc, payload, prev) => ({
+      ...prev,
+      origin: { ...payload.position },
+      pins: emptyPins(),
+    }),
   },
   { absolute: true }
 );
@@ -191,11 +196,12 @@ export const setSurfaces: CommandKind<{ surfaces: SurfaceAssignment[] }> = defin
 );
 
 /**
- * Pin a board's size — the whole pin set, absolute, matching `setSurfaces`.
+ * Pin board sizes — the whole set, absolute, matching `setSurfaces`.
  *
- * Whole-object because there are only ever two of them and because a pin of a kind *replaces*
- * the pin of that kind: the caller has already decided what the set should be, and a merge here
- * would be a second place that decision could be made differently.
+ * Whole-set rather than one pin at a time for the reason `setSurfaces` is: deciding *which*
+ * existing pin a new one replaces means resolving both against the run frame, the caller has
+ * already done that (`PlankLayout.pinSlots`), and a merge here would be a second place the same
+ * decision could be made differently.
  */
 export const setLayoutPins: CommandKind<{ pins: LayoutPins }> = defineCommand(
   flooringCodec,

@@ -3,6 +3,7 @@
   import { selection } from '../../../floorplan/stores/selectionStore';
   import { isOriginSelected } from '../selection';
   import {
+    clearAllPins,
     clearBoardPin,
     committedFlooringData,
     floorRegions,
@@ -21,7 +22,6 @@
     updateLayoutConfig,
   } from '../store';
   import type {
-    LayoutPin,
     PinKind,
     PlankSpec,
     StaggerRule,
@@ -149,10 +149,17 @@
    * does nothing. This is the standing read-out; the board panel is the gesture.
    */
   $: pins = $layoutPins;
-  $: activePins = (['rip', 'joint'] as PinKind[])
-    .map((kind) => ({ kind, pin: pins[kind] }))
-    .filter((entry): entry is { kind: PinKind; pin: LayoutPin } => entry.pin != null);
-  $: unsatisfied = new Set<PinKind>($plankLayout.pinsUnsatisfied ?? []);
+  $: unsatisfied = new Set(
+    ($plankLayout.pinsUnsatisfied ?? []).map((ref) => `${ref.kind}:${ref.index}`)
+  );
+  $: activePins = (['rip', 'joint'] as PinKind[]).flatMap((kind) =>
+    (kind === 'rip' ? pins.rips : pins.joints).map((pin, index) => ({
+      kind,
+      index,
+      pin,
+      missed: unsatisfied.has(`${kind}:${index}`),
+    }))
+  );
 </script>
 
 <FloatingPanel
@@ -247,11 +254,11 @@
     <div class="section">
       <div class="section-title">Pinned sizes</div>
 
-      {#each activePins as { kind, pin } (kind)}
+      {#each activePins as { kind, index, pin, missed } (`${kind}:${index}`)}
         <div class="control-row">
           <span class="area-name">
             {PIN_LABELS[kind]}
-            {#if unsatisfied.has(kind)}
+            {#if missed}
               <span class="warn">not met</span>
             {/if}
           </span>
@@ -261,7 +268,7 @@
               class="remove"
               type="button"
               title="Stop holding this size; the floor goes back to deriving it"
-              on:click={() => clearBoardPin(kind)}>&times;</button
+              on:click={() => clearBoardPin(kind, index)}>&times;</button
             >
           </div>
         </div>
@@ -275,9 +282,14 @@
         </p>
       {:else}
         <p class="hint">
-          These are held through a plank change, a wall drag and an undo. Moving the origin clears
-          them.
+          Held through a plank change, a wall drag and an undo. Each one costs a ripped make-up row
+          somewhere between it and the next, which the cut list counts. Moving the origin clears
+          them all.
         </p>
+      {/if}
+
+      {#if activePins.length > 1}
+        <button class="clear-all" type="button" on:click={clearAllPins}>Clear all</button>
       {/if}
     </div>
   {/if}
@@ -603,5 +615,20 @@
 
   .remove:hover {
     color: #ef4444;
+  }
+
+  .clear-all {
+    margin-top: 2px;
+    padding: 2px 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--panel-border, #3a3a3a);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .clear-all:hover {
+    color: var(--text-secondary);
   }
 </style>

@@ -12,6 +12,7 @@ import {
   addFloorDivider,
   clearBoardPin,
   committedFlooringData,
+  pinRejection,
   currentRegions,
   flooringData,
   floorRegions,
@@ -52,7 +53,7 @@ describe('every setter is one command and one history entry', () => {
     ['origin', () => setOrigin({ x: 1, y: 2 })],
     ['transition', () => addDoorTransition('d1')],
     ['divider', () => addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 })],
-    ['pin', () => pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' })],
+    ['pin', () => pinBoardSize('rip', { seed: { x: 5, y: 0.3 }, targetIn: 4, edge: 'low' })],
   ];
 
   for (const [name, run] of cases) {
@@ -269,14 +270,28 @@ describe('dividers and surfaces', () => {
   });
 
   it('a pin survives a round-trip, and an absent one decodes to no pins at all', () => {
-    pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' });
+    pinBoardSize('rip', { seed: { x: 5, y: 0.3 }, targetIn: 4, edge: 'low' });
     const data = slice();
     const decoded = flooringCodec.decode({ v: flooringCodec.schemaVersion, data });
     expect(decoded.status).toBe('ok');
     if (decoded.status === 'ok') expect(decoded.data.pins).toEqual(data.pins);
     // Additive and absent-tolerant: no version bump, so an older build still reads this document
     // and simply renders the floor unpinned.
-    expect(flooringCodec.decode({ v: 2, data: {} })).toMatchObject({ data: { pins: {} } });
+    expect(flooringCodec.decode({ v: 2, data: {} })).toMatchObject({
+      data: { pins: { rips: [], joints: [] } },
+    });
+  });
+
+  it('reads the single-pin shape pins were first written in', () => {
+    const decoded = flooringCodec.decode({
+      v: 2,
+      data: { pins: { rip: { seed: { x: 1, y: 2 }, targetIn: 4, edge: 'low' } } },
+    });
+    expect(decoded.status).toBe('ok');
+    if (decoded.status === 'ok') {
+      expect(decoded.data.pins.rips).toHaveLength(1);
+      expect(decoded.data.pins.joints).toEqual([]);
+    }
   });
 
   it('quarantines a malformed pin rather than rendering a different floor in silence', () => {
@@ -285,6 +300,8 @@ describe('dividers and surfaces', () => {
       { rip: { seed: { x: 0, y: 0 }, targetIn: 0, edge: 'low' } },
       { rip: { seed: { x: 0, y: 0 }, edge: 'low' } },
       { joint: { targetIn: 30, edge: 'low' } },
+      { rips: { seed: { x: 0, y: 0 }, targetIn: 4, edge: 'low' } },
+      { joints: [{ seed: { x: 0, y: 0 }, targetIn: -1, edge: 'low' }] },
     ]) {
       expect(flooringCodec.decode({ v: 2, data: { pins } }).status, JSON.stringify(pins)).toBe(
         'invalid'
@@ -292,18 +309,39 @@ describe('dividers and surfaces', () => {
     }
   });
 
-  it('a pin of a kind replaces the pin of that kind, and clearing is a no-op when unset', () => {
-    pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' });
-    pinBoardSize('joint', { seed: { x: 1, y: 5 }, targetIn: 30, edge: 'low' });
-    pinBoardSize('rip', { seed: { x: 5, y: 9.6 }, targetIn: 5, edge: 'high' });
-    expect(slice().pins.rip).toEqual({ seed: { x: 5, y: 9.6 }, targetIn: 5, edge: 'high' });
-    expect(slice().pins.joint?.targetIn).toBe(30);
+  it('holds a size against each boundary at once, which one anchor could not', () => {
+    // The near wall and the far wall are two different questions, and both get an answer.
+    expect(pinBoardSize('rip', { seed: { x: 5, y: 0.3 }, targetIn: 4, edge: 'low' })).toBe(true);
+    expect(pinBoardSize('rip', { seed: { x: 5, y: 9.7 }, targetIn: 3, edge: 'high' })).toBe(true);
+    expect(slice().pins.rips).toHaveLength(2);
+    expect(slice().pins.rips.map((p) => p.targetIn)).toEqual([4, 3]);
+  });
 
+  it('re-sizing the same row replaces rather than stacks', () => {
+    pinBoardSize('rip', { seed: { x: 5, y: 0.3 }, targetIn: 4, edge: 'low' });
+    // A different click on the same row against the same wall is one question asked twice.
+    pinBoardSize('rip', { seed: { x: 2, y: 0.2 }, targetIn: 5, edge: 'low' });
+    expect(slice().pins.rips).toHaveLength(1);
+    expect(slice().pins.rips[0].targetIn).toBe(5);
+  });
+
+  it('refuses a pin the room cannot hold, and does not store it', () => {
+    pinBoardSize('rip', { seed: { x: 5, y: 0.3 }, targetIn: 4, edge: 'low' });
+    const before = slice().pins;
+    // Wider than the stock: there is no row this size, so it never reaches the document.
+    expect(pinBoardSize('rip', { seed: { x: 5, y: 9.7 }, targetIn: 40, edge: 'high' })).toBe(false);
+    expect(slice().pins).toEqual(before);
+    expect(get(pinRejection)).toBeTruthy();
+  });
+
+  it('clears one pin by index and leaves the rest, and a bad index writes nothing', () => {
+    pinBoardSize('rip', { seed: { x: 5, y: 0.3 }, targetIn: 4, edge: 'low' });
+    pinBoardSize('rip', { seed: { x: 5, y: 9.7 }, targetIn: 3, edge: 'high' });
     const entries = sessionStore.current().history.past.length;
-    clearBoardPin('rip');
-    expect(slice().pins.rip).toBeUndefined();
-    expect(slice().pins.joint?.targetIn).toBe(30);
-    clearBoardPin('rip');
+
+    clearBoardPin('rip', 0);
+    expect(slice().pins.rips.map((p) => p.targetIn)).toEqual([3]);
+    clearBoardPin('rip', 7);
     expect(sessionStore.current().history.past).toHaveLength(entries + 1);
   });
 
@@ -313,11 +351,11 @@ describe('dividers and surfaces', () => {
    * discoverable; a control that silently ignores the mouse is not.
    */
   it('moving the origin clears the pins, in the one step the user took', () => {
-    pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' });
+    pinBoardSize('rip', { seed: { x: 5, y: 0.3 }, targetIn: 4, edge: 'low' });
     setOrigin({ x: 1, y: 2 });
-    expect(slice().pins).toEqual({});
+    expect(slice().pins).toEqual({ rips: [], joints: [] });
     sessionStore.undo();
-    expect(slice().pins.rip?.targetIn).toBe(4);
+    expect(slice().pins.rips[0]?.targetIn).toBe(4);
   });
 
   it('quarantines a malformed surface assignment', () => {

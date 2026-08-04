@@ -28,8 +28,8 @@ import type {
   SurfaceKind,
   TransitionKind,
 } from './types';
-import type { LayoutInputs, Plank, PlankLayout } from './PlankLayoutEngine';
-import { EMPTY_LAYOUT } from './PlankLayoutEngine';
+import type { LayoutInputs, PinSlot, Plank, PlankLayout } from './PlankLayoutEngine';
+import { EMPTY_LAYOUT, computePlankLayout } from './PlankLayoutEngine';
 import { PlankIndex } from './PlankIndex';
 import type { RegionInputs, RegionSolution } from './RegionSolver';
 import { EMPTY_SOLUTION } from './RegionSolver';
@@ -39,6 +39,8 @@ import {
   solveRegionsCached,
   type LayoutProjection,
 } from './layoutProjection';
+import { plankRings } from './RegionSolver';
+import { emptyPins } from './types';
 
 /**
  * The flooring module's read and write layer, plus the layout service.
@@ -240,24 +242,112 @@ export const layoutPins: Readable<Readonly<LayoutPins>> = documentSlice(
 );
 
 /**
- * Pin one grid phase, leaving the other alone.
- *
- * A pin of a kind replaces the pin of that kind — a rip pin fixes the row anchor modulo one
- * board, so a second one is not an extra constraint, it is the same constraint restated. That is
- * what makes this a merge of two optional fields rather than a solver.
+ * The reason a pin was refused, for the panel to show. Session-local: it is a response to a
+ * gesture, not a property of the room, and it must not enter the undo stack.
  */
-export function pinBoardSize(kind: PinKind, pin: LayoutPin): void {
-  const next: LayoutPins = { ...current().pins, [kind]: { ...pin, seed: { ...pin.seed } } };
-  sessionStore.dispatch(setLayoutPins.make({ pins: next }));
+export const pinRejection: Writable<string | null> = writable(null);
+
+/**
+ * Add a pin, or replace the one already sizing the same thing.
+ *
+ * Two decisions have to be made here and neither can be made from the stored set alone, because
+ * both are questions about the run frame: whether this pin *replaces* an existing one, and
+ * whether the floor can hold it at all. `computePlankLayout` answers both through `pinSlots` —
+ * running it on the proposed set is one layout computation on a keystroke the user has already
+ * committed to, and it means there is exactly one implementation of where a pin goes.
+ *
+ * A pin that cannot be laid is **not stored**. A stored set that does not fit is a floor the user
+ * cannot reason about — the panel says what collided instead. Geometry still moves under pins
+ * afterwards, which is why `PlankLayout.pinsUnsatisfied` did not go away.
+ */
+export function pinBoardSize(kind: PinKind, pin: LayoutPin): boolean {
+  const data = current();
+  const fresh: LayoutPin = { ...pin, seed: { ...pin.seed } };
+  const list = kind === 'rip' ? data.pins.rips : data.pins.joints;
+
+  // Resolve the candidate on its own first: its slot is what says which existing pin it answers
+  // for, and an unresolvable candidate has nothing to collide with.
+  const probe = withPins(data, kind, [...list, fresh]);
+  const candidate = resolvePinsOf(probe).find(
+    (slot) => slot.kind === kind && slot.index === list.length
+  );
+  if (!candidate || candidate.slot === null) {
+    pinRejection.set(
+      'That board is no longer against a boundary this size could be measured from.'
+    );
+    return false;
+  }
+
+  // Everything the candidate does not replace, kept in place.
+  const existing = resolvePinsOf(withPins(data, kind, list));
+  const kept = list.filter((_entry, index) => {
+    const slot = existing.find((s) => s.kind === kind && s.index === index);
+    return slot?.slot !== candidate.slot;
+  });
+
+  const next = withPins(data, kind, [...kept, fresh]);
+  const conflict = resolvePinsOf(next).find((slot) => slot.reason !== null);
+  if (conflict) {
+    pinRejection.set(conflict.reason);
+    return false;
+  }
+
+  pinRejection.set(null);
+  sessionStore.dispatch(setLayoutPins.make({ pins: next.pins }));
+  return true;
 }
 
-/** Drop one pin. A no-op when it was not set, so the undo stack stays honest. */
-export function clearBoardPin(kind: PinKind): void {
-  const pins = current().pins;
-  if (!pins[kind]) return;
-  const next: LayoutPins = { ...pins };
-  delete next[kind];
-  sessionStore.dispatch(setLayoutPins.make({ pins: next }));
+/** Drop one pin by index. A no-op when it is not there, so the undo stack stays honest. */
+export function clearBoardPin(kind: PinKind, index: number): void {
+  const data = current();
+  const list = kind === 'rip' ? data.pins.rips : data.pins.joints;
+  if (index < 0 || index >= list.length) return;
+  pinRejection.set(null);
+  sessionStore.dispatch(
+    setLayoutPins.make({
+      pins: withPins(
+        data,
+        kind,
+        list.filter((_entry, i) => i !== index)
+      ).pins,
+    })
+  );
+}
+
+export function clearAllPins(): void {
+  if (current().pins.rips.length + current().pins.joints.length === 0) return;
+  pinRejection.set(null);
+  sessionStore.dispatch(setLayoutPins.make({ pins: emptyPins() }));
+}
+
+/** The slice with one pin list swapped out. Nothing is mutated; the engine gets a fresh set. */
+function withPins(
+  data: Readonly<FlooringData>,
+  kind: PinKind,
+  list: readonly LayoutPin[]
+): FlooringData {
+  const pins: LayoutPins =
+    kind === 'rip'
+      ? { rips: [...list], joints: [...data.pins.joints] }
+      : { rips: [...data.pins.rips], joints: [...list] };
+  return { ...data, pins } as FlooringData;
+}
+
+/** Where a hypothetical set of pins would land, against the room as it stands right now. */
+function resolvePinsOf(data: Readonly<FlooringData>): readonly PinSlot[] {
+  const doc = sessionStore.current().document;
+  return (
+    computePlankLayout({
+      walls: doc.geometry.boundary.walls as WallSegment[],
+      isClosed: doc.geometry.boundary.isClosed,
+      obstacles: doc.geometry.obstacles,
+      plank: data.plank,
+      layout: data.layout,
+      origin: data.origin,
+      pins: data.pins,
+      regions: plankRings(solveRegionsCached(regionInputsFor(doc))),
+    }).pinSlots ?? []
+  );
 }
 
 export function addDoorTransition(doorId: string, kind: TransitionKind = 'threshold'): void {

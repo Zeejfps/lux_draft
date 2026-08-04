@@ -4,14 +4,14 @@
   import { measurePlank } from '../plankMeasure';
   import {
     clearBoardPin,
-    layoutPins,
     pinBoardSize,
+    pinRejection,
     plankLayout,
     plankSpec,
     selectPlank,
     selectedPlank,
   } from '../store';
-  import type { LayoutPin, PinKind } from '../types';
+  import type { PinKind } from '../types';
   import { formatInches } from './format';
 
   /**
@@ -41,7 +41,6 @@
   $: plank = $selectedPlank;
   $: measurements = plank ? measurePlank(plank, $plankLayout.angle) : null;
   $: spec = $plankSpec;
-  $: pins = $layoutPins;
   /**
    * A rip is a board narrower than the stock it came off — the **engine's** answer, not a second
    * one computed here. Recomputing it at `1e-6` disagreed with the engine's physical tolerance on
@@ -68,12 +67,24 @@
     };
   }
 
+  /**
+   * Commit a size. The store refuses one the floor cannot hold and says why, so a rejected number
+   * never reaches the document — see `pinBoardSize`. The input is put back to what the board
+   * actually measures, because leaving a refused figure in the box implies it took.
+   */
   function pin(kind: PinKind, edge: 'low' | 'high', e: Event): void {
     const board = plank;
-    const value = parseFloat((e.target as HTMLInputElement).value);
+    const input = e.target as HTMLInputElement;
+    const value = parseFloat(input.value);
     if (!board || !Number.isFinite(value) || value <= 0) return;
-    pinBoardSize(kind, { seed: seedOf(board), targetIn: value, edge });
+    const measured = kind === 'rip' ? measurements?.widthIn : measurements?.longIn;
+    if (!pinBoardSize(kind, { seed: seedOf(board), targetIn: value, edge })) {
+      input.value = (measured ?? 0).toFixed(2);
+    }
   }
+
+  // A refusal answers one gesture; a new pick is a new gesture and must not inherit it.
+  $: if (plank) pinRejection.set(null);
 
   /**
    * Whether *this* board is the one a pin of that kind currently holds.
@@ -84,13 +95,23 @@
    */
   $: pinnedIds = new Set($plankLayout.pinnedIds ?? []);
   $: pinnedHere = plank != null && pinnedIds.has(plank.id);
-  $: unsatisfied = new Set<PinKind>($plankLayout.pinsUnsatisfied ?? []);
+  $: unsatisfied = new Set(
+    ($plankLayout.pinsUnsatisfied ?? []).map((ref) => `${ref.kind}:${ref.index}`)
+  );
 
   const PIN_NOUNS: Readonly<Record<PinKind, string>> = { rip: 'width', joint: 'length' };
 
-  $: activePins = (['rip', 'joint'] as PinKind[])
-    .map((kind) => ({ kind, pin: pins[kind] }))
-    .filter((entry): entry is { kind: PinKind; pin: LayoutPin } => entry.pin != null);
+  /**
+   * The pins holding *this* board, off the engine's own resolution.
+   *
+   * By probe rather than by seed: the engine resolves a pin by asking which board landed where
+   * the pin says one should, and a second opinion computed here would be a second place that
+   * answer could differ. `pinnedIds` is parallel to `pinSlots`, so an id matching this board
+   * names the slot that holds it.
+   */
+  $: heldHere = ($plankLayout.pinSlots ?? []).filter(
+    (slot) => plank != null && pinnedIds.has(plank.id) && slot.reason === null
+  );
 
   /**
    * What the far wall gets, live, while the user types.
@@ -233,19 +254,22 @@
       </p>
     {/if}
 
+    {#if $pinRejection}
+      <p class="panel-hint warning">{$pinRejection}</p>
+    {/if}
+
     {#if pinnedHere}
       <div class="pinned">
         <span class="pinned-label">Pinned</span>
-        {#each activePins as { kind, pin: entry } (kind)}
+        {#each heldHere as slot (`${slot.kind}:${slot.index}`)}
           <button
             type="button"
             class="chip"
-            class:miss={unsatisfied.has(kind)}
-            title="Stop holding this {PIN_NOUNS[kind]}; the floor goes back to deriving it"
-            on:click={() => clearBoardPin(kind)}
+            class:miss={unsatisfied.has(`${slot.kind}:${slot.index}`)}
+            title="Stop holding this {PIN_NOUNS[slot.kind]}; the floor goes back to deriving it"
+            on:click={() => clearBoardPin(slot.kind, slot.index)}
           >
-            {PIN_NOUNS[kind]}
-            {formatInches(entry.targetIn)}{#if unsatisfied.has(kind)}&nbsp;— not met{/if}&nbsp;&times;
+            {PIN_NOUNS[slot.kind]}{#if unsatisfied.has(`${slot.kind}:${slot.index}`)}&nbsp;— not met{/if}&nbsp;&times;
           </button>
         {/each}
       </div>

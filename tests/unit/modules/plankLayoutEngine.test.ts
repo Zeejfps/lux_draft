@@ -1691,7 +1691,7 @@ describe('pinned board sizes', () => {
     expect(widthIn(rowAt(before, 'low').width)).toBeCloseTo(7, 6);
 
     const after = computePlankLayout(
-      inputs({ pins: { rip: { seed: bottomSeed, targetIn: 4, edge: 'low' } } })
+      inputs({ pins: { rips: [{ seed: bottomSeed, targetIn: 4, edge: 'low' }], joints: [] } })
     );
     expect(widthIn(rowAt(after, 'low').width)).toBeCloseTo(4, 6);
     // The cost is arithmetic, not a guess: the two rips sum to a property of the room, so pinning
@@ -1706,7 +1706,9 @@ describe('pinned board sizes', () => {
     const before = rows(computePlankLayout(inputs()));
     for (const targetIn of [0.5, 2, 4, 6.5]) {
       const after = rows(
-        computePlankLayout(inputs({ pins: { rip: { seed: bottomSeed, targetIn, edge: 'low' } } }))
+        computePlankLayout(
+          inputs({ pins: { rips: [{ seed: bottomSeed, targetIn, edge: 'low' }], joints: [] } })
+        )
       );
       expect(Math.abs(after - before), `${targetIn}"`).toBeLessThanOrEqual(1);
     }
@@ -1720,7 +1722,7 @@ describe('pinned board sizes', () => {
    * stored is the *intent*, so it is re-solved against the board that is actually being laid.
    */
   it('holds the pinned width through a change of stock', () => {
-    const pins = { rip: { seed: bottomSeed, targetIn: 4, edge: 'low' } } as const;
+    const pins = { rips: [{ seed: bottomSeed, targetIn: 4, edge: 'low' as const }], joints: [] };
     for (const stock of [7, 6, 9, 5]) {
       const layout = computePlankLayout(
         inputs({
@@ -1735,7 +1737,9 @@ describe('pinned board sizes', () => {
 
   it('measures from the far wall when the pin names the high edge', () => {
     const layout = computePlankLayout(
-      inputs({ pins: { rip: { seed: { x: 5, y: 19.5 }, targetIn: 5, edge: 'high' } } })
+      inputs({
+        pins: { rips: [{ seed: { x: 5, y: 19.5 }, targetIn: 5, edge: 'high' }], joints: [] },
+      })
     );
     expect(widthIn(rowAt(layout, 'high').width)).toBeCloseTo(5, 6);
     expect(widthIn(rowAt(layout, 'low').width)).toBeCloseTo(3.5, 6); // 1.5 - 5 ≡ 3.5 (mod 7)
@@ -1763,7 +1767,7 @@ describe('pinned board sizes', () => {
     const after = computePlankLayout(
       inputs({
         layout: config,
-        pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' } },
+        pins: { rips: [], joints: [{ seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' }] },
       })
     );
 
@@ -1780,7 +1784,7 @@ describe('pinned board sizes', () => {
     const layout = computePlankLayout(
       inputs({
         layout: { ...defaults.layout, minEndCutIn: 18 },
-        pins: { joint: { seed: { x: 0.5, y: 0.5 }, targetIn: 6, edge: 'low' } },
+        pins: { rips: [], joints: [{ seed: { x: 0.5, y: 0.5 }, targetIn: 6, edge: 'low' }] },
       })
     );
     const first = layout.planks
@@ -1806,8 +1810,8 @@ describe('pinned board sizes', () => {
     const layout = computePlankLayout(
       inputs({
         pins: {
-          rip: { seed: bottomSeed, targetIn: 4, edge: 'low' },
-          joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' },
+          rips: [{ seed: bottomSeed, targetIn: 4, edge: 'low' }],
+          joints: [{ seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' }],
         },
       })
     );
@@ -1822,20 +1826,26 @@ describe('pinned board sizes', () => {
 
     it('a rip wider than the stock', () => {
       expect(
-        unsatisfied({ pins: { rip: { seed: bottomSeed, targetIn: 20, edge: 'low' } } })
-      ).toEqual(['rip']);
+        unsatisfied({
+          pins: { rips: [{ seed: bottomSeed, targetIn: 20, edge: 'low' }], joints: [] },
+        })
+      ).toEqual([{ kind: 'rip', index: 0 }]);
     });
 
     it('a piece longer than the board', () => {
       expect(
-        unsatisfied({ pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 60, edge: 'low' } } })
-      ).toEqual(['joint']);
+        unsatisfied({
+          pins: { rips: [], joints: [{ seed: { x: 1.5, y: 0.5 }, targetIn: 60, edge: 'low' }] },
+        })
+      ).toEqual([{ kind: 'joint', index: 0 }]);
     });
 
     it('a seed the room no longer contains', () => {
       expect(
-        unsatisfied({ pins: { joint: { seed: { x: 80, y: 80 }, targetIn: 30, edge: 'low' } } })
-      ).toEqual(['joint']);
+        unsatisfied({
+          pins: { rips: [], joints: [{ seed: { x: 80, y: 80 }, targetIn: 30, edge: 'low' }] },
+        })
+      ).toEqual([{ kind: 'joint', index: 0 }]);
     });
   });
 
@@ -1850,7 +1860,7 @@ describe('pinned board sizes', () => {
     const pinned = computePlankLayout(
       inputs({
         layout: config,
-        pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' } },
+        pins: { rips: [], joints: [{ seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' }] },
       })
     );
     expect(pinned.pinsUnsatisfied).toEqual([]);
@@ -1935,16 +1945,147 @@ describe('pinned board sizes', () => {
     }
   });
 
+  /**
+   * The claim the whole rework exists for: a floor holds as many sizes as it has boundaries to
+   * measure them from, and one anchor could only ever hold one.
+   */
+  describe('many pins at once', () => {
+    const at = (targetIn: number, y: number, edge: 'low' | 'high') => ({
+      seed: { x: 5, y },
+      targetIn,
+      edge,
+    });
+
+    it('honours a width against each wall, with the make-up row taken in between', () => {
+      const layout = computePlankLayout(
+        inputs({ pins: { rips: [at(4, 0.5, 'low'), at(5, 19.5, 'high')], joints: [] } })
+      );
+      expect(layout.pinsUnsatisfied).toEqual([]);
+      expect(widthIn(rowAt(layout, 'low').width)).toBeCloseTo(4, 6);
+      expect(widthIn(rowAt(layout, 'high').width)).toBeCloseTo(5, 6);
+      // 4 + 5 is not what the room divides to, so one row between them is ripped to make it up —
+      // exactly the board an installer cuts, and the only way both walls can be satisfied.
+      const ripped = layout.planks.filter((p) => p.ripped);
+      expect(new Set(ripped.map((p) => p.row)).size).toBe(3);
+    });
+
+    it('holds every width through a change of stock', () => {
+      const pins = { rips: [at(4, 0.5, 'low'), at(5, 19.5, 'high')], joints: [] };
+      for (const stock of [7, 6, 9]) {
+        const layout = computePlankLayout(
+          inputs({ pins, plank: { ...defaults.plank, widthIn: stock, minRipWidthIn: 0 } })
+        );
+        expect(layout.pinsUnsatisfied, `${stock}"`).toEqual([]);
+        expect(widthIn(rowAt(layout, 'low').width), `${stock}"`).toBeCloseTo(4, 6);
+        expect(widthIn(rowAt(layout, 'high').width), `${stock}"`).toBeCloseTo(5, 6);
+      }
+    });
+
+    it('pins a length on several rows independently', () => {
+      const rows = [0, 3, 7];
+      const layout = computePlankLayout(
+        inputs({
+          pins: {
+            rips: [],
+            joints: rows.map((row) => ({
+              seed: { x: 1.5, y: 0.5 + row * (defaults.plank.widthIn / INCHES_PER_FOOT) },
+              targetIn: 30,
+              edge: 'low' as const,
+            })),
+          },
+        })
+      );
+      expect(layout.pinsUnsatisfied).toEqual([]);
+      for (const row of rows) {
+        const first = layout.planks
+          .filter((p) => p.row === row)
+          .sort((a, b) => a.center.x - b.center.x)[0];
+        expect(widthIn(first.length), `row ${row}`).toBeCloseTo(30, 6);
+      }
+    });
+
+    it('keeps both axes satisfied together', () => {
+      const layout = computePlankLayout(
+        inputs({
+          pins: {
+            rips: [at(4, 0.5, 'low'), at(5, 19.5, 'high')],
+            joints: [
+              { seed: { x: 1.5, y: 0.4 }, targetIn: 30, edge: 'low' },
+              { seed: { x: 1.5, y: 5 }, targetIn: 20, edge: 'low' },
+            ],
+          },
+        })
+      );
+      expect(layout.pinsUnsatisfied).toEqual([]);
+      expect(layout.pinnedIds).toHaveLength(4);
+    });
+
+    it('refuses the second pin on a row rather than laying one over the other', () => {
+      const layout = computePlankLayout(
+        inputs({
+          pins: {
+            rips: [],
+            joints: [
+              { seed: { x: 1.5, y: 0.4 }, targetIn: 30, edge: 'low' },
+              { seed: { x: 3.5, y: 0.4 }, targetIn: 20, edge: 'low' },
+            ],
+          },
+        })
+      );
+      expect(layout.pinsUnsatisfied).toEqual([{ kind: 'joint', index: 1 }]);
+      expect(layout.pinSlots?.[1].reason).toMatch(/already pinned/);
+      // The first still stands: a collision costs the pin that lost, not the floor.
+      const first = layout.planks
+        .filter((p) => p.row === 0)
+        .sort((a, b) => a.center.x - b.center.x)[0];
+      expect(widthIn(first.length)).toBeCloseTo(30, 6);
+    });
+
+    it('names what is being sized, so a re-pin can be told from a collision', () => {
+      const layout = computePlankLayout(
+        inputs({ pins: { rips: [at(4, 0.5, 'low'), at(6, 0.3, 'low')], joints: [] } })
+      );
+      // Two answers to one question — the row against the low wall — so they share a slot.
+      expect(layout.pinSlots?.[0].slot).toBe(layout.pinSlots?.[1].slot);
+    });
+
+    it('refuses a size no board of this stock could be', () => {
+      const layout = computePlankLayout(
+        inputs({ pins: { rips: [at(40, 0.5, 'low')], joints: [] } })
+      );
+      expect(layout.pinSlots?.[0].reason).toMatch(/board it is cut from/);
+    });
+  });
+
   it('keys a pin into the layout, so a cached floor cannot come back unpinned', () => {
     const bare = inputs();
-    const pinned = inputs({ pins: { rip: { seed: bottomSeed, targetIn: 4, edge: 'low' } } });
-    const other = inputs({ pins: { rip: { seed: bottomSeed, targetIn: 5, edge: 'low' } } });
-    const flipped = inputs({ pins: { rip: { seed: bottomSeed, targetIn: 4, edge: 'high' } } });
-    const keys = [bare, pinned, other, flipped].map(layoutKey);
-    expect(new Set(keys).size).toBe(4);
+    const pinned = inputs({
+      pins: { rips: [{ seed: bottomSeed, targetIn: 4, edge: 'low' }], joints: [] },
+    });
+    const other = inputs({
+      pins: { rips: [{ seed: bottomSeed, targetIn: 5, edge: 'low' }], joints: [] },
+    });
+    const flipped = inputs({
+      pins: { rips: [{ seed: bottomSeed, targetIn: 4, edge: 'high' }], joints: [] },
+    });
+    const two = inputs({
+      pins: {
+        rips: [
+          { seed: bottomSeed, targetIn: 4, edge: 'low' },
+          { seed: { x: 5, y: 19.5 }, targetIn: 5, edge: 'high' },
+        ],
+        joints: [],
+      },
+    });
+    const keys = [bare, pinned, other, flipped, two].map(layoutKey);
+    expect(new Set(keys).size).toBe(5);
     // …and the same pin keys identically, whichever route the document took to get there.
     expect(
-      layoutKey(inputs({ pins: { rip: { seed: { ...bottomSeed }, targetIn: 4, edge: 'low' } } }))
+      layoutKey(
+        inputs({
+          pins: { rips: [{ seed: { ...bottomSeed }, targetIn: 4, edge: 'low' }], joints: [] },
+        })
+      )
     ).toEqual(keys[1]);
   });
 });

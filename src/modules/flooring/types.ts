@@ -132,12 +132,12 @@ export interface SurfaceAssignment {
 }
 
 /**
- * The two things on a floor that are actually free to set.
+ * The two axes a size can be set on.
  *
- * Not two kinds of board — two **phases**. A board in the middle of a run is a full board and
- * nothing can make it otherwise; what a floor lets you choose is where the grid falls, and there
- * are exactly two grids. `rip` is the phase of the row grid across the run, `joint` the phase of
- * the joint grid along it.
+ * `rip` is a row's width, across the run; `joint` is an end piece's length, along it. A board in
+ * the middle of a run is a full board and nothing can make it otherwise — but a row against a
+ * boundary and the piece at the end of a run are both free, and there is one of each per boundary
+ * and per row rather than one of each per floor.
  */
 export type PinKind = 'rip' | 'joint';
 
@@ -160,16 +160,28 @@ export interface LayoutPin {
 }
 
 /**
- * At most one pin of each kind.
+ * Every size the user has asked the floor to hold.
  *
- * A rip pin fixes the row anchor modulo the plank width; a joint pin fixes the joint anchor
- * modulo the plank length. Each is one scalar in closed form, so a second pin of a kind
- * *replaces* the first and there is no constraint graph, no over-constrained state and no
- * unsatisfiable-system UI to design.
+ * **Lists, not one of each.** The first cut of this held a single pin per axis, on the argument
+ * that a floor has exactly two degrees of freedom — fix where one row edge lands and every row
+ * edge is fixed. That argument is sound given a uniform row grid, and the uniform row grid was an
+ * assumption in the engine rather than a property of a floor. An installer rips as many rows as
+ * the job needs; it costs material and saw settings, not feasibility. See
+ * `PlankLayoutEngine.buildRowEdges`, which partitions the run instead of phasing it.
+ *
+ * A set is checked for satisfiability *before* it is stored (`pinConflicts`), so the pins on a
+ * document always fit the room they were made in — but geometry moves underneath them afterwards,
+ * which is what `PlankLayout.pinsUnsatisfied` is still for.
  */
 export interface LayoutPins {
-  rip?: LayoutPin;
-  joint?: LayoutPin;
+  /** Row widths, each measured from a boundary. Order is not significant; the engine sorts. */
+  rips: LayoutPin[];
+  /** End-piece lengths, at most one per row. */
+  joints: LayoutPin[];
+}
+
+export function emptyPins(): LayoutPins {
+  return { rips: [], joints: [] };
 }
 
 export const PIN_LABELS: Readonly<Record<PinKind, string>> = {

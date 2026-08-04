@@ -83,8 +83,8 @@ export const COMMAND_SAMPLES: Record<string, unknown> = {
   },
   [flooring.setLayoutPins.type]: {
     pins: {
-      rip: { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' },
-      joint: { seed: { x: 1.5, y: 5 }, targetIn: 30, edge: 'low' },
+      rips: [{ seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' }],
+      joints: [{ seed: { x: 1.5, y: 5 }, targetIn: 30, edge: 'low' }],
     },
   },
 };

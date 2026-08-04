@@ -15,6 +15,7 @@ import type {
 } from './types';
 import {
   DEFAULT_LAYOUT_CONFIG,
+  emptyPins,
   DEFAULT_LAYOUT_ORIGIN,
   DEFAULT_PLANK_SPEC,
   STAGGER_LABELS,
@@ -97,16 +98,14 @@ export function defaultFlooringData(): FlooringData {
     transitions: [],
     dividers: [],
     surfaces: [],
-    pins: {},
+    pins: emptyPins(),
   };
 }
 
 /** Freshly allocated, all the way down — a pin holds a `Vector2` and must never be aliased. */
 export function clonePins(pins: Readonly<LayoutPins>): LayoutPins {
-  const out: LayoutPins = {};
-  if (pins.rip) out.rip = { ...pins.rip, seed: { ...pins.rip.seed } };
-  if (pins.joint) out.joint = { ...pins.joint, seed: { ...pins.joint.seed } };
-  return out;
+  const one = (p: LayoutPin): LayoutPin => ({ ...p, seed: { ...p.seed } });
+  return { rips: pins.rips.map(one), joints: pins.joints.map(one) };
 }
 
 /**
@@ -282,14 +281,28 @@ function readPin(value: unknown, path: string): LayoutPin {
  * Absent decodes to no pins, which is the floor every document written before this existed had.
  * A malformed pin is quarantined rather than dropped: it moves geometry, so silently reading it
  * as "unpinned" would render a different floor than the one that was saved and say nothing.
+ *
+ * The singular `rip` / `joint` keys are the shape pins were first written in, when the engine held
+ * one of each. They are read into the lists rather than rejected — a document is not wrong for
+ * having been saved before the floor could hold more than two sizes, and the version is not bumped
+ * for the same reason it was not bumped the first time.
  */
 function readPins(value: unknown): LayoutPins {
-  if (value === undefined || value === null) return {};
+  const out = emptyPins();
+  if (value === undefined || value === null) return out;
   if (!isRecord(value)) fail('pins must be an object');
-  const out: LayoutPins = {};
-  if (value.rip !== undefined && value.rip !== null) out.rip = readPin(value.rip, 'pins.rip');
-  if (value.joint !== undefined && value.joint !== null) {
-    out.joint = readPin(value.joint, 'pins.joint');
+
+  for (const [key, list] of [
+    ['rip', out.rips],
+    ['joint', out.joints],
+  ] as const) {
+    if (value[key] !== undefined && value[key] !== null)
+      list.push(readPin(value[key], `pins.${key}`));
+    const plural = `${key}s`;
+    const many = value[plural];
+    if (many === undefined || many === null) continue;
+    if (!Array.isArray(many)) fail(`pins.${plural} must be an array`);
+    many.forEach((entry, i) => list.push(readPin(entry, `pins.${plural}[${i}]`)));
   }
   return out;
 }

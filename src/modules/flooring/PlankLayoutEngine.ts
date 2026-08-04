@@ -263,6 +263,30 @@ export interface CutListEntry {
   readonly count: number;
 }
 
+/** Which pin, in which list. Pins are lists now, so naming a kind is no longer enough. */
+export interface PinRef {
+  readonly kind: PinKind;
+  readonly index: number;
+}
+
+/**
+ * Where one pin landed, as the engine resolved it.
+ *
+ * Published because the store has two questions it cannot answer outside the run frame, and both
+ * have to be settled *before* a pin is written. **Is this a re-pin?** — a pin naming a row that is
+ * already pinned is one question asked twice, and the new answer should replace the old rather
+ * than collide with it; equal `slot`s are equal questions. **Does it fit?** — a set that cannot be
+ * laid is a floor the user cannot reason about, so `reason` is what the panel says instead of
+ * storing it.
+ *
+ * `slot` is `null` when the pin could not be resolved at all — the room no longer has a boundary
+ * where it was measured from.
+ */
+export interface PinSlot extends PinRef {
+  readonly slot: string | null;
+  readonly reason: string | null;
+}
+
 export interface PlankLayout {
   /** The structural key of the inputs this was computed from. */
   readonly key: string;
@@ -314,7 +338,12 @@ export interface PlankLayout {
    * joint solve makes beside an inside corner. The alternative was a special case per cause, or —
    * the honest prediction — none.
    */
-  readonly pinsUnsatisfied?: readonly PinKind[];
+  readonly pinsUnsatisfied?: readonly PinRef[];
+  /**
+   * Every pin, where it resolved to and what refused it. See `PinSlot`; the store reads this to
+   * tell a re-pin from a collision before it writes.
+   */
+  readonly pinSlots?: readonly PinSlot[];
   /**
    * What the room's two ripped rows must add up to, inches — `(maxY - minY) mod plankWidth` in
    * the run frame, and `0` where the room divides evenly into whole boards.
@@ -371,8 +400,8 @@ export function layoutKey(inputs: LayoutInputs): string {
   const { plank, layout, origin } = inputs;
   const ring = (points: readonly Vector2[]): string =>
     points.map((p) => `${n(p.x)},${n(p.y)}`).join(' ');
-  const pinKey = (pin: LayoutPin | undefined): string =>
-    pin ? `${n(pin.seed.x)},${n(pin.seed.y)}:${n(pin.targetIn)}:${pin.edge}` : '-';
+  const pinKey = (pin: LayoutPin): string =>
+    `${n(pin.seed.x)},${n(pin.seed.y)}:${n(pin.targetIn)}:${pin.edge}`;
   return [
     poly(inputs.walls),
     inputs.obstacles.map((o) => poly(o.walls)).join('|'),
@@ -394,7 +423,10 @@ export function layoutKey(inputs: LayoutInputs): string {
     ].join('/'),
     `${n(origin.x)},${n(origin.y)}`,
     // A pin moves geometry, so a layout cached under the old value would come back wrong.
-    [pinKey(inputs.pins?.rip), pinKey(inputs.pins?.joint)].join('|'),
+    [
+      (inputs.pins?.rips ?? []).map(pinKey).join(','),
+      (inputs.pins?.joints ?? []).map(pinKey).join(','),
+    ].join('|'),
   ].join(';');
 }
 
@@ -984,6 +1016,17 @@ const MIN_BOARD_FT = 0.25 / INCHES_PER_FOOT;
 const PIN_TOLERANCE_FT = 1 / 16 / INCHES_PER_FOOT;
 
 /**
+ * Feet as the inches a refusal message quotes, to the eighth.
+ *
+ * The panels have their own imperial formatter and this is not it — that one lives in the lazy
+ * half with the UI, and the engine may not reach across. Eighths because a saw is set from a tape
+ * measure, and a message naming 6.999999" would read as a bug in the message.
+ */
+function fraction(feet: number): string {
+  return `${Math.round(feet * INCHES_PER_FOOT * 8) / 8}"`;
+}
+
+/**
  * Band edges, with heights closer together than `MIN_FEATURE_FT` merged into one.
  *
  * Ascending in, ascending out. The **lower** of a merged pair survives, except at the top of the
@@ -1004,6 +1047,102 @@ function mergeBandEdges(sorted: readonly number[]): number[] {
   const top = sorted[sorted.length - 1];
   if (out.length > 1 && out[out.length - 1] < top) out[out.length - 1] = top;
   return out;
+}
+
+/**
+ * A forced row: a width some pin asked for, at a position already resolved against a boundary.
+ *
+ * `[lo, hi]` is where that row has to sit in the run frame. The pin that produced it is carried so
+ * the sweep can say which one it had to refuse when two of them collide.
+ */
+interface ForcedRow {
+  readonly lo: number;
+  readonly hi: number;
+  /** Index into the pin list this came from — what a conflict names. */
+  readonly pin: number;
+}
+
+/**
+ * The row edges of one stretch, laid full-width from its **low** end with the remainder ripped at
+ * its high end.
+ *
+ * That is the order an installer works in and it is where the leftover physically ends up: boards
+ * go down full until there is no longer room for a full one, and the last one before whatever
+ * stops the run gets ripped. `phase` exists for the unpinned case alone, where the grid is
+ * anchored at the layout origin rather than at the low end, and dragging the origin has to keep
+ * sliding the rows the way it always did.
+ */
+function fillRowEdges(from: number, to: number, phase: number, pitch: number, out: number[]): void {
+  if (to - from <= MIN_FEATURE_FT) return;
+  const first = Math.ceil((from - phase) / pitch + EPS);
+  for (let k = first; ; k++) {
+    const y = phase + k * pitch;
+    if (y >= to - MIN_FEATURE_FT) break;
+    if (y > from + MIN_FEATURE_FT) out.push(y);
+    if (out.length > MAX_PLANKS) break;
+  }
+}
+
+/**
+ * Where the rows break across the run, low to high, inclusive of both ends.
+ *
+ * With no forced rows this is the arithmetic grid `phase + k * pitch` clipped to `[minY, maxY]` —
+ * the same set of heights the engine used when a floor had one anchor and no way to ask for a
+ * second width. That identity is deliberate and is what the existing fixtures verify.
+ *
+ * With forced rows it is a **sweep**: each one is dropped in where it was resolved to sit, and the
+ * gaps between them are filled full-width from below with one ripped make-up row at the top of
+ * each gap. `N` pins therefore cost at most `N` make-up boards, and every pin is honoured as long
+ * as its gap can hold one — which is what the caller checks before a pin is ever stored.
+ *
+ * Forced rows that overlap, or that fall outside the run, are skipped rather than laid on top of
+ * one another; `conflicts` collects them so the caller can say which pin lost and why.
+ */
+function buildRowEdges(
+  minY: number,
+  maxY: number,
+  phase: number,
+  pitch: number,
+  forced: readonly ForcedRow[] = [],
+  conflicts?: number[]
+): number[] {
+  const edges: number[] = [minY];
+  const laid = [...forced].sort((a, b) => a.lo - b.lo);
+  let y = minY;
+  let first = true;
+
+  for (const row of laid) {
+    // Behind the sweep, past the far wall, or thinner than a board: it cannot be laid where it
+    // was asked for, and laying it anywhere else would be answering a different question.
+    if (
+      row.lo < y - MIN_FEATURE_FT ||
+      row.hi > maxY + MIN_FEATURE_FT ||
+      row.hi - row.lo < MIN_BOARD_FT
+    ) {
+      conflicts?.push(row.pin);
+      continue;
+    }
+    // The gap below it. Beneath the *first* forced row the low end is a wall, so the fill is
+    // phased off the pin above and the make-up lands against that wall, under the trim — which is
+    // where a leftover belongs and where a single pin has always put it. Between two forced rows
+    // there is no wall to favour, so boards go down full from below and the make-up sits against
+    // the next pin, which is the order they are laid in.
+    fillRowEdges(y, row.lo, first ? row.lo : y, pitch, edges);
+    if (row.lo - y > MIN_FEATURE_FT) edges.push(row.lo);
+    edges.push(row.hi);
+    y = row.hi;
+    first = false;
+  }
+
+  // Everything above the last forced row — the whole floor when there are none, which is why the
+  // phase is then the layout origin's rather than the sweep's position. Dragging the origin has
+  // to keep sliding an unpinned floor exactly as it did.
+  fillRowEdges(y, maxY, first ? phase : y, pitch, edges);
+  edges.push(maxY);
+
+  // A forced row landing a hair off a fill edge would otherwise leave a zero-height row; the same
+  // physical tolerance the band edges are merged at applies here, for the same reason.
+  return edges.filter((v, i) => i === 0 || v - edges[i - 1] > MIN_FEATURE_FT);
 }
 
 /**
@@ -1174,106 +1313,189 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     low >= -EPS ? gap : high <= EPS ? -gap : 0;
 
   /**
-   * A pin, solved into the grid phase it fixes — plus what it takes to check it afterwards.
+   * A pin, resolved to where its board has to sit — plus what it takes to check it afterwards.
    *
-   * `probe` is the middle of where the pinned board *should* land, and it exists because the seed
-   * cannot do that job. A seed is the centroid of the board at the moment it was pinned, and the
-   * board is about to change size: pin a 6" row down to 2" and the old centroid, 3" off the wall,
-   * is outside the board it named. Probing the middle of the solved position instead asks the
-   * question the check actually wants — "is the board that ended up here the size that was asked
-   * for" — and stays right through every re-solve.
+   * `probe` is the middle of that position, and it exists because the seed cannot do the job. A
+   * seed is the centroid of the board at the moment it was pinned, and the board is about to
+   * change size: pin a 6" row down to 2" and the old centroid, 3" off the wall, is outside the
+   * board it named. Probing the middle of the resolved position instead asks the question the
+   * check actually wants — "is the board that ended up here the size that was asked for" — and
+   * stays right through every re-solve.
    */
   interface PinSolve {
-    /** The grid phase, already reduced modulo the grid's own pitch. */
-    readonly anchor: number;
-    /** World space, the middle of the pinned board as solved. */
+    /** Which pin in its list, so a conflict and a miss can both name one. */
+    readonly index: number;
+    /** World space, the middle of the pinned board as resolved. */
     readonly probe: Vector2;
     /**
      * What the board must measure, feet — the figure the user **typed**, not the clamped one the
-     * anchor was solved from. So a 60" pin on a 48" board reads as unsatisfied rather than as a
-     * 48" board quietly reported as a success.
+     * position was resolved from. So a 60" pin on a 48" board reads as unsatisfied rather than as
+     * a 48" board quietly reported as a success.
      */
     readonly target: number;
+    /**
+     * What is being sized, as an identity. Two pins with the same slot are two answers to one
+     * question, so the second replaces the first rather than fighting it — which is what the
+     * store needs to tell a re-pin from a collision.
+     */
+    readonly slot: string;
+    /**
+     * Set when the pin is impossible on its face — a size no board of this stock can be. Kept
+     * apart from the misses the post-check finds, because *this* is deterministic and can be
+     * refused before it is ever stored, while a miss can come from the scan-line approximation
+     * and is not something to reject a user's number over.
+     */
+    readonly reason?: string;
   }
 
-  /**
-   * A joint pin also carries the **absolute** position its joint has to land on, not just the
-   * phase. `stagger: 'offcut'` places each row by a search rather than off a shared anchor, so a
-   * phase is not enough to tell it where to put one — see `solveJoint`.
-   */
+  interface RipSolve extends PinSolve {
+    readonly forced: ForcedRow;
+  }
+
   interface JointSolve extends PinSolve {
+    /** The absolute position along the run the joint has to land on. */
     readonly grid: number;
+    /** The run holding the seed, so `layRow` can be told to leave that one alone. */
+    readonly run: Interval;
+    readonly seedX: number;
+    readonly row: number;
   }
 
-  const pins: LayoutPins = inputs.pins ?? {};
+  const pins: LayoutPins = inputs.pins ?? { rips: [], joints: [] };
   const pinnable = (pin: LayoutPin): boolean =>
     finite(pin.seed.x, pin.seed.y, pin.targetIn) && pin.targetIn > 0;
 
   /**
-   * "The row containing this point is W inches wide."
+   * Every height a row can be measured *from*: the room's own limits and every height at which
+   * any outline turns.
    *
-   * The row grid is `ANCHOR_Y + k * plankWidth`, so a pin fixes `ANCHOR_Y` **modulo one board** —
-   * which is why there is exactly one degree of freedom here, why a second rip pin replaces the
-   * first, and why this is arithmetic rather than a solver. `h` is the boundary the board is
-   * measured from: the outline height bounding the seed's row on the pinned side, taken over the
-   * room's own limits and every height at which any outline turns, which is the same set the
-   * bands are cut at. Measure `W` off it and the far edge of the pinned board *is* a grid line.
-   *
-   * The cost is arithmetic too, and the panel can show it while the user types: the two rips of a
-   * room sum to `(maxY - minY) mod plankWidth`, a property of the room and of nothing else.
+   * A rip pin always names one of these, and that is what keeps the sweep well-founded rather
+   * than iterative. A pin on a **middle** row would be circular — the row's position depends on
+   * every row beneath it, so applying the pin moves the thing the pin was pointing at — and it is
+   * also not a thing anyone needs, since a middle row is a full board and the panel only offers
+   * the field on a board that was ripped.
    */
-  const solveRip = (pin: LayoutPin | undefined): PinSolve | null => {
-    if (!pin || !pinnable(pin)) return null;
+  const boundaryHeights = [
+    ...new Set([minY, maxY, ...outlineHeights([room, ...holes, ...(clips ?? [])])]),
+  ].sort((a, b) => a - b);
+  const onBoundaryHeight = (y: number): boolean =>
+    boundaryHeights.some((h) => Math.abs(h - y) <= MIN_FEATURE_FT);
+
+  /**
+   * "The row against this boundary is W inches wide", resolved to the interval it has to occupy.
+   *
+   * No phase arithmetic any more: the pin names a boundary and a width, which *is* a row, and
+   * `buildRowEdges` lays the rest of the run around it. That is what lets a floor hold as many of
+   * these as it has boundaries — one anchor could only ever hold one.
+   */
+  const solveRip = (pin: LayoutPin, index: number): RipSolve | null => {
+    if (!pinnable(pin)) return null;
     const seed = toLocal(frame, pin.seed);
     const width = Math.min(plankWidth, Math.max(MIN_BOARD_FT, pin.targetIn / INCHES_PER_FOOT));
     let bound: number | null = null;
-    for (const y of [minY, maxY, ...outlineHeights([room, ...holes, ...(clips ?? [])])]) {
+    for (const y of boundaryHeights) {
       if (pin.edge === 'low') {
         if (y <= seed.y + MIN_FEATURE_FT && (bound === null || y > bound)) bound = y;
       } else if (y >= seed.y - MIN_FEATURE_FT && (bound === null || y < bound)) bound = y;
     }
     if (bound === null) return null;
-    const far = pin.edge === 'low' ? bound + width : bound - width;
+    const lo = pin.edge === 'low' ? bound : bound - width;
+    const hi = pin.edge === 'low' ? bound + width : bound;
+    const asked = pin.targetIn / INCHES_PER_FOOT;
     return {
-      anchor: mod(far, plankWidth),
-      probe: toWorld(frame, { x: seed.x, y: (bound + far) / 2 }),
+      index,
+      reason:
+        asked > plankWidth + PIN_TOLERANCE_FT || asked < MIN_BOARD_FT
+          ? `A row has to be between ${fraction(MIN_BOARD_FT)} and the ` +
+            `${fraction(plankWidth)} board it is cut from.`
+          : undefined,
+      forced: { lo, hi, pin: index },
+      probe: toWorld(frame, { x: seed.x, y: (lo + hi) / 2 }),
       target: pin.targetIn / INCHES_PER_FOOT,
+      // The boundary and the side of it: re-sizing the row against the same wall is one question
+      // asked twice, whatever seed the second click landed on.
+      slot: `${Math.round(bound / MIN_FEATURE_FT)}:${pin.edge}`,
     };
   };
 
-  const rip = solveRip(pins.rip);
-  const ANCHOR_Y = rip?.anchor ?? anchorOf(minY, maxY);
+  const ripSolves = pins.rips.map(solveRip).filter((solve): solve is RipSolve => solve !== null);
+
+  const ANCHOR_Y = anchorOf(minY, maxY);
+
+  const firstRow = Math.floor((minY - ANCHOR_Y) / plankWidth);
+  const lastRow = Math.ceil((maxY - ANCHOR_Y) / plankWidth);
+  const rowCount = lastRow - firstRow;
+  if (rowCount <= 0 || rowCount > MAX_PLANKS)
+    return { ...EMPTY_LAYOUT, key, truncated: rowCount > 0 };
 
   /**
-   * "The piece at this end of this row is L inches long."
+   * Where the rows break, low to high — the whole of what decides how wide each row is.
    *
-   * The same shape one axis over: every row's joint grid is `ANCHOR_X + rowOffset(row)`, so
-   * moving the shared term moves this row's joints to where the pin asks and leaves the stagger
-   * pattern exactly as it was. It runs after `ANCHOR_Y` because it needs the row index, which is
-   * the phase the rip pin may just have moved — the two solves compose in one direction rather
-   * than racing.
+   * This is a **list** rather than the arithmetic `ANCHOR_Y + k * plankWidth` it replaces, and
+   * that is the change everything else here rests on. A single anchor can hold one row to a size:
+   * fix where one row edge lands and every row edge is fixed, so the far wall gets whatever is
+   * left. That reads like a property of floors and is a property of *this representation* — an
+   * installer rips as many rows as the job needs, at whatever widths it needs, and pays in
+   * material and saw settings rather than in feasibility.
+   *
+   * With no pins the list is exactly the arithmetic grid, so an unpinned floor is not merely
+   * equivalent to the old one, it is identical — which is what lets the existing suite stand as
+   * the proof.
+   *
+   * Row `i` keeps the number `firstRow + i` it has always had. `rowOffset` is a function of the
+   * row index, so renumbering from zero would silently restagger every floor ever saved.
+   */
+  /** Pins the sweep could not place, and what stopped each. See `buildRowEdges`. */
+  const ripRefused = new Map<number, string>();
+  const ripCollisions: number[] = [];
+  const rowEdges = buildRowEdges(
+    minY,
+    maxY,
+    ANCHOR_Y,
+    plankWidth,
+    ripSolves.map((solve) => solve.forced),
+    ripCollisions
+  );
+  for (const index of ripCollisions) {
+    ripRefused.set(
+      index,
+      'This row overlaps one that is already pinned, or reaches past the far wall.'
+    );
+  }
+  if (rowEdges.length < 2) return { ...EMPTY_LAYOUT, key };
+
+  /** Which row a height falls in, numbered as the row loop numbers them. */
+  const rowOfHeight = (y: number): number => {
+    let lo = 0;
+    let hi = rowEdges.length - 2;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (rowEdges[mid] <= y) lo = mid;
+      else hi = mid - 1;
+    }
+    return firstRow + lo;
+  };
+
+  /**
+   * "The piece at this end of this row is L inches long", one row at a time.
+   *
+   * Every row's joints are `ANCHOR_X + rowOffset(row)` — a formula, and a **stylistic** one: it
+   * decides how joints stagger, not what a floor can do. A row whose end piece was set to a
+   * length simply departs from it, which is what happens on site. So a joint pin is a per-row
+   * override, and rows with no pin keep the formula.
+   *
+   * The *lowest* pin also moves the shared `ANCHOR_X`, which is what a single pin has always
+   * done. Sliding the whole floor keeps the stagger pattern intact, and that is strictly nicer
+   * than overriding one row when there is only one row to satisfy; with two or more the floor
+   * degrades a row at a time rather than all at once.
    *
    * The run is read off a **single scan line** at the seed's height, which is the one
-   * approximation in the feature: the row loop breaks a band into sub-bands around a step, so a
-   * pin on the board beside an inside corner can solve against a slightly different run than the
-   * one that board is actually laid in. That is left to the post-check rather than paid for with
-   * more machinery — it is the same mechanism an impossible pin needs anyway.
-   *
-   * ## `stagger: 'offcut'`
-   *
-   * The one rule with no shared phase to move: its offsets come from a search over off-cut
-   * candidates row by row, not from `ANCHOR_X`. So the pin is applied to that row **directly** —
-   * `grid` below is the absolute position the joint has to land on, and the row loop hands it to
-   * the pinned row as its only candidate. The rows above resume the search from it, which is what
-   * off-cut staggering does anyway: every row reads the row beneath it, and the pinned row is
-   * simply a row whose grid was decided rather than searched for.
-   *
-   * Refusing the pin outright was the first cut of this, and it made off-cut a dead end — the
-   * length field vanished with a note to pick another stagger rule, on a floor where off-cut is
-   * usually the reason the user chose the rule at all.
+   * approximation left: the row loop breaks a band into sub-bands around a step, so a pin beside
+   * an inside corner can resolve against a slightly different run than the board is laid in. The
+   * post-check covers it, as it covers every other way a pin can miss.
    */
-  const solveJoint = (pin: LayoutPin | undefined): JointSolve | null => {
-    if (!pin || !pinnable(pin)) return null;
+  const solveJoint = (pin: LayoutPin, index: number): JointSolve | null => {
+    if (!pinnable(pin)) return null;
     const seed = toLocal(frame, pin.seed);
     let spans = bandIntervalsAt(room, seed.y, seed.y);
     if (clips !== null) {
@@ -1293,48 +1515,63 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     const [a, b] = run;
     const far = pin.edge === 'low' ? a + length : b - length;
     const near = pin.edge === 'low' ? a : b;
-    const row = Math.floor((seed.y - ANCHOR_Y) / plankWidth);
+    const row = rowOfHeight(seed.y);
+    const asked = pin.targetIn / INCHES_PER_FOOT;
     return {
-      anchor: mod(far - rowOffset(row, layout, plankLength), plankLength),
+      index,
+      reason:
+        asked > plankLength + PIN_TOLERANCE_FT || asked < MIN_BOARD_FT
+          ? `A piece has to be between ${fraction(MIN_BOARD_FT)} and the ` +
+            `${fraction(plankLength)} board it is cut from.`
+          : undefined,
       grid: far,
+      run,
+      seedX: seed.x,
+      row,
       probe: toWorld(frame, { x: (near + far) / 2, y: seed.y }),
       target: pin.targetIn / INCHES_PER_FOOT,
+      // One end piece per row per side. Two pins on the same end of the same row are one question
+      // asked twice; on opposite ends of one row they are a genuine collision, which the run
+      // length settles and the post-check reports.
+      slot: `${row}:${pin.edge}`,
     };
   };
 
-  const joint = solveJoint(pins.joint);
-  // Under `offcut` the shared anchor is not what places a row, so the pin does not move it; the
-  // row loop takes `joint.grid` instead. Everywhere else this *is* the placement.
-  const ANCHOR_X = (layout.stagger === 'offcut' ? null : joint?.anchor) ?? anchorOf(minX, maxX);
-
   /**
-   * The row and the run a joint pin sits in — what `layRow` has to be told to leave alone.
-   *
-   * `layRow` will otherwise fight the pin: it shifts the entire joint grid, and gives up a whole
-   * board to do it, to keep an end cut above `minEndCutIn`. Against an exact figure the user
-   * typed that is a silent override. The pin is an instruction; the minimum is a default. Only
-   * the run holding the seed is locked, so every other run on the floor keeps today's behaviour.
+   * At most one override per row: a second pin on a row already spoken for cannot also be
+   * honoured, since a row has one joint grid. It is refused rather than silently applied.
    */
-  const jointSeed = joint ? toLocal(frame, pins.joint!.seed) : null;
-  const pinnedRow = jointSeed ? Math.floor((jointSeed.y - ANCHOR_Y) / plankWidth) : null;
+  const jointByRow = new Map<number, JointSolve>();
+  const jointRefused = new Map<number, string>();
+  const jointSolves: JointSolve[] = [];
+  pins.joints.forEach((pin, index) => {
+    const solve = solveJoint(pin, index);
+    if (!solve) return;
+    jointSolves.push(solve);
+    // A row has one joint grid, so a second pin on it cannot also be honoured.
+    if (jointByRow.has(solve.row)) {
+      jointRefused.set(index, "That row's end piece is already pinned.");
+    } else jointByRow.set(solve.row, solve);
+  });
 
-  const firstRow = Math.floor((minY - ANCHOR_Y) / plankWidth);
-  const lastRow = Math.ceil((maxY - ANCHOR_Y) / plankWidth);
-  const rowCount = lastRow - firstRow;
-  if (rowCount <= 0 || rowCount > MAX_PLANKS)
-    return { ...EMPTY_LAYOUT, key, truncated: rowCount > 0 };
+  // The lowest pin keeps the shared anchor it has always moved; see `solveJoint`. Under `offcut`
+  // there is no shared phase to move, so every pin is a per-row override there.
+  const lead = [...jointByRow.values()].sort((p, q) => p.row - q.row)[0] ?? null;
+  const ANCHOR_X =
+    (layout.stagger === 'offcut' || lead === null
+      ? null
+      : mod(lead.grid - rowOffset(lead.row, layout, plankLength), plankLength)) ??
+    anchorOf(minX, maxX);
 
   /**
    * Where one band stops and the next begins.
    *
-   * The row grid `ANCHOR_Y + k * plankWidth` — anchored at the layout origin, which is what makes
-   * the origin marker move the joints — plus the room's own limits, plus **every height at which
-   * any outline turns**: the room's, each obstacle's, each area's. See `outlineHeights` for why
-   * that set is not filtered, and the header for the two properties it buys.
+   * Every row edge, plus the room's own limits, plus **every height at which any outline turns**:
+   * the room's, each obstacle's, each area's. See `outlineHeights` for why that set is not
+   * filtered, and the header for the two properties it buys.
    */
   const boundaries = new Set<number>([minY, maxY]);
-  for (let row = firstRow; row <= lastRow; row++) {
-    const y = ANCHOR_Y + row * plankWidth;
+  for (const y of rowEdges) {
     if (y > minY + EPS && y < maxY - EPS) boundaries.add(y);
   }
   for (const y of outlineHeights([room, ...holes, ...(clips ?? [])])) {
@@ -1353,9 +1590,20 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
   let narrowestRip = Infinity;
   let truncated = false;
 
-  /** The row a band belongs to — sub-bands of one row share its offset and so its joints. */
-  const rowOfBand = (low: number, high: number): number =>
-    Math.floor(((low + high) / 2 - ANCHOR_Y) / plankWidth);
+  /**
+   * The row a band belongs to — sub-bands of one row share its offset and so its joints.
+   *
+   * A lookup into `rowEdges` rather than the division it replaces, because the rows are no longer
+   * a uniform pitch once anything is pinned. Linear from the last answer: the row loop walks the
+   * bands in order, so this is amortised constant and never re-scans the floor.
+   */
+  let rowCursor = 0;
+  const rowOfBand = (low: number, high: number): number => {
+    const mid = (low + high) / 2;
+    if (mid < rowEdges[rowCursor]) rowCursor = 0;
+    while (rowCursor + 2 < rowEdges.length && rowEdges[rowCursor + 1] <= mid) rowCursor += 1;
+    return firstRow + rowCursor;
+  };
 
   /**
    * The state `stagger: 'offcut'` carries up the floor, and the only state in this engine that
@@ -1473,19 +1721,18 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       if (b - prev > EPS) out.push([prev, b]);
       return out;
     });
+    /** This row's joint pin, if it has one. See `solveJoint`. */
+    const override = jointByRow.get(row) ?? null;
+
     /**
      * The row, cut against a grid — and against the minimum end cut, which outranks the grid
-     * everywhere except the one run a joint pin named. See `pinnedRow`: there the grid is the
-     * instruction and the minimum stands down, which is what `minEndCut` of zero means to
-     * `layRow`.
+     * everywhere except the one run a joint pin named. There the grid is the instruction and the
+     * minimum stands down, which is what a `minEndCut` of zero means to `layRow`.
      */
     const layAt = (at: number): Piece[] =>
       runs.flatMap((run) => {
         const locked =
-          jointSeed !== null &&
-          row === pinnedRow &&
-          jointSeed.x >= run[0] - EPS &&
-          jointSeed.x <= run[1] + EPS;
+          override !== null && override.seedX >= run[0] - EPS && override.seedX <= run[1] + EPS;
         return layRow(run, at, plankLength, locked ? 0 : minEndCut);
       });
 
@@ -1509,12 +1756,12 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
      * none clears — the room admits no legal grid at all — the roomiest one stands.
      */
     const candidates: number[] = [];
-    if (joint !== null && row === pinnedRow && layout.stagger === 'offcut') {
-      // The one row on an off-cut floor whose grid is decided rather than searched for. A single
-      // candidate, so the search below cannot move it: the ladder guard is a default and the
-      // figure the user typed is not. Rows above resume the search from here — `lastOffset` is
-      // written from what actually got laid, which is exactly what off-cut staggering reads.
-      candidates.push(joint.grid);
+    if (override !== null) {
+      // A row whose grid is decided rather than derived. A single candidate, so the search below
+      // cannot move it: the ladder guard and the minimum end cut are defaults, and the figure the
+      // user typed is not. Under `offcut` the rows above resume the search from here, since
+      // `lastOffset` is written from what actually got laid.
+      candidates.push(override.grid);
     } else if (layout.stagger === 'offcut') {
       const runStart = runs.length > 0 ? runs[0][0] : ANCHOR_X;
       const from = lastOffset ?? runStart;
@@ -1741,12 +1988,16 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       const boundarySide = (low: boolean, high: boolean): 'low' | 'high' | undefined =>
         low === high ? undefined : low ? 'low' : 'high';
 
-      // Across the run the grid is exact — `ANCHOR_Y + k * plankWidth`, with nothing downstream
-      // free to move it — so the edge that is not on it is the wall.
-      const onRowGrid = (y: number): boolean =>
-        Math.abs(y - ANCHOR_Y - Math.round((y - ANCHOR_Y) / plankWidth) * plankWidth) <=
-        MIN_FEATURE_FT;
-      const ripEdge = ripped ? boundarySide(!onRowGrid(bandLow), !onRowGrid(bandHigh)) : undefined;
+      /**
+       * Across the run, the side that lies on an **outline height** — a wall, an obstacle edge, a
+       * region edge. That is the question `solveRip` can answer, and it is why this is no longer
+       * "the side not on the row grid": once a pin exists the rows are not a uniform pitch, and a
+       * make-up row is ripped with a joint on *both* sides. Asked the old way that row would have
+       * offered a pin resolving against a wall it does not touch.
+       */
+      const ripEdge = ripped
+        ? boundarySide(onBoundaryHeight(bandLow), onBoundaryHeight(bandHigh))
+        : undefined;
 
       /**
        * Along the run the same arithmetic is **not** available, and that is not a detail.
@@ -1847,19 +2098,37 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
    * unsatisfied by the same rule, since there is no probe to find a board at.
    */
   const pinnedIds: string[] = [];
-  const pinsUnsatisfied: PinKind[] = [];
-  for (const [kind, pin, solve] of [
-    ['rip', pins.rip, rip],
-    ['joint', pins.joint, joint],
-  ] as const) {
-    if (!pin) continue;
-    const hit = solve ? planks.find((p) => pointInPolygon(p.corners, solve.probe)) : undefined;
-    if (hit) pinnedIds.push(hit.id);
-    const measured = hit ? (kind === 'rip' ? hit.width : hit.length) : null;
-    if (measured === null || Math.abs(measured - solve!.target) > PIN_TOLERANCE_FT) {
-      pinsUnsatisfied.push(kind);
+  const pinsUnsatisfied: PinRef[] = [];
+  const pinSlots: PinSlot[] = [];
+
+  const check = (
+    kind: PinKind,
+    count: number,
+    solves: readonly PinSolve[],
+    refused: ReadonlyMap<number, string>,
+    measure: (plank: Plank) => number
+  ): void => {
+    const found = new Map(solves.map((solve) => [solve.index, solve]));
+    for (let index = 0; index < count; index++) {
+      const solve = found.get(index);
+      const reason =
+        solve === undefined
+          ? 'The room no longer has a boundary to measure this from.'
+          : (solve.reason ?? refused.get(index) ?? null);
+      pinSlots.push({ kind, index, slot: solve?.slot ?? null, reason });
+      const hit =
+        solve && reason === null
+          ? planks.find((plank) => pointInPolygon(plank.corners, solve.probe))
+          : undefined;
+      if (hit) pinnedIds.push(hit.id);
+      if (!hit || Math.abs(measure(hit) - solve!.target) > PIN_TOLERANCE_FT) {
+        pinsUnsatisfied.push({ kind, index });
+      }
     }
-  }
+  };
+
+  check('rip', pins.rips.length, ripSolves, ripRefused, (plank) => plank.width);
+  check('joint', pins.joints.length, jointSolves, jointRefused, (plank) => plank.length);
 
   const { purchased: purchasedPlanks, sawCuts } = purchaseSimulation(demand, plankLength);
   const coveredSqft = covered;
@@ -1884,6 +2153,7 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     narrowPieces,
     narrowestRipIn: narrowestRip === Infinity ? null : narrowestRip * INCHES_PER_FOOT,
     truncated,
+    pinSlots,
     ripSumIn: mod(maxY - minY, plankWidth) * INCHES_PER_FOOT,
     pinnedIds,
     pinsUnsatisfied,
