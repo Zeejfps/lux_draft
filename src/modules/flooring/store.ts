@@ -15,10 +15,19 @@ import {
   removeDivider,
   removeTransition,
   setDividerKind,
+  setLayoutPins,
   setPlankSpec,
   setSurfaces,
 } from './commands';
-import type { LayoutConfig, PlankSpec, SurfaceKind, TransitionKind } from './types';
+import type {
+  LayoutConfig,
+  LayoutPin,
+  LayoutPins,
+  PinKind,
+  PlankSpec,
+  SurfaceKind,
+  TransitionKind,
+} from './types';
 import type { LayoutInputs, Plank, PlankLayout } from './PlankLayoutEngine';
 import { EMPTY_LAYOUT } from './PlankLayoutEngine';
 import { PlankIndex } from './PlankIndex';
@@ -223,6 +232,32 @@ export function setOrigin(position: { x: number; y: number }): void {
 
 export function setPlank(plank: PlankSpec): void {
   sessionStore.dispatch(setPlankSpec.make({ plank: { ...plank } }));
+}
+
+export const layoutPins: Readable<Readonly<LayoutPins>> = documentSlice(
+  committedDocument,
+  (doc) => readFlooring(doc).pins
+);
+
+/**
+ * Pin one grid phase, leaving the other alone.
+ *
+ * A pin of a kind replaces the pin of that kind — a rip pin fixes the row anchor modulo one
+ * board, so a second one is not an extra constraint, it is the same constraint restated. That is
+ * what makes this a merge of two optional fields rather than a solver.
+ */
+export function pinBoardSize(kind: PinKind, pin: LayoutPin): void {
+  const next: LayoutPins = { ...current().pins, [kind]: { ...pin, seed: { ...pin.seed } } };
+  sessionStore.dispatch(setLayoutPins.make({ pins: next }));
+}
+
+/** Drop one pin. A no-op when it was not set, so the undo stack stays honest. */
+export function clearBoardPin(kind: PinKind): void {
+  const pins = current().pins;
+  if (!pins[kind]) return;
+  const next: LayoutPins = { ...pins };
+  delete next[kind];
+  sessionStore.dispatch(setLayoutPins.make({ pins: next }));
 }
 
 export function addDoorTransition(doorId: string, kind: TransitionKind = 'threshold'): void {

@@ -70,14 +70,29 @@ const SELECTED_COLOR = new THREE.Color(0x1d4ed8);
 const NARROW_PLANK_COLOR = new THREE.Color(0xd9483b);
 
 /**
+ * A board whose size is being **held** by a pin.
+ *
+ * Violet because it has to be none of the other four things on this floor: not the two blues,
+ * which mean "the pointer is here" and "this is the board being read out" and both come and go
+ * with the mouse; not the red, which means defect; and not a tan, which would make a held board
+ * indistinguishable from a derived one. A pin set five minutes ago is a standing reason the floor
+ * will not move where the user expects, and a reason that cannot be seen is a bug report.
+ *
+ * It loses to the red deliberately. A pinned board that is still a sliver is exactly the case the
+ * user has to see, and the chips in the two panels carry the pin's visibility on their own.
+ */
+const PINNED_PLANK_COLOR = new THREE.Color(0x8b5cf6);
+
+/**
  * The tint a plank draws at, before hover.
  *
  * One function, because the update loop and the hover path both need it and had drifted into two
  * copies of the same ternary — which is how the narrow tint would have shown up on a fresh layout
  * and vanished the moment the pointer crossed the floor.
  */
-function baseColor(plank: Plank): THREE.Color {
+function baseColor(plank: Plank, pinned: boolean): THREE.Color {
   if (plank.narrow) return NARROW_PLANK_COLOR;
+  if (pinned) return PINNED_PLANK_COLOR;
   if (plank.cut) return CUT_PLANK_COLOR;
   return plank.row % 2 === 0 ? PLANK_COLOR : PLANK_COLOR_ALT;
 }
@@ -138,6 +153,12 @@ export class PlankRenderer {
   private layout: PlankLayout | null = null;
   private hoveredId: string | null = null;
   private selectedId: string | null = null;
+  /**
+   * The boards a pin landed on, as the engine resolved them. Rebuilt with the layout rather than
+   * derived here: resolving a pin to a board is the engine's answer, and a second opinion
+   * computed at draw time is a second place it could disagree.
+   */
+  private pinnedIds: ReadonlySet<string> = new Set();
   /**
    * The board each instance belongs to.
    *
@@ -239,6 +260,7 @@ export class PlankRenderer {
   /** Write a layout into the instance buffers. Idempotent for the same layout reference. */
   update(layout: PlankLayout): void {
     this.layout = layout;
+    this.pinnedIds = new Set(layout.pinnedIds ?? []);
     const planks = layout.planks;
     // One instance per *segment*, not per plank. A board whose end bends has more than one, and
     // they are the same board — see `owner` for what that costs and `segmentsOf` for why.
@@ -368,7 +390,7 @@ export class PlankRenderer {
   private tint(plank: Plank): THREE.Color {
     if (plank.id === this.selectedId) return SELECTED_COLOR;
     if (plank.id === this.hoveredId) return HOVER_COLOR;
-    return baseColor(plank);
+    return baseColor(plank, this.pinnedIds.has(plank.id));
   }
 
   /**

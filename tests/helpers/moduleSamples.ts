@@ -81,6 +81,12 @@ export const COMMAND_SAMPLES: Record<string, unknown> = {
       { seed: { x: 5, y: 8 }, surface: 'carpet' },
     ],
   },
+  [flooring.setLayoutPins.type]: {
+    pins: {
+      rip: { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' },
+      joint: { seed: { x: 1.5, y: 5 }, targetIn: 30, edge: 'low' },
+    },
+  },
 };
 
 /** A document carrying one live module slice and nothing else. */

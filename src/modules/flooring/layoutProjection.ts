@@ -166,6 +166,7 @@ export function layoutInputsOf(view: ModuleView<FlooringData>): LayoutInputs {
     plank: view.data.plank,
     layout: view.data.layout,
     origin: view.data.origin,
+    pins: view.data.pins,
     regions: plankRings(regionsOf(view)),
   };
 }

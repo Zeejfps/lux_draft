@@ -3,11 +3,13 @@
   import { selection } from '../../../floorplan/stores/selectionStore';
   import { isOriginSelected } from '../selection';
   import {
+    clearBoardPin,
     committedFlooringData,
     floorRegions,
     flooringData,
     layoutConfig,
     layoutPanelVisible,
+    layoutPins,
     plankLayout,
     plankSpec,
     removeFloorDivider,
@@ -18,9 +20,18 @@
     toggleLayoutPanel,
     updateLayoutConfig,
   } from '../store';
-  import type { PlankSpec, StaggerRule, StartCorner, SurfaceKind, TransitionKind } from '../types';
+  import type {
+    LayoutPin,
+    PinKind,
+    PlankSpec,
+    StaggerRule,
+    StartCorner,
+    SurfaceKind,
+    TransitionKind,
+  } from '../types';
   import { formatInches } from './format';
   import {
+    PIN_LABELS,
     PLANK_PRESETS,
     STAGGER_LABELS,
     START_CORNER_LABELS,
@@ -128,6 +139,20 @@
   // the same floor on both sides is a line the user drew and nothing more.
   $: trimmedIds = new Set(solution.transitions.map((t) => t.dividerId));
   $: dividers = $flooringData.dividers;
+
+  /**
+   * The pins, listed where the rest of the layout inputs are.
+   *
+   * A pin is set on a board, from the board panel, and that is the right place to set one — but
+   * it is the wrong place to *find* one. The board it was set on may be nowhere near the pointer,
+   * or may not exist any more, and the pin would then be an invisible reason the origin marker
+   * does nothing. This is the standing read-out; the board panel is the gesture.
+   */
+  $: pins = $layoutPins;
+  $: activePins = (['rip', 'joint'] as PinKind[])
+    .map((kind) => ({ kind, pin: pins[kind] }))
+    .filter((entry): entry is { kind: PinKind; pin: LayoutPin } => entry.pin != null);
+  $: unsatisfied = new Set<PinKind>($plankLayout.pinsUnsatisfied ?? []);
 </script>
 
 <FloatingPanel
@@ -211,11 +236,51 @@
         <strong>{narrowPieces}</strong>
         {narrowPieces === 1 ? 'board is' : 'boards are'} ripped below {formatInches(
           plank.minRipWidthIn
-        )} — narrowest {formatInches(narrowestRipIn)}. They are drawn red. Rip the first row down as
-        well so both ends of the room are even, or move the origin across the run.
+        )} — narrowest {formatInches(narrowestRipIn)}. They are drawn red. Click one and type the
+        width it should be: the far wall takes the difference, so both ends of the room share the
+        shortfall.
       </p>
     {/if}
   </div>
+
+  {#if activePins.length > 0}
+    <div class="section">
+      <div class="section-title">Pinned sizes</div>
+
+      {#each activePins as { kind, pin } (kind)}
+        <div class="control-row">
+          <span class="area-name">
+            {PIN_LABELS[kind]}
+            {#if unsatisfied.has(kind)}
+              <span class="warn">not met</span>
+            {/if}
+          </span>
+          <div class="input-group">
+            <span class="pin-value">{formatInches(pin.targetIn)}</span>
+            <button
+              class="remove"
+              type="button"
+              title="Stop holding this size; the floor goes back to deriving it"
+              on:click={() => clearBoardPin(kind)}>&times;</button
+            >
+          </div>
+        </div>
+      {/each}
+
+      {#if unsatisfied.size > 0}
+        <p class="hint">
+          A size marked <em>not met</em> is one the floor cannot honour — the board is longer than the
+          stock, or the room moved out from under the board it was set on. Clear it and set it again on
+          the board you want.
+        </p>
+      {:else}
+        <p class="hint">
+          These are held through a plank change, a wall drag and an undo. Moving the origin clears
+          them.
+        </p>
+      {/if}
+    </div>
+  {/if}
 
   <div class="section" class:highlight={originSelected}>
     <div class="section-title">Origin</div>
@@ -503,6 +568,13 @@
   .warn {
     font-size: 10px;
     color: #ef4444;
+  }
+
+  /* The violet the pinned boards are drawn in, so the chip and the floor read as one thing. */
+  .pin-value {
+    font-family: monospace;
+    font-size: 11px;
+    color: #8b5cf6;
   }
 
   /* The same red the flagged boards are drawn in, so the message and the floor read as one thing. */

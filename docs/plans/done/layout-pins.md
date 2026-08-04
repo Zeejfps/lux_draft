@@ -2,10 +2,31 @@
 
 **Status:** proposed
 **Created:** 2026-08-03
-**Touches:** `../../src/modules/flooring/types.ts`, `codec.ts`, `commands.ts`,
+**Touches:** `../../../src/modules/flooring/types.ts`, `codec.ts`, `commands.ts`,
 `PlankLayoutEngine.ts`, `layoutProjection.ts`, `store.ts`, `ui/PlankInfoPanel.svelte`,
 `ui/FloorLayoutPanel.svelte`, `rendering/PlankRenderer.ts`,
-`../../tests/unit/modules/plankLayoutEngine.test.ts`
+`../../../tests/unit/modules/plankLayoutEngine.test.ts`
+
+## As built
+
+Three departures from the plan, each forced by something the plan did not have in hand:
+
+- **The `edge` a pin carries comes off the engine, not the panel.** The panel was to read it from
+  "which side of the board sits on a grid line rather than on a boundary", but the frame is
+  rotated and mirrored and the grid phase is computed nowhere else, so world-space corners cannot
+  answer it. `Plank.ripEdge` and `Plank.cutEnd` report it from where it is known.
+- **The post-check probes the solved position, not the seed.** A seed is the centroid of the board
+  at the moment it was pinned, and the board is about to change size — pin a 6" row down to 2" and
+  the seed is outside the board it named. `PinSolve.probe` is the middle of where the pinned board
+  should land, which is the question the check actually wants asked.
+- **Origin drag clears the pins inside `moveOrigin` rather than as its own history entry.**
+  `EntityDescriptor` has no drag-start hook and `moveCommand` is re-applied every frame, so a
+  separate command had nowhere to fire once. Folding it in costs the named entry and buys undo
+  putting the origin _and_ the pin back in the one step the user took. Both pins go, not the one
+  matching the drag axis: a drag is two-dimensional and moves both anchors.
+
+`PlankLayout.ripSumIn` was added for the live consequence line — the panel cannot compute
+`(maxY - minY) mod plankWidth` without the run frame.
 
 ## Goal
 

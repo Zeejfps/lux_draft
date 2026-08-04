@@ -3,6 +3,8 @@ import type { DecodeResult, ModuleBlob, ModuleCodec } from '../../floorplan/type
 import type {
   Divider,
   LayoutConfig,
+  LayoutPin,
+  LayoutPins,
   PlankSpec,
   StaggerRule,
   StartCorner,
@@ -41,6 +43,11 @@ export const FLOORING_MODULE_ID = 'flooring';
  * v2 adds `dividers` and `surfaces`. Both default to empty, and empty means "one area, plank" —
  * so a v1 document decodes to the floor it always had, and this build reads it without a
  * migration step.
+ *
+ * `pins` arrived after v2 and did **not** bump this. It is additive and absent-tolerant like the
+ * optional arrays already here, and a bump is not free in the direction that matters: it makes
+ * new documents *unreadable* by older builds, which is strictly worse than an older build
+ * rendering the same floor unpinned.
  */
 export const FLOORING_SCHEMA_VERSION = 2;
 
@@ -67,6 +74,15 @@ export interface FlooringData {
    * derived and have no id to store. An empty list is the whole room in plank.
    */
   surfaces: SurfaceAssignment[];
+  /**
+   * Board sizes the user asked for, as grid phases rather than as geometry.
+   *
+   * Top-level rather than a field on `LayoutConfig` because `configureLayout` is a whole-form
+   * absolute write from the layout panel: a pin set from the board panel would be clobbered by
+   * the next edit of any field on that form. Same reason `surfaces` sits here, and it gets its
+   * own command for the same reason too.
+   */
+  pins: LayoutPins;
 }
 
 /** Freshly allocated on every call, all the way down. Never share a literal. */
@@ -81,7 +97,16 @@ export function defaultFlooringData(): FlooringData {
     transitions: [],
     dividers: [],
     surfaces: [],
+    pins: {},
   };
+}
+
+/** Freshly allocated, all the way down — a pin holds a `Vector2` and must never be aliased. */
+export function clonePins(pins: Readonly<LayoutPins>): LayoutPins {
+  const out: LayoutPins = {};
+  if (pins.rip) out.rip = { ...pins.rip, seed: { ...pins.rip.seed } };
+  if (pins.joint) out.joint = { ...pins.joint, seed: { ...pins.joint.seed } };
+  return out;
 }
 
 /**
@@ -238,6 +263,37 @@ function readSurfaceAssignment(value: unknown, path: string): SurfaceAssignment 
   };
 }
 
+function readPin(value: unknown, path: string): LayoutPin {
+  if (!isRecord(value)) fail(`${path} must be an object`);
+  if (!isFiniteNumber(value.targetIn) || value.targetIn <= 0) {
+    fail(`${path}.targetIn must be a positive number`);
+  }
+  if (value.edge !== 'low' && value.edge !== 'high') {
+    fail(`${path}.edge "${String(value.edge)}" is not a boundary side`);
+  }
+  return {
+    seed: readVector2(value.seed, `${path}.seed`),
+    targetIn: value.targetIn,
+    edge: value.edge,
+  };
+}
+
+/**
+ * Absent decodes to no pins, which is the floor every document written before this existed had.
+ * A malformed pin is quarantined rather than dropped: it moves geometry, so silently reading it
+ * as "unpinned" would render a different floor than the one that was saved and say nothing.
+ */
+function readPins(value: unknown): LayoutPins {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) fail('pins must be an object');
+  const out: LayoutPins = {};
+  if (value.rip !== undefined && value.rip !== null) out.rip = readPin(value.rip, 'pins.rip');
+  if (value.joint !== undefined && value.joint !== null) {
+    out.joint = readPin(value.joint, 'pins.joint');
+  }
+  return out;
+}
+
 function decodeFlooring(blob: ModuleBlob): DecodeResult<FlooringData> {
   if (!Number.isInteger(blob.v) || blob.v < 1) {
     return {
@@ -299,6 +355,7 @@ function decodeFlooring(blob: ModuleBlob): DecodeResult<FlooringData> {
         transitions,
         dividers,
         surfaces,
+        pins: readPins(raw.pins),
       },
     };
   } catch (e) {
@@ -322,6 +379,7 @@ function compactFlooringForShare(data: Readonly<FlooringData>): FlooringData {
     transitions: data.transitions.map((t) => ({ ...t })),
     dividers: data.dividers.map((d) => ({ ...d, a: { ...d.a }, b: { ...d.b } })),
     surfaces: data.surfaces.map((s) => ({ ...s, seed: { ...s.seed } })),
+    pins: clonePins(data.pins),
   };
 }
 

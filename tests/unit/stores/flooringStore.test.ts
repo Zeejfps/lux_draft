@@ -10,6 +10,7 @@ import { addTransition } from '../../../src/modules/flooring/commands';
 import {
   addDoorTransition,
   addFloorDivider,
+  clearBoardPin,
   committedFlooringData,
   currentRegions,
   flooringData,
@@ -17,6 +18,7 @@ import {
   layoutConfig,
   plankSpec,
   removeDoorTransition,
+  pinBoardSize,
   removeFloorDivider,
   requestLayout,
   setFloorDividerKind,
@@ -50,6 +52,7 @@ describe('every setter is one command and one history entry', () => {
     ['origin', () => setOrigin({ x: 1, y: 2 })],
     ['transition', () => addDoorTransition('d1')],
     ['divider', () => addFloorDivider({ x: 0, y: 4 }, { x: 10, y: 4 })],
+    ['pin', () => pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' })],
   ];
 
   for (const [name, run] of cases) {
@@ -265,6 +268,58 @@ describe('dividers and surfaces', () => {
     }
   });
 
+  it('a pin survives a round-trip, and an absent one decodes to no pins at all', () => {
+    pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' });
+    const data = slice();
+    const decoded = flooringCodec.decode({ v: flooringCodec.schemaVersion, data });
+    expect(decoded.status).toBe('ok');
+    if (decoded.status === 'ok') expect(decoded.data.pins).toEqual(data.pins);
+    // Additive and absent-tolerant: no version bump, so an older build still reads this document
+    // and simply renders the floor unpinned.
+    expect(flooringCodec.decode({ v: 2, data: {} })).toMatchObject({ data: { pins: {} } });
+  });
+
+  it('quarantines a malformed pin rather than rendering a different floor in silence', () => {
+    for (const pins of [
+      { rip: { seed: { x: 0, y: 0 }, targetIn: 4, edge: 'sideways' } },
+      { rip: { seed: { x: 0, y: 0 }, targetIn: 0, edge: 'low' } },
+      { rip: { seed: { x: 0, y: 0 }, edge: 'low' } },
+      { joint: { targetIn: 30, edge: 'low' } },
+    ]) {
+      expect(flooringCodec.decode({ v: 2, data: { pins } }).status, JSON.stringify(pins)).toBe(
+        'invalid'
+      );
+    }
+  });
+
+  it('a pin of a kind replaces the pin of that kind, and clearing is a no-op when unset', () => {
+    pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' });
+    pinBoardSize('joint', { seed: { x: 1, y: 5 }, targetIn: 30, edge: 'low' });
+    pinBoardSize('rip', { seed: { x: 5, y: 9.6 }, targetIn: 5, edge: 'high' });
+    expect(slice().pins.rip).toEqual({ seed: { x: 5, y: 9.6 }, targetIn: 5, edge: 'high' });
+    expect(slice().pins.joint?.targetIn).toBe(30);
+
+    const entries = sessionStore.current().history.past.length;
+    clearBoardPin('rip');
+    expect(slice().pins.rip).toBeUndefined();
+    expect(slice().pins.joint?.targetIn).toBe(30);
+    clearBoardPin('rip');
+    expect(sessionStore.current().history.past).toHaveLength(entries + 1);
+  });
+
+  /**
+   * With a pin active the corresponding anchor is solved from the pin and no longer reads the
+   * origin, so the marker would drag and change nothing visible. Direct manipulation winning is
+   * discoverable; a control that silently ignores the mouse is not.
+   */
+  it('moving the origin clears the pins, in the one step the user took', () => {
+    pinBoardSize('rip', { seed: { x: 5, y: 0.4 }, targetIn: 4, edge: 'low' });
+    setOrigin({ x: 1, y: 2 });
+    expect(slice().pins).toEqual({});
+    sessionStore.undo();
+    expect(slice().pins.rip?.targetIn).toBe(4);
+  });
+
   it('quarantines a malformed surface assignment', () => {
     expect(
       flooringCodec.decode({
@@ -336,6 +391,7 @@ describe('the layout service', () => {
       'dividers',
       'layout',
       'origin',
+      'pins',
       'plank',
       'surfaces',
       'transitions',

@@ -1667,3 +1667,205 @@ describe('a transition landing on a room corner', () => {
     }
   });
 });
+
+describe('pinned board sizes', () => {
+  /**
+   * The default room in the run frame: 20ft square, less a quarter-**inch** gap all round, so
+   * the floor runs 239.5" on both axes. At a 7" board that leaves 1.5" over across the run, and
+   * that remainder is the figure every expectation below is arithmetic on.
+   */
+  const gapFt = 0.25 / INCHES_PER_FOOT;
+  const widthIn = (feet: number): number => feet * INCHES_PER_FOOT;
+  const rowAt = (layout: ReturnType<typeof computePlankLayout>, pick: 'low' | 'high') =>
+    [...layout.planks].sort((a, b) =>
+      pick === 'low' ? a.center.y - b.center.y : b.center.y - a.center.y
+    )[0];
+
+  /** A seed inside the bottom row of the unpinned floor, and the wall it is measured from. */
+  const bottomSeed: Vector2 = { x: 5, y: 0.5 };
+
+  it('the row containing the seed comes out the width that was asked for', () => {
+    const before = computePlankLayout(inputs());
+    // The room divides into whole boards and a 1.5" remainder, which is the far row.
+    expect(before.ripSumIn).toBeCloseTo(1.5, 6);
+    expect(widthIn(rowAt(before, 'low').width)).toBeCloseTo(7, 6);
+
+    const after = computePlankLayout(
+      inputs({ pins: { rip: { seed: bottomSeed, targetIn: 4, edge: 'low' } } })
+    );
+    expect(widthIn(rowAt(after, 'low').width)).toBeCloseTo(4, 6);
+    // The cost is arithmetic, not a guess: the two rips sum to a property of the room, so pinning
+    // one end determines the other. 1.5 - 4 ≡ 4.5 (mod 7).
+    expect(widthIn(rowAt(after, 'high').width)).toBeCloseTo(4.5, 6);
+    expect(after.pinsUnsatisfied).toEqual([]);
+  });
+
+  it('shifts the grid by less than one board, so the row count moves by at most one', () => {
+    const rows = (l: ReturnType<typeof computePlankLayout>) =>
+      new Set(l.planks.map((p) => p.row)).size;
+    const before = rows(computePlankLayout(inputs()));
+    for (const targetIn of [0.5, 2, 4, 6.5]) {
+      const after = rows(
+        computePlankLayout(inputs({ pins: { rip: { seed: bottomSeed, targetIn, edge: 'low' } } }))
+      );
+      expect(Math.abs(after - before), `${targetIn}"`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  /**
+   * The assertion that justifies the whole design.
+   *
+   * Solving once and writing the origin would pass every test above and fail this one: the origin
+   * that puts a 4" row against the wall at 7" stock puts a 3" row there at 6" stock. What is
+   * stored is the *intent*, so it is re-solved against the board that is actually being laid.
+   */
+  it('holds the pinned width through a change of stock', () => {
+    const pins = { rip: { seed: bottomSeed, targetIn: 4, edge: 'low' } } as const;
+    for (const stock of [7, 6, 9, 5]) {
+      const layout = computePlankLayout(
+        inputs({
+          pins,
+          plank: { ...defaults.plank, widthIn: stock, minRipWidthIn: 0 },
+        })
+      );
+      expect(widthIn(rowAt(layout, 'low').width), `${stock}" stock`).toBeCloseTo(4, 6);
+      expect(layout.pinsUnsatisfied, `${stock}" stock`).toEqual([]);
+    }
+  });
+
+  it('measures from the far wall when the pin names the high edge', () => {
+    const layout = computePlankLayout(
+      inputs({ pins: { rip: { seed: { x: 5, y: 19.5 }, targetIn: 5, edge: 'high' } } })
+    );
+    expect(widthIn(rowAt(layout, 'high').width)).toBeCloseTo(5, 6);
+    expect(widthIn(rowAt(layout, 'low').width)).toBeCloseTo(3.5, 6); // 1.5 - 5 ≡ 3.5 (mod 7)
+  });
+
+  it('pins the end piece of a row to a length, keeping the stagger of the rows above', () => {
+    // The first joint of a row, along the run — the grid that row was actually laid on.
+    const jointOf = (l: ReturnType<typeof computePlankLayout>, row: number): number => {
+      const first = l.planks
+        .filter((p) => p.row === row)
+        .sort((a, b) => a.center.x - b.center.x)[0];
+      return Math.max(...first.corners.map((c) => c.x));
+    };
+    const stagger = (l: ReturnType<typeof computePlankLayout>): number => {
+      const apart = jointOf(l, 1) - jointOf(l, 0);
+      return ((apart % 4) + 4) % 4;
+    };
+
+    // The minimum end cut is off, so that what is measured here is the joint grid and nothing
+    // else. It shifts an individual row when that row's end piece comes out short — which it does
+    // to whichever rows need it, before and after, and is the subject of the test below rather
+    // than of this one.
+    const config = { ...defaults.layout, minEndCutIn: 0 };
+    const before = computePlankLayout(inputs({ layout: config }));
+    const after = computePlankLayout(
+      inputs({
+        layout: config,
+        pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' } },
+      })
+    );
+
+    expect(jointOf(after, 0) - gapFt).toBeCloseTo(30 / INCHES_PER_FOOT, 6);
+    expect(after.pinsUnsatisfied).toEqual([]);
+    // The pin moves the term every row's grid shares, so the offset between two rows is untouched.
+    expect(stagger(after)).toBeCloseTo(stagger(before), 6);
+    expect(stagger(after)).toBeCloseTo(4 / 3, 6);
+  });
+
+  it('lets the pin outrank the minimum end cut, on that run alone', () => {
+    // 44" leaves 42 - 44 ≡ 46" at the far end and a 2" piece nowhere; what `layRow` would
+    // normally do is shift the whole grid to keep both ends legal. The pin says otherwise.
+    const layout = computePlankLayout(
+      inputs({
+        layout: { ...defaults.layout, minEndCutIn: 18 },
+        pins: { joint: { seed: { x: 0.5, y: 0.5 }, targetIn: 6, edge: 'low' } },
+      })
+    );
+    const first = layout.planks
+      .filter((p) => p.row === 0)
+      .sort((a, b) => a.center.x - b.center.x)[0];
+    expect(widthIn(first.length)).toBeCloseTo(6, 6);
+    expect(layout.pinsUnsatisfied).toEqual([]);
+    // Every other row still gets the minimum honoured.
+    for (const row of [1, 2, 3]) {
+      const ends = layout.planks
+        .filter((p) => p.row === row)
+        .sort((a, b) => a.center.x - b.center.x);
+      expect(widthIn(ends[0].length), `row ${row}`).toBeGreaterThanOrEqual(18 - 1e-6);
+    }
+  });
+
+  /**
+   * The independence of the two pins is an argument — one is periodic in the plank width across
+   * the run, the other in the plank length along it, and the second solve consumes the first's
+   * answer rather than racing it. This is the proof.
+   */
+  it('satisfies both pins at once', () => {
+    const layout = computePlankLayout(
+      inputs({
+        pins: {
+          rip: { seed: bottomSeed, targetIn: 4, edge: 'low' },
+          joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' },
+        },
+      })
+    );
+    expect(layout.pinsUnsatisfied).toEqual([]);
+    expect(widthIn(rowAt(layout, 'low').width)).toBeCloseTo(4, 6);
+    expect(layout.pinnedIds).toHaveLength(2);
+  });
+
+  describe('a pin the floor cannot honour is reported rather than faked', () => {
+    const unsatisfied = (over: Partial<LayoutInputs>) =>
+      computePlankLayout(inputs(over)).pinsUnsatisfied;
+
+    it('a rip wider than the stock', () => {
+      expect(
+        unsatisfied({ pins: { rip: { seed: bottomSeed, targetIn: 20, edge: 'low' } } })
+      ).toEqual(['rip']);
+    });
+
+    it('a piece longer than the board', () => {
+      expect(
+        unsatisfied({ pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 60, edge: 'low' } } })
+      ).toEqual(['joint']);
+    });
+
+    it('a seed the room no longer contains', () => {
+      expect(
+        unsatisfied({ pins: { joint: { seed: { x: 80, y: 80 }, targetIn: 30, edge: 'low' } } })
+      ).toEqual(['joint']);
+    });
+
+    it('off-cut staggering, which has no shared joint phase to move', () => {
+      expect(
+        unsatisfied({
+          layout: { ...defaults.layout, stagger: 'offcut' },
+          pins: { joint: { seed: { x: 1.5, y: 0.5 }, targetIn: 30, edge: 'low' } },
+        })
+      ).toEqual(['joint']);
+    });
+  });
+
+  it('names the edge a size is measured from, since only the frame knows it', () => {
+    const layout = computePlankLayout(inputs());
+    // The far row is ripped against the top wall; its low edge is a joint with the row below.
+    expect(rowAt(layout, 'high').ripEdge).toBe('high');
+    // A full-width board has no rip to measure and so no edge to name.
+    expect(rowAt(layout, 'low').ripEdge).toBeUndefined();
+  });
+
+  it('keys a pin into the layout, so a cached floor cannot come back unpinned', () => {
+    const bare = inputs();
+    const pinned = inputs({ pins: { rip: { seed: bottomSeed, targetIn: 4, edge: 'low' } } });
+    const other = inputs({ pins: { rip: { seed: bottomSeed, targetIn: 5, edge: 'low' } } });
+    const flipped = inputs({ pins: { rip: { seed: bottomSeed, targetIn: 4, edge: 'high' } } });
+    const keys = [bare, pinned, other, flipped].map(layoutKey);
+    expect(new Set(keys).size).toBe(4);
+    // …and the same pin keys identically, whichever route the document took to get there.
+    expect(
+      layoutKey(inputs({ pins: { rip: { seed: { ...bottomSeed }, targetIn: 4, edge: 'low' } } }))
+    ).toEqual(keys[1]);
+  });
+});

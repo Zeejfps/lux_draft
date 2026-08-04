@@ -4,13 +4,14 @@ import { defineCommand } from '../../floorplan/types/module';
 import type {
   Divider,
   LayoutConfig,
+  LayoutPins,
   PlankSpec,
   SurfaceAssignment,
   Transition,
   TransitionKind,
 } from './types';
 import type { FlooringData } from './codec';
-import { flooringCodec, normalizeAngle } from './codec';
+import { clonePins, flooringCodec, normalizeAngle } from './codec';
 
 /**
  * Flooring's edits, as registered commands over `FlooringData`. **Eager** alongside the codec:
@@ -63,13 +64,25 @@ export const setPlankSpec: CommandKind<{ plank: PlankSpec }> = defineCommand(
  *
  * Absolute, because this is what `EntityDescriptor.moveCommand` returns: dragging the origin
  * marker previews this command against the committed base every frame (invariant 3).
+ *
+ * ## Why this clears the pins
+ *
+ * With a pin active the corresponding anchor is solved from the pin and no longer reads the
+ * origin, so the marker would drag across the run and change nothing visible. A control that
+ * silently ignores the mouse is not discoverable; direct manipulation winning is. So moving the
+ * origin drops the pins, and undo puts both the origin and the pins back together — which is one
+ * history entry rather than the two a separate "clear" command would have cost, and reversible
+ * in the one step the user took.
+ *
+ * Clearing *both* rather than the one that matches the drag axis: a drag is two-dimensional and
+ * moves both anchors, so there is no honest way to call one of them the corresponding pin.
  */
 export const moveOrigin: CommandKind<{ position: Vector2 }> = defineCommand(
   flooringCodec,
   'origin.move',
   {
     label: () => 'Move layout origin',
-    apply: (_doc, payload, prev) => ({ ...prev, origin: { ...payload.position } }),
+    apply: (_doc, payload, prev) => ({ ...prev, origin: { ...payload.position }, pins: {} }),
   },
   { absolute: true }
 );
@@ -177,6 +190,23 @@ export const setSurfaces: CommandKind<{ surfaces: SurfaceAssignment[] }> = defin
   { absolute: true }
 );
 
+/**
+ * Pin a board's size — the whole pin set, absolute, matching `setSurfaces`.
+ *
+ * Whole-object because there are only ever two of them and because a pin of a kind *replaces*
+ * the pin of that kind: the caller has already decided what the set should be, and a merge here
+ * would be a second place that decision could be made differently.
+ */
+export const setLayoutPins: CommandKind<{ pins: LayoutPins }> = defineCommand(
+  flooringCodec,
+  'pins.set',
+  {
+    label: () => 'Pin board size',
+    apply: (_doc, payload, prev) => ({ ...prev, pins: clonePins(payload.pins) }),
+  },
+  { absolute: true }
+);
+
 export const flooringCommands: readonly RegisteredCommand[] = [
   configureLayout,
   setPlankSpec,
@@ -187,4 +217,5 @@ export const flooringCommands: readonly RegisteredCommand[] = [
   setDividerKind,
   removeDivider,
   setSurfaces,
+  setLayoutPins,
 ];

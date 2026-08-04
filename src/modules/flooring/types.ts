@@ -131,6 +131,52 @@ export interface SurfaceAssignment {
   surface: SurfaceKind;
 }
 
+/**
+ * The two things on a floor that are actually free to set.
+ *
+ * Not two kinds of board — two **phases**. A board in the middle of a run is a full board and
+ * nothing can make it otherwise; what a floor lets you choose is where the grid falls, and there
+ * are exactly two grids. `rip` is the phase of the row grid across the run, `joint` the phase of
+ * the joint grid along it.
+ */
+export type PinKind = 'rip' | 'joint';
+
+/**
+ * "The row containing this point is W inches wide", solved back into the grid phase rather than
+ * written onto a board.
+ *
+ * Anchored to a seed point for the reason `SurfaceAssignment` is: the thing being named is
+ * derived and has no id that survives the next wall drag. `edge` is the disambiguation the seed
+ * cannot carry — a board is ripped against the boundary below it or the one above it, and after
+ * a wall moves the seed no longer says which. It is captured when the pin is made, from the
+ * board actually clicked.
+ */
+export interface LayoutPin {
+  /** World space, feet. */
+  seed: Vector2;
+  targetIn: number;
+  /** Which boundary the piece is measured from, run-frame. */
+  edge: 'low' | 'high';
+}
+
+/**
+ * At most one pin of each kind.
+ *
+ * A rip pin fixes the row anchor modulo the plank width; a joint pin fixes the joint anchor
+ * modulo the plank length. Each is one scalar in closed form, so a second pin of a kind
+ * *replaces* the first and there is no constraint graph, no over-constrained state and no
+ * unsatisfiable-system UI to design.
+ */
+export interface LayoutPins {
+  rip?: LayoutPin;
+  joint?: LayoutPin;
+}
+
+export const PIN_LABELS: Readonly<Record<PinKind, string>> = {
+  rip: 'Row width',
+  joint: 'Piece length',
+};
+
 export const DEFAULT_SURFACE: SurfaceKind = 'plank';
 
 export const SURFACE_LABELS: Readonly<Record<SurfaceKind, string>> = {

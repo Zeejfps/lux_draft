@@ -1,5 +1,5 @@
 import type { Obstacle, Vector2, WallSegment } from '../../floorplan/types/geometry';
-import type { LayoutConfig, PlankSpec, StartCorner } from './types';
+import type { LayoutConfig, LayoutPin, LayoutPins, PinKind, PlankSpec, StartCorner } from './types';
 import { INCHES_PER_FOOT, MAX_PLANKS, MIN_JOINT_OFFSET_IN } from './types';
 import type { BandPoint, BandSpan, Interval } from './geometry2d';
 import {
@@ -7,6 +7,7 @@ import {
   bandIntervalsAt,
   bandMid,
   intersectBandSpans,
+  pointInPolygon,
   signedArea,
   subtractBandSpans,
   unionBandSpans,
@@ -120,6 +121,17 @@ export interface LayoutInputs {
    * Rings are world-space and need not be disjoint; overlaps are unioned per row.
    */
   readonly regions?: readonly (readonly Vector2[])[] | null;
+  /**
+   * Board sizes the user asked for, inverse-solved into the two grid phases below.
+   *
+   * A pin is stored rather than applied to the origin on the user's behalf, and that is the
+   * whole reason this is a feature rather than a numeric entry box on the origin marker. Solve
+   * once and write the origin, and switching from 7" to 6" stock silently turns a 4" first row
+   * into 3". Store *"the row containing this point is 4 inches"* and re-solve, and it stays 4
+   * inches through a stock change, a wall drag and an undo — which is the trade this module
+   * already makes everywhere: store intent, derive output.
+   */
+  readonly pins?: LayoutPins;
 }
 
 export interface Plank {
@@ -160,6 +172,22 @@ export interface Plank {
    * engine flags rather than fixes.
    */
   readonly narrow: boolean;
+  /**
+   * Which of the board's two long edges was cut to a **boundary** rather than falling on the row
+   * grid, run-frame — the side a rip is measured from, and so the `edge` a rip pin needs.
+   *
+   * Reported here because only the engine knows it. The frame is rotated and mirrored and the
+   * grid sits at a phase nothing outside this file computes, so a panel holding world-space
+   * corners cannot tell a wall from a joint. Absent on a full-width board, and on a strip whose
+   * *both* edges are boundaries — no phase moves such a board, so there is nothing to pin.
+   */
+  readonly ripEdge?: 'low' | 'high';
+  /**
+   * The same question along the run: which end was cut to a boundary rather than falling on the
+   * joint grid, and so the `edge` a joint pin needs. Absent on a full-length board and on a piece
+   * bounded at both ends.
+   */
+  readonly cutEnd?: 'low' | 'high';
 }
 
 /**
@@ -258,6 +286,37 @@ export interface PlankLayout {
   readonly narrowestRipIn: number | null;
   /** True when `MAX_PLANKS` stopped the run; the figures below it are then a floor, not a total. */
   readonly truncated: boolean;
+  /**
+   * The boards a pin landed on. What the renderer accents, so a pin set five minutes ago is not
+   * an invisible reason the floor will not move.
+   */
+  readonly pinnedIds?: readonly string[];
+  /**
+   * Pins whose board did not come out the size that was asked for.
+   *
+   * Measured off the laid floor rather than argued from the solve, which is what makes **one**
+   * mechanism cover every way a pin can miss: a target the stock cannot reach (60" off a 48"
+   * board), a room redrawn out from under a seed, the single-scan-line approximation the joint
+   * solve makes beside an inside corner, and `stagger: 'offcut'`, which has no shared joint phase
+   * to pin at all. The alternative was a special case per cause, or — the honest prediction —
+   * none.
+   */
+  readonly pinsUnsatisfied?: readonly PinKind[];
+  /**
+   * What the room's two ripped rows must add up to, inches — `(maxY - minY) mod plankWidth` in
+   * the run frame, and `0` where the room divides evenly into whole boards.
+   *
+   * A property of the room and of the board, and of nothing else: the row grid can slide, but
+   * sliding it moves width from one end of the run to the other and their sum does not change.
+   * That is what makes pinning one end *determine* the other rather than merely influence it,
+   * and it is why the board panel can show the consequence while the user types instead of after
+   * they commit.
+   *
+   * Exact for the far row of the same run. A room whose two ends are not one run — an L, a floor
+   * split by a divider — has more than two ripped rows, and this is then the arithmetic for the
+   * pair that face each other rather than a total over the floor.
+   */
+  readonly ripSumIn: number;
 }
 
 export const EMPTY_LAYOUT: PlankLayout = {
@@ -275,6 +334,7 @@ export const EMPTY_LAYOUT: PlankLayout = {
   narrowPieces: 0,
   narrowestRipIn: null,
   truncated: false,
+  ripSumIn: 0,
 };
 
 // ============================================
@@ -298,6 +358,8 @@ export function layoutKey(inputs: LayoutInputs): string {
   const { plank, layout, origin } = inputs;
   const ring = (points: readonly Vector2[]): string =>
     points.map((p) => `${n(p.x)},${n(p.y)}`).join(' ');
+  const pinKey = (pin: LayoutPin | undefined): string =>
+    pin ? `${n(pin.seed.x)},${n(pin.seed.y)}:${n(pin.targetIn)}:${pin.edge}` : '-';
   return [
     poly(inputs.walls),
     inputs.obstacles.map((o) => poly(o.walls)).join('|'),
@@ -318,6 +380,8 @@ export function layoutKey(inputs: LayoutInputs): string {
       layout.seed,
     ].join('/'),
     `${n(origin.x)},${n(origin.y)}`,
+    // A pin moves geometry, so a layout cached under the old value would come back wrong.
+    [pinKey(inputs.pins?.rip), pinKey(inputs.pins?.joint)].join('|'),
   ].join(';');
 }
 
@@ -898,6 +962,15 @@ const MIN_FEATURE_FT = 1 / 32 / INCHES_PER_FOOT;
 const MIN_BOARD_FT = 0.25 / INCHES_PER_FOOT;
 
 /**
+ * How far a pinned board may miss its target before the pin is reported unsatisfied — 1/16".
+ *
+ * The panels display to a sixteenth, so this is the coarsest tolerance at which the read-out
+ * cannot contradict the flag: anything the user can *see* is off is reported as off, and anything
+ * finer is a rounding artefact of the solve rather than a board that is the wrong size.
+ */
+const PIN_TOLERANCE_FT = 1 / 16 / INCHES_PER_FOOT;
+
+/**
  * Band edges, with heights closer together than `MIN_FEATURE_FT` merged into one.
  *
  * Ascending in, ascending out. The **lower** of a merged pair survives, except at the top of the
@@ -1086,8 +1159,130 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
    */
   const anchorOf = (low: number, high: number): number =>
     low >= -EPS ? gap : high <= EPS ? -gap : 0;
-  const ANCHOR_X = anchorOf(minX, maxX);
-  const ANCHOR_Y = anchorOf(minY, maxY);
+
+  /**
+   * A pin, solved into the grid phase it fixes — plus what it takes to check it afterwards.
+   *
+   * `probe` is the middle of where the pinned board *should* land, and it exists because the seed
+   * cannot do that job. A seed is the centroid of the board at the moment it was pinned, and the
+   * board is about to change size: pin a 6" row down to 2" and the old centroid, 3" off the wall,
+   * is outside the board it named. Probing the middle of the solved position instead asks the
+   * question the check actually wants — "is the board that ended up here the size that was asked
+   * for" — and stays right through every re-solve.
+   */
+  interface PinSolve {
+    /** The grid phase, already reduced modulo the grid's own pitch. */
+    readonly anchor: number;
+    /** World space, the middle of the pinned board as solved. */
+    readonly probe: Vector2;
+    /**
+     * What the board must measure, feet — the figure the user **typed**, not the clamped one the
+     * anchor was solved from. So a 60" pin on a 48" board reads as unsatisfied rather than as a
+     * 48" board quietly reported as a success.
+     */
+    readonly target: number;
+  }
+
+  const pins: LayoutPins = inputs.pins ?? {};
+  const pinnable = (pin: LayoutPin): boolean =>
+    finite(pin.seed.x, pin.seed.y, pin.targetIn) && pin.targetIn > 0;
+
+  /**
+   * "The row containing this point is W inches wide."
+   *
+   * The row grid is `ANCHOR_Y + k * plankWidth`, so a pin fixes `ANCHOR_Y` **modulo one board** —
+   * which is why there is exactly one degree of freedom here, why a second rip pin replaces the
+   * first, and why this is arithmetic rather than a solver. `h` is the boundary the board is
+   * measured from: the outline height bounding the seed's row on the pinned side, taken over the
+   * room's own limits and every height at which any outline turns, which is the same set the
+   * bands are cut at. Measure `W` off it and the far edge of the pinned board *is* a grid line.
+   *
+   * The cost is arithmetic too, and the panel can show it while the user types: the two rips of a
+   * room sum to `(maxY - minY) mod plankWidth`, a property of the room and of nothing else.
+   */
+  const solveRip = (pin: LayoutPin | undefined): PinSolve | null => {
+    if (!pin || !pinnable(pin)) return null;
+    const seed = toLocal(frame, pin.seed);
+    const width = Math.min(plankWidth, Math.max(MIN_BOARD_FT, pin.targetIn / INCHES_PER_FOOT));
+    let bound: number | null = null;
+    for (const y of [minY, maxY, ...outlineHeights([room, ...holes, ...(clips ?? [])])]) {
+      if (pin.edge === 'low') {
+        if (y <= seed.y + MIN_FEATURE_FT && (bound === null || y > bound)) bound = y;
+      } else if (y >= seed.y - MIN_FEATURE_FT && (bound === null || y < bound)) bound = y;
+    }
+    if (bound === null) return null;
+    const far = pin.edge === 'low' ? bound + width : bound - width;
+    return {
+      anchor: mod(far, plankWidth),
+      probe: toWorld(frame, { x: seed.x, y: (bound + far) / 2 }),
+      target: pin.targetIn / INCHES_PER_FOOT,
+    };
+  };
+
+  const rip = solveRip(pins.rip);
+  const ANCHOR_Y = rip?.anchor ?? anchorOf(minY, maxY);
+
+  /**
+   * "The piece at this end of this row is L inches long."
+   *
+   * The same shape one axis over: every row's joint grid is `ANCHOR_X + rowOffset(row)`, so
+   * moving the shared term moves this row's joints to where the pin asks and leaves the stagger
+   * pattern exactly as it was. It runs after `ANCHOR_Y` because it needs the row index, which is
+   * the phase the rip pin may just have moved — the two solves compose in one direction rather
+   * than racing.
+   *
+   * The run is read off a **single scan line** at the seed's height, which is the one
+   * approximation in the feature: the row loop breaks a band into sub-bands around a step, so a
+   * pin on the board beside an inside corner can solve against a slightly different run than the
+   * one that board is actually laid in. That is left to the post-check rather than paid for with
+   * more machinery — it is the same mechanism an impossible pin needs anyway.
+   *
+   * `stagger: 'offcut'` is refused outright: its offsets come from a search over off-cut
+   * candidates rather than from `ANCHOR_X`, so there is no shared phase to pin. The post-check
+   * reports it, and the panel disables the field.
+   */
+  const solveJoint = (pin: LayoutPin | undefined): PinSolve | null => {
+    if (!pin || !pinnable(pin) || layout.stagger === 'offcut') return null;
+    const seed = toLocal(frame, pin.seed);
+    let spans = bandIntervalsAt(room, seed.y, seed.y);
+    if (clips !== null) {
+      spans = intersectBandSpans(
+        spans,
+        unionBandSpans(clips.flatMap((clip) => bandIntervalsAt(clip, seed.y, seed.y)))
+      );
+    }
+    const run = subtractBandSpans(
+      spans,
+      holes.flatMap((hole) => bandIntervalsAt(hole, seed.y, seed.y))
+    )
+      .map(([s, e]): Interval => [Math.min(s.lo, s.hi), Math.max(e.lo, e.hi)])
+      .find(([a, b]) => seed.x >= a - EPS && seed.x <= b + EPS);
+    if (!run) return null;
+    const length = Math.min(plankLength, Math.max(MIN_BOARD_FT, pin.targetIn / INCHES_PER_FOOT));
+    const [a, b] = run;
+    const far = pin.edge === 'low' ? a + length : b - length;
+    const near = pin.edge === 'low' ? a : b;
+    const row = Math.floor((seed.y - ANCHOR_Y) / plankWidth);
+    return {
+      anchor: mod(far - rowOffset(row, layout, plankLength), plankLength),
+      probe: toWorld(frame, { x: (near + far) / 2, y: seed.y }),
+      target: pin.targetIn / INCHES_PER_FOOT,
+    };
+  };
+
+  const joint = solveJoint(pins.joint);
+  const ANCHOR_X = joint?.anchor ?? anchorOf(minX, maxX);
+
+  /**
+   * The row and the run a joint pin sits in — what `layRow` has to be told to leave alone.
+   *
+   * `layRow` will otherwise fight the pin: it shifts the entire joint grid, and gives up a whole
+   * board to do it, to keep an end cut above `minEndCutIn`. Against an exact figure the user
+   * typed that is a silent override. The pin is an instruction; the minimum is a default. Only
+   * the run holding the seed is locked, so every other run on the floor keeps today's behaviour.
+   */
+  const jointSeed = joint ? toLocal(frame, pins.joint!.seed) : null;
+  const pinnedRow = jointSeed ? Math.floor((jointSeed.y - ANCHOR_Y) / plankWidth) : null;
 
   const firstRow = Math.floor((minY - ANCHOR_Y) / plankWidth);
   const lastRow = Math.ceil((maxY - ANCHOR_Y) / plankWidth);
@@ -1244,9 +1439,21 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
       if (b - prev > EPS) out.push([prev, b]);
       return out;
     });
-    /** The row, cut against a grid — and against the minimum end cut, which outranks the grid. */
+    /**
+     * The row, cut against a grid — and against the minimum end cut, which outranks the grid
+     * everywhere except the one run a joint pin named. See `pinnedRow`: there the grid is the
+     * instruction and the minimum stands down, which is what `minEndCut` of zero means to
+     * `layRow`.
+     */
     const layAt = (at: number): Piece[] =>
-      runs.flatMap((run) => layRow(run, at, plankLength, minEndCut));
+      runs.flatMap((run) => {
+        const locked =
+          jointSeed !== null &&
+          row === pinnedRow &&
+          jointSeed.x >= run[0] - EPS &&
+          jointSeed.x <= run[1] + EPS;
+        return layRow(run, at, plankLength, locked ? 0 : minEndCut);
+      });
 
     /**
      * Where this row's joint grid falls.
@@ -1477,6 +1684,32 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
        */
       const ripped = width < plankWidth - MIN_FEATURE_FT;
       const narrow = ripped && width < minRip - EPS;
+      /**
+       * Which edge and which end were cut to a boundary rather than to a grid — the two answers
+       * a pin needs and only this frame can give. See `Plank.ripEdge`.
+       *
+       * An edge that is *on* a grid line is a joint with the next board; the other one is
+       * therefore the boundary, and it is the one a size is measured from. Both on the grid
+       * cannot happen for a ripped board, and neither on it is a strip between two boundaries,
+       * which no phase can move.
+       */
+      const onGrid = (v: number, anchor: number, pitch: number): boolean =>
+        Math.abs(v - anchor - Math.round((v - anchor) / pitch) * pitch) <= MIN_FEATURE_FT;
+      const boundarySide = (low: boolean, high: boolean): 'low' | 'high' | undefined =>
+        low === high ? undefined : low ? 'high' : 'low';
+      const ripEdge = ripped
+        ? boundarySide(
+            onGrid(bandLow, ANCHOR_Y, plankWidth),
+            onGrid(bandHigh, ANCHOR_Y, plankWidth)
+          )
+        : undefined;
+      const cutEnd =
+        length < plankLength - MIN_FEATURE_FT
+          ? boundarySide(
+              onGrid(cell.start, offset, plankLength),
+              onGrid(cell.end, offset, plankLength)
+            )
+          : undefined;
       if (narrow) narrowPieces += 1;
       if (ripped && width < narrowestRip) narrowestRip = width;
       /**
@@ -1513,6 +1746,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
         ],
         cut,
         narrow,
+        ripEdge,
+        cutEnd,
       });
       // A ripped board consumes a full-width one, so demand is length-only; the rip shows up
       // as waste because `coveredSqft` counts the narrower installed strip. The extent rather
@@ -1545,6 +1780,30 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     }
   }
 
+  /**
+   * Did each pin actually get what it asked for?
+   *
+   * Measured off the floor that was laid, which is the point: a pin can miss for four unrelated
+   * reasons (see `PlankLayout.pinsUnsatisfied`) and this asks the one question that covers all of
+   * them. A pin whose solve returned nothing at all — an unreachable stagger rule, a seed the
+   * room no longer contains — is unsatisfied by the same rule, since there is no probe to find a
+   * board at.
+   */
+  const pinnedIds: string[] = [];
+  const pinsUnsatisfied: PinKind[] = [];
+  for (const [kind, pin, solve] of [
+    ['rip', pins.rip, rip],
+    ['joint', pins.joint, joint],
+  ] as const) {
+    if (!pin) continue;
+    const hit = solve ? planks.find((p) => pointInPolygon(p.corners, solve.probe)) : undefined;
+    if (hit) pinnedIds.push(hit.id);
+    const measured = hit ? (kind === 'rip' ? hit.width : hit.length) : null;
+    if (measured === null || Math.abs(measured - solve!.target) > PIN_TOLERANCE_FT) {
+      pinsUnsatisfied.push(kind);
+    }
+  }
+
   const { purchased: purchasedPlanks, sawCuts } = purchaseSimulation(demand, plankLength);
   const coveredSqft = covered;
   const purchasedSqft = purchasedPlanks * plankLength * plankWidth;
@@ -1568,5 +1827,8 @@ export function computePlankLayout(inputs: LayoutInputs, signal?: AbortSignal): 
     narrowPieces,
     narrowestRipIn: narrowestRip === Infinity ? null : narrowestRip * INCHES_PER_FOOT,
     truncated,
+    ripSumIn: mod(maxY - minY, plankWidth) * INCHES_PER_FOOT,
+    pinnedIds,
+    pinsUnsatisfied,
   };
 }
