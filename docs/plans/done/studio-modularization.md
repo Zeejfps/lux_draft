@@ -3,9 +3,9 @@
 **Status:** complete — all seven phases landed on `modules`; see
 [Implementation progress log](#implementation-progress-log). Lighting and flooring are both
 registered modules over a domain-agnostic core, and adding the second one changed three files in
-`src/` outside its own directory.
+`../../../src` outside its own directory.
 **Created:** 2026-08-02
-**Rejected alternatives and decision history:** [ADR 0001](../adr/0001-studio-modularization.md)
+**Rejected alternatives and decision history:** [ADR 0001](../../adr/0001-studio-modularization.md)
 
 ## Goal
 
@@ -1001,7 +1001,7 @@ Tasks:
 - Define `ModuleRuntime`, `ModuleView`, `ModuleContext`, `ActivationScope`, and the registry pairing
   codec + commands + `loadRuntime`.
 - Implement the activation state machine and registration validation; wire the registry contract test.
-- Physically move lighting under `src/modules/lighting/`; author `runtime.ts`.
+- Physically move lighting under `../../../src/modules/lighting`; author `runtime.ts`.
 - Refactor `EditorRenderer` to `SceneLayer[]` taking a view; drive `Canvas.svelte` and `Toolbar.svelte`
   off the registry; repoint the phase-2 panel map at module manifests.
 - Turn on the boundary lint rules for real, including codec/commands/runtime isolation.
@@ -1092,7 +1092,7 @@ must know, and anything deliberately deferred. Keep entries short and factual.
 
 | Phase | Status | Branch / commit     | Notes                                                                                                                                                                               |
 | ----- | ------ | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | done   | `modules` / c876e7e | Boundary rules live in `eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                             |
+| 0     | done   | `modules` / c876e7e | Boundary rules live in `../../../eslint.config.js`; inert until the target dirs exist. Add new module ids to `MODULE_IDS` there.                                                    |
 | 1a    | done   | `modules` / f8c125e | Commands are the only write path; `roomStore` is now a derived live view over `committedRoom` + `interaction`. Read sites moved to the nested `EditorDocument` shape.               |
 | 1b    | done   | `modules` / e738251 | One `Session` behind `sessionStore` + pure `reduceSession`; `roomStore`/`committedDocument` are guarded derived slices. `historyStore` and `settingsStore`'s mirror are gone.       |
 | 2     | done   | `modules` / db7a4ef | One `Session.selection`; the six `appStore` writables and every manual cross-clear are gone. `defineSelection` + a `panelKey` panel registry populated in `App.svelte`.             |
@@ -1120,12 +1120,12 @@ must know, and anything deliberately deferred. Keep entries short and factual.
   relative imports (including directory `index.ts` barrels). If path aliases are ever introduced,
   this resolver setting must be revisited.
 - **Cross-module zones are generated from a `MODULE_IDS` list** (`['lighting', 'flooring']`) at the
-  top of `eslint.config.js`, since `no-restricted-paths` zones cannot express "any other sibling".
+  top of `../../../eslint.config.js`, since `no-restricted-paths` zones cannot express "any other sibling".
   **A new module must be added to that array or it gets no cross-module enforcement.**
 - Only `import/no-restricted-paths` is enabled from `eslint-plugin-import`; no other rule from that
   plugin (e.g. `import/no-unresolved`) was turned on, to avoid noise on the existing tree.
-- Rules were verified against throwaway fixture files under `src/floorplan`, `src/modules/*`, and
-  `src/app` that reproduced each violation; the fixtures were deleted before committing. No
+- Rules were verified against throwaway fixture files under `../../../src/floorplan`, `src/modules/*`, and
+  `../../../src/app` that reproduced each violation; the fixtures were deleted before committing. No
   production code was moved.
 
 #### Phase 1a
@@ -1238,12 +1238,12 @@ still dispatches `vertex.move`, not a compound of one.
 - Dev-mode deep-freeze is **not** added — the plan assigns it to 1b.
 - The pre-existing unused-`LightFixture` lint warning in `ViewerCanvas.svelte` was left alone.
 
-**Tests.** `tests/helpers/documents.ts` holds the fixtures (`squareRoom`, `rectWalls`,
+**Tests.** `../../../tests/helpers/documents.ts` holds the fixtures (`squareRoom`, `rectWalls`,
 `makeLight`, `makeDoor`, `makeObstacle`). New suites:
-`tests/unit/commands/applyCommand.test.ts` (pure command table with a coverage assertion against
+`../../../tests/unit/commands/applyCommand.test.ts` (pure command table with a coverage assertion against
 `registeredCommandTypes`, JSON round-trip, move/set idempotence),
-`tests/unit/interactions/dragCommands.test.ts` (per-drag-kind pointer-sequence tables with snap and
-axis-lock), `tests/unit/stores/interactionPreview.test.ts` (preview live / commit exactly once /
+`../../../tests/unit/interactions/dragCommands.test.ts` (per-drag-kind pointer-sequence tables with snap and
+axis-lock), `../../../tests/unit/stores/interactionPreview.test.ts` (preview live / commit exactly once /
 untouched on cancel / origin drag emits nothing). `historyStore.test.ts` and `roomStore.test.ts`
 were rewritten against the command API; the pause/resume block is gone. 311 tests pass.
 
@@ -1381,11 +1381,11 @@ _not_ frozen: they are produced outside the reducer by `previewDocument`.
   are not applicable yet — there are no codecs. 3a adds both.
 - `CarriedState.geometryFingerprint` is `''` and `quarantined` is always empty; 3a fills them.
 
-**Tests.** `tests/unit/stores/reduceSession.test.ts` is the pure table (no store, no Svelte, no
+**Tests.** `../../../tests/unit/stores/reduceSession.test.ts` is the pure table (no store, no Svelte, no
 DOM) and covers the mixed label sequence, the 51-dispatch eviction plus 50 undos, open pushing
 no entry while clearing interaction and selection, undo/redo clearing a pending drag including
 one whose entity the restored snapshot no longer contains, and the dev freeze.
-`tests/unit/stores/sessionStore.test.ts` covers the store boundary: one action one emission,
+`../../../tests/unit/stores/sessionStore.test.ts` covers the store boundary: one action one emission,
 zero emissions for a no-op, and each narrow store's guard. `historyStore.test.ts` became
 `sessionHistory.test.ts` (same scenarios, `sessionStore.undo/redo`, `clear()` scenarios
 rewritten as `openDocument`). `settingsStore.test.ts` is new. 352 tests pass.
@@ -1409,9 +1409,9 @@ in 3b, the phase with the largest data change already.
 Consequence worth knowing: **core interaction code imports `../lighting/selection`**
 (`SelectionHandler`, `UnifiedDragOperation`, `GrabModeDragOperation`, `grabModeHelpers`,
 `interactionUtils`, `Toolbar`, `Canvas`). That is a core→module import the boundary lint will
-reject once these files live under `src/floorplan/`. It is deliberate and phase-4-shaped: those
+reject once these files live under `../../../src/floorplan`. It is deliberate and phase-4-shaped: those
 call sites are the ones phase 4 replaces with a `ModuleView`/handler contribution anyway. If
-phase 3a or 3b moves files into `src/floorplan/` before that, `getSelectedFixtureIds` has to
+phase 3a or 3b moves files into `../../../src/floorplan` before that, `getSelectedFixtureIds` has to
 reach them through a config callback instead of an import.
 
 **`multi` is a new variant on the plan's union — the plan's union could not express the
@@ -1470,7 +1470,7 @@ script — replace it with a walk over each registered module runtime's `panels`
 (`ModuleRuntime.panels` is already specified as keyed by `SelectionKind.panelKey`), and move core
 panel registration next to the core layers. The dispatch seam (`panelsForSelection` and the
 `{#each}`) does not change, and neither do the key strings. The file itself probably moves to
-`src/app/`; it lives under `components/` only because `src/app/` does not exist yet.
+`../../../src/app`; it lives under `components/` only because `../../../src/app` does not exist yet.
 
 **Where things live.**
 
@@ -1531,12 +1531,12 @@ the microtask. That was the one non-mechanical bug in the migration — the dele
 - `ViewerCanvas.svelte` has its own `selectedViewerLight` store and was deliberately untouched:
   the viewer is a separate page with no editor session.
 
-**Tests.** `tests/unit/types/selection.test.ts` (round-trip `match(make(x))` including through a
+**Tests.** `../../../tests/unit/types/selection.test.ts` (round-trip `match(make(x))` including through a
 `multi` and through JSON, non-matching module/type, hostile payload rejected, panel key derived
 from the same pair, `core` namespace refused, structural cross-clearing, `combineSelection`
-collapse and flattening), `tests/unit/components/panelRegistry.test.ts` (dispatch by `panelKey`
+collapse and flattening), `../../../tests/unit/components/panelRegistry.test.ts` (dispatch by `panelKey`
 for core _and_ module selections, several panels for a `multi`, two keys sharing one component,
-unregistered kind is silent, duplicate key throws), `tests/unit/stores/selectionStore.test.ts`
+unregistered kind is silent, duplicate key throws), `../../../tests/unit/stores/selectionStore.test.ts`
 (the store exports exactly one `clear*`; every `select*` replaces every other kind; shift toggle;
 obstacle-vertex fallback; box selection; tool switch and `open` clearing; a repeat selection emits
 nothing). 396 tests pass; the 352 inherited from 1b were not changed except for the two that
@@ -1552,23 +1552,23 @@ root, the legacy `light.*` core commands still exist, `legacyDocumentAdapter.ts`
 no entry point calls `decodeDocument`. Everything below is built, tested, and unused by production
 code — except the eager barrel, which `main.ts` imports so the registry is populated.
 
-**Where things live** (the `src/floorplan/` move is still phase 4's; core files sit where their
+**Where things live** (the `../../../src/floorplan` move is still phase 4's; core files sit where their
 neighbours already are).
 
-| File                                    | What                                                                                                                                                                                                                   |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/types/deepReadonly.ts`             | `DeepReadonly<T>`, `asMutable<T>`                                                                                                                                                                                      |
-| `src/types/module.ts`                   | `ModuleBlob`, `DecodeResult`, `ModuleCodec`, `readModule`/`withModule`/`hasModuleSlice`/`buildModuleSlices`/`moduleSliceIds`, `ModuleDataStatus`/`moduleDataStatus`, `RegisteredCommand`/`CommandKind`/`defineCommand` |
-| `src/types/moduleRegistry.ts`           | `ModuleDefinition`, `registerModule`, `registeredCodecs`, `codecFor`, `registeredModuleCommands`, `moduleCommandHandler`, `clearModuleRegistry`                                                                        |
-| `src/types/command.ts`                  | `ModuleCommandEnvelope`, `EditorCommand = CoreCommand \| ModuleCommandEnvelope`, `isModuleCommand`                                                                                                                     |
-| `src/persistence/envelope.ts`           | `DocumentEnvelopeV3`, `ENVELOPE_VERSION`, `toEnvelopeV3`                                                                                                                                                               |
-| `src/persistence/documentCodec.ts`      | `decodeDocument`, `encodeDocument`, `EncodeTarget`, `geometryFingerprint`                                                                                                                                              |
-| `src/persistence/geometryValidation.ts` | `validateGeometry`, `validateSpace`, `validateDisplayPreferences`                                                                                                                                                      |
-| `src/persistence/ValidationError.ts`    | moved out of `jsonImport.ts` (which now re-exports it)                                                                                                                                                                 |
-| `src/modules/lighting/codec.ts`         | `LightingData`, `lightingCodec`, `defaultLightingData`, `referencedDefinitions`, `resolveDefinition`, `isBuiltinDefinitionId`                                                                                          |
-| `src/modules/lighting/commands.ts`      | eight `CommandKind`s + `lightingCommands`                                                                                                                                                                              |
-| `src/modules/codecs.ts`                 | the eager barrel; `installModules()`, called at import time                                                                                                                                                            |
-| `tests/fixtures/`                       | seven JSON fixtures + `load.ts` + a README table                                                                                                                                                                       |
+| File                                        | What                                                                                                                                                                                                                   |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/types/deepReadonly.ts`                 | `DeepReadonly<T>`, `asMutable<T>`                                                                                                                                                                                      |
+| `src/types/module.ts`                       | `ModuleBlob`, `DecodeResult`, `ModuleCodec`, `readModule`/`withModule`/`hasModuleSlice`/`buildModuleSlices`/`moduleSliceIds`, `ModuleDataStatus`/`moduleDataStatus`, `RegisteredCommand`/`CommandKind`/`defineCommand` |
+| `src/types/moduleRegistry.ts`               | `ModuleDefinition`, `registerModule`, `registeredCodecs`, `codecFor`, `registeredModuleCommands`, `moduleCommandHandler`, `clearModuleRegistry`                                                                        |
+| `src/types/command.ts`                      | `ModuleCommandEnvelope`, `EditorCommand = CoreCommand \| ModuleCommandEnvelope`, `isModuleCommand`                                                                                                                     |
+| `src/persistence/envelope.ts`               | `DocumentEnvelopeV3`, `ENVELOPE_VERSION`, `toEnvelopeV3`                                                                                                                                                               |
+| `src/persistence/documentCodec.ts`          | `decodeDocument`, `encodeDocument`, `EncodeTarget`, `geometryFingerprint`                                                                                                                                              |
+| `src/persistence/geometryValidation.ts`     | `validateGeometry`, `validateSpace`, `validateDisplayPreferences`                                                                                                                                                      |
+| `src/persistence/ValidationError.ts`        | moved out of `jsonImport.ts` (which now re-exports it)                                                                                                                                                                 |
+| `../../../src/modules/lighting/codec.ts`    | `LightingData`, `lightingCodec`, `defaultLightingData`, `referencedDefinitions`, `resolveDefinition`, `isBuiltinDefinitionId`                                                                                          |
+| `../../../src/modules/lighting/commands.ts` | eight `CommandKind`s + `lightingCommands`                                                                                                                                                                              |
+| `../../../src/modules/codecs.ts`            | the eager barrel; `installModules()`, called at import time                                                                                                                                                            |
+| `../../../tests/fixtures`                   | seven JSON fixtures + `load.ts` + a README table                                                                                                                                                                       |
 
 **The registry is core-owned and the barrel pushes into it.** The plan says "the registry in
 `modules/codecs.ts`", but `documentCodec` has to read it and `floorplan/**` may not import
@@ -1653,11 +1653,11 @@ still carry bare `readonly` fields as they did after 1b. This works without chur
 ugly. **Widening `Session.document` to `DeepReadonly<EditorDocument>` is still open**; it is now a
 mechanical, separately-reviewable change rather than a blocker.
 
-**Fixtures live in `tests/fixtures/`** (`legacy-flat.json`, `envelope-v1.json`, `envelope-v2.json`,
+**Fixtures live in `../../../tests/fixtures`** (`legacy-flat.json`, `envelope-v1.json`, `envelope-v2.json`,
 `envelope-v2-custom-definition.json`, `envelope-v3-future-module.json`,
 `envelope-v3-corrupt-blob.json`, `envelope-v3-unknown-module.json`), read via
-`loadFixture(name)` in `tests/fixtures/load.ts`, which re-parses on every call so no test can hand
-another a mutated object. `tests/fixtures/README.md` says what each one proves.
+`loadFixture(name)` in `../../../tests/fixtures/load.ts`, which re-parses on every call so no test can hand
+another a mutated object. `../../../tests/fixtures/README.md` says what each one proves.
 
 An eighth shape was added beyond the plan's list: **`legacy-flat.json`, the unversioned `RoomState`**
 that local storage has always written. The plan calls local storage "the weakest and the most common
@@ -1689,7 +1689,7 @@ is simply the older-looking document (no doors, obstacles, rafters or display pr
 - `decodeDocument` deep-freezes both the document and the carried state it returns.
 
 **Phase 2's core→module import note.** Nothing in 3a makes it better or worse: no files moved, and
-`src/floorplan/` still does not exist. It is, however, now clear that `documentCodec` must _not_
+`../../../src/floorplan` still does not exist. It is, however, now clear that `documentCodec` must _not_
 import `modules/codecs.ts` — the push-not-pull registry above is the pattern the rest of core should
 follow, and `src/lighting/selection.ts`'s importers are the remaining exception for phase 4.
 
@@ -1710,12 +1710,12 @@ follow, and `src/lighting/selection.ts`'s importers are the remaining exception 
 
 1. Delete `lights` and `rafterConfig` from `EditorDocument` (`src/types/document.ts`) and from
    `createEmptyDocument`. Delete the `lights: []` line in `decodeDocument` and its comment. Fix
-   `tests/helpers/documents.ts` (`makeDocument` takes `lights`) to seed
+   `../../../tests/helpers/documents.ts` (`makeDocument` takes `lights`) to seed
    `modules: buildModuleSlices({ lighting: { ...defaultLightingData(), fixtures } })`.
 2. Delete the `light.*` and `lighting.setRafterConfig` core commands (`src/commands/lightCommands.ts`,
    the entries in `registry.ts`, the union members in `types/command.ts`, and their entries in
    `MOVE_AND_SET_COMMAND_TYPES`), and repoint every producer at
-   `src/modules/lighting/commands.ts`. Producers: `roomStore.ts`'s thin command helpers,
+   `../../../src/modules/lighting/commands.ts`. Producers: `roomStore.ts`'s thin command helpers,
    `settingsStore.ts` (`readRafterConfig` + the four rafter setters), `UnifiedDragOperation`,
    `GrabModeDragOperation`, and the light property panels. Note `addFixture`'s payload carries an
    optional `definition` — pass the picker's definition when placing a fixture from the library, or
@@ -1745,7 +1745,7 @@ follow, and `src/lighting/selection.ts`'s importers are the remaining exception 
    `lighting.definitions.set` (or leaves the document's definitions alone and offers to add unknown
    incoming ones to the local library). `resolveDefinition` from the codec, with
    `get(lightDefinitions)` as the `library` argument, is what every photometry read should call.
-6. Re-run `tests/unit/persistence/documentCodec.test.ts` unchanged — it is the regression gate — and
+6. Re-run `../../../tests/unit/persistence/documentCodec.test.ts` unchanged — it is the regression gate — and
    add the 3b acceptance case: load → visit a mode → save is value-identical, and a slice equal to
    its default is pruned.
 
@@ -1767,12 +1767,12 @@ materialized default or every `lighting.*` command it dispatches would silently 
 every installed module and `createEmptyDocument()` calls it. Consequences:
 
 - **Registration must happen before any document is built.** `main.ts` already imports
-  `./modules/codecs` first; `tests/setup.ts` (new, wired via `setupFiles` in `vite.config.ts`) does
+  `./modules/codecs` first; `../../../tests/setup.ts` (new, wired via `setupFiles` in `../../../vite.config.ts`) does
   the same for the suite. A test that constructs a document without it gets a sliceless document and
   no-op commands — a silent failure, so the setup file is load-bearing.
 - `src/types/document.ts` now imports `./moduleRegistry`. That is core→core and there is no runtime
   cycle (`module.ts`'s import of `document.ts` is type-only), but it is worth knowing before the
-  `src/floorplan/` move.
+  `../../../src/floorplan` move.
 
 **The lighting write path, end to end.**
 
@@ -1856,14 +1856,14 @@ with the merge-on-decode side effect in `processImportData`, so decode is pure.
   natural home is the Studio shell in phase 4/5.
 
 **Deliberately not done.** No `ModuleRuntime` / `ModuleView` / activation scope; nothing moved to
-`src/floorplan/` or `src/modules/lighting/` beyond what 3a put there; `EditorRenderer` still names
+`../../../src/floorplan` or `../../../src/modules/lighting` beyond what 3a put there; `EditorRenderer` still names
 each renderer; `Toolbar`/`Canvas` are still hand-wired; the boundary lint is still inert; share URLs
 are still `#/viewer`. `Interaction` still has two variants. `Session.document` is still
 `EditorDocument`, not `DeepReadonly<EditorDocument>`.
 
 **What phase 4 must know.**
 
-- **Files that are lighting's and must move under `src/modules/lighting/`:** `src/lighting/*`
+- **Files that are lighting's and must move under `../../../src/modules/lighting`:** `src/lighting/*`
   (`LightManager`, `LightCalculator`, `LightingStatsCalculator`, `SpacingAnalyzer`, `LightIcon`,
   `IESParser`, `constants.ts`, `selection.ts`), `src/stores/lightingStore.ts`,
   `src/stores/lightDefinitionsStore.ts`, `src/stores/lightingStatsStore.ts`,
@@ -1871,13 +1871,13 @@ are still `#/viewer`. `Interaction` still has two variants. `Session.document` i
   `src/interactions/handlers/LightPlacementHandler.ts`, and the light panels under
   `src/components/`. `codec.ts` and `commands.ts` are already there.
 - **The core→module imports the boundary lint will reject the moment core moves to
-  `src/floorplan/`**, all of them deliberate and all of them phase 4's to remove:
+  `../../../src/floorplan`**, all of them deliberate and all of them phase 4's to remove:
   - `src/lighting/selection.ts` ← `SelectionHandler`, `UnifiedDragOperation`,
     `GrabModeDragOperation`, `grabModeHelpers`, `interactionUtils`, `Toolbar`, `Canvas` (phase 2's
     note, unchanged).
-  - `src/modules/lighting/commands.ts` ← `UnifiedDragOperation`, `GrabModeDragOperation` (new in
+  - `../../../src/modules/lighting/commands.ts` ← `UnifiedDragOperation`, `GrabModeDragOperation` (new in
     3b, for `moveFixture.make`).
-  - `src/modules/lighting/codec.ts` ← `src/stores/lightingStore.ts`, `Toolbar.svelte`,
+  - `../../../src/modules/lighting/codec.ts` ← `src/stores/lightingStore.ts`, `Toolbar.svelte`,
     `ViewerToolbar.svelte` (for `LIGHTING_MODULE_ID`).
   - `InteractionContext.fixtures` is the shape of the problem: core interaction code needs
     fixtures for hit-testing, selection origin and box selection. The `ModuleView` + module-owned
@@ -1895,13 +1895,13 @@ are still `#/viewer`. `Interaction` still has two variants. `Session.document` i
 **Tests.** 477 pass (435 inherited plus the two new suites; the 454 of 3a lost the five legacy
 `light.*` cases from `applyCommand.test.ts`, the `validateRoomState` block that no longer exists, and
 the rafter half of `settingsStore.test.ts` — all replaced by module-command and lighting-store
-coverage). New: `tests/unit/persistence/entryPoints.test.ts` runs all seven phase-3a fixtures through
+coverage). New: `../../../tests/unit/persistence/entryPoints.test.ts` runs all seven phase-3a fixtures through
 `importFromString` and `loadFromLocalStorage`, asserts load → visit a mode → save is value-identical
 with no history entry, asserts a default slice is pruned, and covers share generate → decode
 including the custom-definition closure and the quarantined-target refusal;
-`tests/unit/stores/lightingStore.test.ts` covers live-vs-committed projections, no-emission on an
+`../../../tests/unit/stores/lightingStore.test.ts` covers live-vs-committed projections, no-emission on an
 unrelated edit, each setter as one undoable command, and the definition closure following its
-fixtures. `tests/helpers/documents.ts` gained `lightsOf` / `lightingOf` and seeds the lighting slice.
+fixtures. `../../../tests/helpers/documents.ts` gained `lightsOf` / `lightingOf` and seeds the lighting slice.
 `documentCodec.test.ts` is unchanged and still green.
 
 `npm run test:run`, `npm run type-check`, `npm run lint`, `npm run build` and `npx prettier --check .`
@@ -1950,7 +1950,7 @@ Placement decisions worth knowing:
 - **`PropertyPanel` and `StatusBar` are `app/`** — both read a module's data (fixture count, the
   active tool's label). Keeping them in `floorplan/ui/` would have needed another seam for no
   gain.
-- `src/types/lighting.ts` became `src/modules/lighting/types.ts`, which is where `RafterConfig`
+- `src/types/lighting.ts` became `../../../src/modules/lighting/types.ts`, which is where `RafterConfig`
   and `DEFAULT_RAFTER_CONFIG` moved too. `floorplan/types/index.ts` no longer re-exports any of
   it, so ~20 files had their barrel import split in two.
 
@@ -2059,7 +2059,7 @@ for the panels.
 - **Renderers emptied their group but never unparented it.** Harmless when a renderer is built
   once per canvas; a leak that grows with every mode switch now that a module's renderers are
   rebuilt per activation. Fixed in `LightRenderer` and in the core renderers with the same shape.
-  `tests/unit/stores/moduleActivation.test.ts` asserts zero orphaned scene children across
+  `../../../tests/unit/stores/moduleActivation.test.ts` asserts zero orphaned scene children across
   activate → deactivate → activate.
 - **A guarded slice must not forward `invalidate`.** Svelte's `derived` marks a dependency
   pending on `invalidate` and clears it on the matching `run`, and refuses to recompute while
@@ -2070,7 +2070,7 @@ for the panels.
   `derived` over one in a way that shows (the module's tool never appeared in the toolbar). Both
   now ignore `invalidate`. **Any future guarded store must do the same.**
 
-**`Diagnostics.warnings` got UI.** `src/app/DiagnosticsBanner.svelte` — a dismissible panel
+**`Diagnostics.warnings` got UI.** `../../../src/app/DiagnosticsBanner.svelte` — a dismissible panel
 listing decode warnings and any failed runtime, with the reassurance that unreadable data is
 preserved on save. Session-scoped; a new load brings it back.
 
@@ -2079,7 +2079,7 @@ enforced for real and nothing needed allow-listing:
 
 - `floorplan/**` may not import `modules/**` or `app/**` — clean, via the entity seam.
 - `modules/a/**` may not import `modules/b/**` — nothing to test yet; `MODULE_IDS` in
-  `eslint.config.js` still needs a new module id added by hand.
+  `../../../eslint.config.js` still needs a new module id added by hand.
 - `modules/*/codec.ts` and `commands.ts` may not import `three`, `*.svelte` or `runtime` — clean.
   Note the rule covers only those two filenames: `entities.ts`, `selection.ts`, `constants.ts`
   and `types.ts` are also eager-safe by construction but are not policed. If phase 5's bundle
@@ -2087,7 +2087,7 @@ enforced for real and nothing needed allow-listing:
 - `app/**` may import from anywhere — used by `Toolbar` (lighting's overlay toggles) and the
   viewer.
 
-`eslint.config.js` itself is unchanged.
+`../../../eslint.config.js` itself is unchanged.
 
 **Deliberately not done / deferred.**
 
@@ -2116,7 +2116,7 @@ enforced for real and nothing needed allow-listing:
 1. **Activation is already async and already lazy.** `activateModule(id)` /
    `deactivateModule()` / `activeModule` / `toolbarTools` / `activeView` / `activeEntities()` are
    exported from `floorplan/stores/moduleActivation.ts`. Routing means calling `activateModule`
-   from the route instead of `App.svelte`'s `onMount`, which is one line (`src/app/App.svelte`,
+   from the route instead of `App.svelte`'s `onMount`, which is one line (`../../../src/app/App.svelte`,
    inside the `currentRoute === 'editor'` branch).
 2. **The scene must be set before layers can be built.** `Canvas.svelte` calls
    `setModuleScene(scene.scene)` in `onMount` and `setModuleScene(null)` in `onDestroy`.
@@ -2124,7 +2124,7 @@ enforced for real and nothing needed allow-listing:
    also does not draw. Child-before-parent `onMount` ordering is what makes today's sequence work.
 3. **`sessionStore.beforeOpen` already handles "a document open lands mid-activation."** The
    rapid-navigation half of phase 5's acceptance criteria is covered by the generation token and
-   tested in `tests/unit/stores/moduleActivation.test.ts`; the routing half is not.
+   tested in `../../../tests/unit/stores/moduleActivation.test.ts`; the routing half is not.
 4. **The bundle check will fail until the shell stops importing lighting eagerly** — see above.
 5. `generateShareUrl(input, moduleId)` already takes the module id; `encodeDocument` already
    takes `{ kind: 'share', moduleId }` and throws when that module is quarantined. What is
@@ -2132,17 +2132,17 @@ enforced for real and nothing needed allow-listing:
 6. `registeredModules()` returns `{ codec, commands, label, loadRuntime }` — enough for a mode
    picker without loading any runtime.
 7. **Adding a module** now means: `codec.ts` + `commands.ts` + `runtime.ts`, a `ModuleDefinition`
-   in `modules/codecs.ts`, and its id in `MODULE_IDS` in `eslint.config.js`. Everything else —
+   in `modules/codecs.ts`, and its id in `MODULE_IDS` in `../../../eslint.config.js`. Everything else —
    tool button, panels, layers, shortcuts, entity hit-testing, delete, snapping — falls out of
    the manifest.
 
 **Tests.** 516 pass (477 inherited plus 39). New suites:
-`tests/unit/types/moduleRegistry.test.ts` (every registration failure, core-wins shortcut
+`../../../tests/unit/types/moduleRegistry.test.ts` (every registration failure, core-wins shortcut
 precedence, and `CORE_RESERVED_SHORTCUTS` checked against the shell's actual bindings),
-`tests/unit/stores/moduleActivation.test.ts` (the three acceptance criteria plus dedup and
-open-deactivates-first), `tests/unit/modules/lightingRuntime.test.ts` (the real module through
-the real registry, and fixtures as entities), `tests/unit/rendering/sceneLayers.test.ts` (the
-loop, the `inputs` guard, and who disposes what). `tests/helpers/entities.ts` binds lighting's
+`../../../tests/unit/stores/moduleActivation.test.ts` (the three acceptance criteria plus dedup and
+open-deactivates-first), `../../../tests/unit/modules/lightingRuntime.test.ts` (the real module through
+the real registry, and fixtures as entities), `../../../tests/unit/rendering/sceneLayers.test.ts` (the
+loop, the `inputs` guard, and who disposes what). `../../../tests/helpers/entities.ts` binds lighting's
 entities to a test-controlled document, which is how the drag and selection-store tables get an
 `EntityAccess`. `sessionStore.test.ts` gained the `derived`-over-a-guarded-slice regression.
 
@@ -2158,7 +2158,7 @@ Chrome and asserting the module's tool button reaches the toolbar — which is h
 Commits: `83eb465` (routing, the mode picker, module-contributed UI surfaces), `d386d00` (the
 bundle check), `4ec5eac` (tests), `99ed779` (the entity-count store).
 
-**The route table, as built** (`src/app/routerStore.ts`).
+**The route table, as built** (`../../../src/app/routerStore.ts`).
 
 | Hash                | Route                                      | Note                             |
 | ------------------- | ------------------------------------------ | -------------------------------- |
@@ -2182,14 +2182,14 @@ bundle check), `4ec5eac` (tests), `99ed779` (the entity-count store).
 - The mode picker is at `#/modes` rather than at `#/`, because the plan requires bare `#/` to
   resolve to lighting permanently — the two cannot both be the landing route. It is reachable
   from the toolbar's branding block, which shows the active module's label.
-- `src/app/moduleRouting.ts` is the route → activation glue, extracted from `App.svelte` so a
+- `../../../src/app/moduleRouting.ts` is the route → activation glue, extracted from `App.svelte` so a
   test can drive it: `applyRoute(route)` activates for an editor route and deactivates for the
   picker and the viewer; `startModuleRouting()` subscribes and returns the unsubscribe. It
   never awaits one activation before starting the next — a route change is synchronous and the
   user is allowed to out-run an `import()`.
 - `shareUrl.ts` builds `#/{moduleId}/viewer?d=…` itself rather than importing the router
   (`floorplan/` may not import `app/`). That is the only duplicate of the route shape, and
-  `tests/unit/app/routerStore.test.ts` asserts a generated link parses back to its module.
+  `../../../tests/unit/app/routerStore.test.ts` asserts a generated link parses back to its module.
 
 **The eager-chunk problem, and what `ModuleRuntime` gained.**
 
@@ -2250,9 +2250,9 @@ After all of it, `src/app/**` outside `viewer/` has exactly one import from `mod
 `routerStore.ts` reading `LIGHTING_MODULE_ID`, which is eager by definition and is what makes
 the permanent aliases mean something.
 
-**The bundle check** — `scripts/check-bundle.mjs`, `npm run check:bundle` (which builds first).
+**The bundle check** — `../../../scripts/check-bundle.mjs`, `npm run check:bundle` (which builds first).
 
-- `vite.config.ts` sets `build.manifest: true`. The script walks the manifest's **static**
+- `../../../vite.config.ts` sets `build.manifest: true`. The script walks the manifest's **static**
   `imports` transitively from the entry chunk and deliberately does not follow
   `dynamicImports`; the result is the set of files a browser must fetch before it can render.
   Today that is one chunk.
@@ -2272,7 +2272,7 @@ the permanent aliases mean something.
 
 **The share dialog, and the 8000-character threshold.**
 
-`src/app/ShareDialog.svelte` replaces the toolbar's fire-and-copy button. It lists every
+`../../../src/app/ShareDialog.svelte` replaces the toolbar's fire-and-copy button. It lists every
 installed module (from `registeredModules()`, so no runtime loads), defaults to the active mode
 without overriding a later choice, shows the URL and its length inline, and **disables a module
 whose slice is quarantined** — `encodeDocument` throws for one, and the dialog stops it before
@@ -2324,10 +2324,10 @@ navigation — `#/lighting` → `#/modes` → `#/lighting` → four rapid altern
 exactly one copy of each overlay button, i.e. one active module and no duplicated
 contributions.
 
-**Tests.** `tests/unit/app/routerStore.test.ts` (the route table including both permanent
+**Tests.** `../../../tests/unit/app/routerStore.test.ts` (the route table including both permanent
 aliases and the uninstalled-module case, `parseHash` not corrupting an lz-string payload,
 `routePath` round-trip, and a generated share link parsing back to its module).
-`tests/unit/app/moduleRouting.test.ts` (the acceptance criteria: `#/lighting` → `#/flooring` →
+`../../../tests/unit/app/moduleRouting.test.ts` (the acceptance criteria: `#/lighting` → `#/flooring` →
 `#/lighting` with all three loads in flight and resolved out of order; the same with the
 intermediate load resolving last; picker and viewer routes leaving nothing active;
 `startModuleRouting` following real `hashchange` events; and a `sessionStore.open` landing
@@ -2340,19 +2340,19 @@ is the point: the activation machine is proven before a second real module lands
 
 Registering `flooring` is six steps and no core changes:
 
-1. **`src/modules/flooring/codec.ts`** — export `FLOORING_MODULE_ID = 'flooring'` and a
+1. **`../../../src/modules/flooring/codec.ts`** — export `FLOORING_MODULE_ID = 'flooring'` and a
    `ModuleCodec<FlooringData>`: `id`, `schemaVersion` (≥ 1), `defaultData()` returning a
    **freshly allocated** value every call (the shared contract test asserts
    `defaultData() !== defaultData()`), `decode(blob)` returning a status rather than throwing,
    and `compactForShare?` returning `FlooringData` at the current `schemaVersion`.
-2. **`src/modules/flooring/commands.ts`** — one `defineCommand(codec, verb, spec, options?)` per
+2. **`../../../src/modules/flooring/commands.ts`** — one `defineCommand(codec, verb, spec, options?)` per
    edit, and a `flooringCommands: readonly RegisteredCommand[]` array. Pass
    `{ absolute: true }` for every member of the move-and-set family; the contract test asserts
    applying an absolute command twice equals applying it once. Verbs are bare (`layout.configure`);
    `defineCommand` prefixes the module id.
    Neither file may import `three`, a `*.svelte` component, or `runtime.ts` — the lint enforces
    it, and the bundle check enforces the consequence.
-3. **`src/modules/flooring/runtime.ts`** — export a `ModuleRuntime` with `id` (must equal the
+3. **`../../../src/modules/flooring/runtime.ts`** — export a `ModuleRuntime` with `id` (must equal the
    codec id) and `label`, plus any of: `tools` (ids `flooring.*`, each carrying its own inline
    SVG `icon` and an optional single-letter `key`), `overlays` (ids `flooring.*`, each with a
    `Readable<boolean>` and a `toggle()`), `entities` (an `EntityDescriptor` whose `selection`
@@ -2361,13 +2361,13 @@ Registering `flooring` is six steps and no core changes:
    components that guard their own visibility), `shortcuts` (not one of
    `CORE_RESERVED_SHORTCUTS`), and `onActivate(ctx, scope)`. **Nothing here disposes anything**
    — hand every disposer to `scope.own`, and pass `scope.signal` to async work.
-4. **`src/modules/codecs.ts`** — add a `ModuleDefinition` with `codec`, `commands`, `label` and
+4. **`../../../src/modules/codecs.ts`** — add a `ModuleDefinition` with `codec`, `commands`, `label` and
    `loadRuntime: () => import('./flooring/runtime').then((m) => m.flooringRuntime)`, and
    register it in `installModules()`. It must be a real dynamic `import()` or the bundle check
    fails.
-5. **`eslint.config.js`** — add `'flooring'` to `MODULE_IDS` or it gets no cross-module
+5. **`../../../eslint.config.js`** — add `'flooring'` to `MODULE_IDS` or it gets no cross-module
    enforcement. (It is already in the list.)
-6. **`scripts/check-bundle.mjs`** — add the module's own forbidden markers (its renderer's
+6. **`../../../scripts/check-bundle.mjs`** — add the module's own forbidden markers (its renderer's
    shaders, any parser) and required markers (a codec message, a command verb). The check only
    proves what it is told to look for.
 
@@ -2451,7 +2451,7 @@ scope works end to end.
 
 **The projection interface, as designed.**
 
-`Projection<I, O>` lives in `src/modules/flooring/layoutProjection.ts`, **not** in the core
+`Projection<I, O>` lives in `../../../src/modules/flooring/layoutProjection.ts`, **not** in the core
 contract — ADR 0001 deferred it pending a consumer, and there is exactly one. Promoting it later
 is a file move; specifying it before flooring existed would have been the mistake the ADR
 declined with the monorepo.
@@ -2480,7 +2480,7 @@ layer also subscribes to the layout store and pushes into the renderer directly 
 that subscription and releases it in its own `dispose`, which the scope calls.
 
 **The plan's key risk, tested.** "Plank layout blocks the frame on pointer moves" is
-`tests/unit/modules/layoutProjection.test.ts` -> `last-good-wins` -> "dragging a wall never blocks
+`../../../tests/unit/modules/layoutProjection.test.ts` -> `last-good-wins` -> "dragging a wall never blocks
 and never coalesces to more than one computation". It is the acceptance criterion, not a comment.
 
 **Did obstacle-as-cutout and door-as-threshold actually work? Yes, both, unchanged.**
@@ -2505,7 +2505,7 @@ and never coalesces to more than one computation". It is the acceptance criterio
 
 **What in core had to change — the actual verdict on the architecture.**
 
-Three files in `src/` outside `src/modules/flooring/`, all for one reason, and nothing at all in
+Three files in `../../../src` outside `../../../src/modules/flooring`, all for one reason, and nothing at all in
 the write model, session, selection, persistence, interaction, activation, entity seam or render
 loop:
 
@@ -2524,10 +2524,10 @@ contract was wrong. Nothing else was touched, nothing was allow-listed in the bo
 Four test-side changes were forced, all artefacts of the suite having used the string `flooring`
 as a placeholder for "a module that does not exist":
 
-- `tests/fixtures/envelope-v3-unknown-module.json` named `flooring`, so it silently started
+- `../../../tests/fixtures/envelope-v3-unknown-module.json` named `flooring`, so it silently started
   proving `unsupported` instead of `unknownModule`. Renamed to `plumbing`, with a note in the
   fixtures README.
-- `tests/helpers/documents.ts` seeded only lighting's slice, so every persistence round-trip test
+- `../../../tests/helpers/documents.ts` seeded only lighting's slice, so every persistence round-trip test
   failed once a second module normalized in on load. `makeDocument` now spreads
   `createEmptyDocument().modules` first, which is module-agnostic and will not break again.
 - `codecContract.test.ts` asserted exactly one registered codec.
@@ -2628,15 +2628,15 @@ mode picker; `#/modes` lists both modes; and `#/lighting` -> `#/flooring` swaps 
 exactly, with no duplicates and no leftovers. No console errors at any point.
 
 **Tests.** Four new suites.
-`tests/unit/modules/plankLayoutEngine.test.ts` — the engine as a pure table with no store, no
+`../../../tests/unit/modules/plankLayoutEngine.test.ts` — the engine as a pure table with no store, no
 Svelte and no DOM: coverage of a rectangle, an L and an obstacle cutout, the ripped last row,
 each of the five stagger rules, the minimum end cut in both directions, the cut list and the
 waste model, the run frame and all four start corners, `layoutKey`, and bounded work.
-`tests/unit/modules/layoutProjection.test.ts` — the five requirements, one `describe` each.
-`tests/unit/modules/flooringRuntime.test.ts` — the second module through the real registry:
+`../../../tests/unit/modules/layoutProjection.test.ts` — the five requirements, one `describe` each.
+`../../../tests/unit/modules/flooringRuntime.test.ts` — the second module through the real registry:
 registration, the single-entity seam, the spatial index, activate/deactivate leaving zero
 orphaned scene children, and lighting -> flooring -> lighting leaving exactly one module's panels
-registered. `tests/unit/stores/flooringStore.test.ts` — one command and one labelled history
+registered. `../../../tests/unit/stores/flooringStore.test.ts` — one command and one labelled history
 entry per setter, live-versus-committed projections, and the doors-are-thresholds behaviours
-including the inert-orphan case. `tests/helpers/moduleSamples.ts` gained a payload for each of
+including the inert-orphan case. `../../../tests/helpers/moduleSamples.ts` gained a payload for each of
 the five commands, which is what puts them through the shared contract suite unchanged.

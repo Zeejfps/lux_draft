@@ -2,7 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-08-02
-**Plan:** [docs/plans/studio-modularization.md](../plans/studio-modularization.md)
+**Plan:** [docs/plans/studio-modularization.md](../plans/done/studio-modularization.md)
 
 ## Decision
 

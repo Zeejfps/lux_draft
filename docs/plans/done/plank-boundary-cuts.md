@@ -2,8 +2,8 @@
 
 **Status:** proposed
 **Created:** 2026-08-02
-**Touches:** `src/modules/flooring/PlankLayoutEngine.ts`, `PlankIndex.ts`,
-`rendering/PlankRenderer.ts`, `ui/CutListPanel.svelte`, `tests/unit/modules/plankLayoutEngine.test.ts`
+**Touches:** `../../../src/modules/flooring/PlankLayoutEngine.ts`, `PlankIndex.ts`,
+`rendering/PlankRenderer.ts`, `ui/CutListPanel.svelte`, `../../../tests/unit/modules/plankLayoutEngine.test.ts`
 
 ## Goal
 

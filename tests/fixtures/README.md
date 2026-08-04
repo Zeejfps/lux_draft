@@ -1,7 +1,7 @@
 # Persistence fixtures
 
 On-disk documents, written **before** anything reads them (phase 3a of
-`docs/plans/studio-modularization.md`). Every one of these is a shape a real build has written
+`../../docs/plans/done/studio-modularization.md`). Every one of these is a shape a real build has written
 or could write, so none of them may be "fixed" — change the decoder instead.
 
 | File                                 | What it proves                                                             |
