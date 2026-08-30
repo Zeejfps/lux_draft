@@ -34,6 +34,8 @@ export const GEOMETRY = {
   HINGE_RADIUS: 0.08,
   MEASUREMENT_MARKER_RADIUS: 0.15,
   MEASUREMENT_ANGLE_RADIUS: 0.8,
+  /** How far the diagonal's length label sits off the line it labels. */
+  MEASUREMENT_LABEL_OFFSET: 0.5,
   // Line widths in world units — WebGL ignores `linewidth`, so measurement lines are
   // built as geometry (see createThickLine).
   MEASUREMENT_LINE_WIDTH: 0.09,

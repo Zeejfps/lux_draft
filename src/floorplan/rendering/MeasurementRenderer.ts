@@ -78,8 +78,10 @@ export class MeasurementRenderer {
 
     // Only the two acute angles are worth drawing — the third corner is always the
     // right angle where the X and Y components meet. A degenerate (axis-aligned)
-    // measurement has no triangle at all.
+    // measurement has no triangle at all, and its diagonal is just the one component
+    // already labelled above.
     if (deltaX > 0.1 && deltaY > 0.1) {
+      this.renderDiagonalLabel(from, to, deltaX, deltaY);
       this.renderAngles(from, to, deltaX, deltaY);
     }
   }
@@ -182,6 +184,30 @@ export class MeasurementRenderer {
       deltaY,
       this.colors.yComponent
     );
+  }
+
+  /**
+   * Labels the diagonal with its own length, at the midpoint and nudged perpendicular to
+   * the line — on the side away from the right-angle corner, so it never lands on top of
+   * the X/Y component labels or their angle arcs.
+   */
+  private renderDiagonalLabel(from: Vector2, to: Vector2, deltaX: number, deltaY: number): void {
+    const distance = Math.hypot(deltaX, deltaY);
+    const signedX = to.x - from.x;
+    const signedY = to.y - from.y;
+
+    // Perpendicular to the diagonal; the sign flips it to the outside of the triangle.
+    const side = Math.sign(signedX * signedY);
+    const offset = GEOMETRY.MEASUREMENT_LABEL_OFFSET;
+    const labelX = (from.x + to.x) / 2 + (-signedY / distance) * offset * side;
+    const labelY = (from.y + to.y) / 2 + (signedX / distance) * offset * side;
+
+    const label = this.createLabel(
+      formatImperial(distance, { format: this.currentUnitFormat }),
+      this.colors.main
+    );
+    label.position.set(labelX, labelY, Z_LAYERS.MEASUREMENT + 0.01);
+    this.group.add(label);
   }
 
   /**
